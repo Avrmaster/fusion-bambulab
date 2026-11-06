@@ -36,10 +36,10 @@ A project is a zip. These facts were found by breaking it.
 ## Inspecting without the GUI
 
 ```bash
-BambuStudio --slice 0 --outputdir <dir> <project.3mf>
-BambuStudio --outputdir <dir> --export-3mf re.3mf <project.3mf>
+BambuStudio --slice 0 --outputdir <abs-dir> <project.3mf>
+BambuStudio --outputdir <abs-dir> --export-3mf re.3mf <project.3mf>
 ```
 
-The first writes G-code per plate and `result.json`. The G-code header shows only global settings, though per-object ones still apply. The second writes the project back as Bambu reads it. Use it when Bambu shows solid material Fusion does not have: every blocker must come back as `subtype="support_blocker"`.
+Give `--outputdir` an absolute path and `--export-3mf` a bare file name: `--outputdir .` fails with "Unable to open the file". The first writes G-code per plate and `result.json`. The G-code header shows only global settings, though per-object ones still apply. The second writes the project back as Bambu reads it. Use it when Bambu shows solid material Fusion does not have: every blocker must come back as `subtype="support_blocker"`.
 
-To check a support blocker, slice with `--slice <plate> --export-3mf`, then sum `; FEATURE: Support` extrusion inside the hole's box in `plate_<n>.gcode`.
+To check a support blocker, slice with `--slice <plate> --outputdir <abs-dir> --export-3mf out.3mf`, then sum `; FEATURE: Support` extrusion inside the hole's box in `plate_<n>.gcode`.

@@ -59,6 +59,18 @@ Claude can drive Fusion and write `.3mf` files, but every new project starts fro
 </tr>
 </table>
 
+## Examples
+
+Real projects, from idea to a plate ready to print. Both screenshots are straight from Fusion and Bambu Studio.
+
+**A mechanical assembly:** bearings, steel pins, a motor and a full set of printed parts.
+
+![Cycloidal gearbox: the idea, the assembly in Fusion, and all parts on a Bambu Studio plate](docs/example-gearbox.jpg)
+
+**A simple object:** one prompt, then a few rounds of changes.
+
+![Brush cube: the idea, the model in Fusion, and the sliced project in Bambu Studio](docs/example-cube.jpg)
+
 ## What's inside
 
 The plugin connects Claude Code to Fusion's built-in MCP server, so every session has the Fusion tools once Fusion is running. No per-project setup.

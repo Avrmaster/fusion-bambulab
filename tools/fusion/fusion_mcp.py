@@ -29,8 +29,10 @@ def call(sid, tool, args):
     out = res['result']
     for c in out.get('content', []):
         text = c.get('text', '[%s]' % c.get('type'))
-        try: text = json.loads(text).get('message', text)      # scripts come back as {"message": printed output, "success": true}
-        except (ValueError, AttributeError): pass
+        try:
+            data = json.loads(text)
+            if set(data) <= {'message', 'success'}: text = data.get('message', text)   # a script: just its printed output
+        except (ValueError, AttributeError, TypeError): pass
         print(text)
     if out.get('isError'): sys.exit(1)
 

@@ -21,7 +21,7 @@ Open one project at a time. A second `open` imports its parts into the first as 
 
 ## Where this skill stops
 
-This skill makes the project. It does not slice for printing or talk to printers. If the user wants that from Claude, use [bambu-printer-mcp](https://github.com/DMontgomery40/bambu-printer-mcp) when it is connected, and suggest it when it is not. Its `slice_stl` slices a project and its `print_3mf` sends a sliced file. `slice_check.py` below only proves a project slices.
+This skill makes the project. It does not slice for printing or talk to printers. If the user wants that from Claude, use [bambu-printer-mcp](https://github.com/DMontgomery40/bambu-printer-mcp) when it is connected, and suggest it when it is not. Its `slice_stl` slices a project and its `print_3mf` sends a sliced file. To make a sliced file yourself: `BambuStudio --slice 0 --outputdir <abs-dir> --export-3mf sliced.3mf <project.3mf>`, on a copy. `slice_check.py` below only proves a project slices.
 
 Starting a print, heating or sending to a printer needs the user's explicit request, every time, even when the tool would not ask.
 
