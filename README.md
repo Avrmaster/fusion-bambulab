@@ -118,19 +118,23 @@ bambu-printer-mcp   project -> sliced file -> printer
 
 It is a separate project with its own licence (GPL-2.0), and it can start prints and heating without asking, so read its hardware safety notes first.
 
-## Related projects
+## How it compares
 
-Other projects with a different focus:
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/comparison-dark.svg">
+  <img src="docs/comparison-light.svg" alt="Comparison of fusion-bambulab with six related projects across Fusion, Bambu project, printing and install features" width="100%">
+</picture>
 
-| Project | Good for |
-|---|---|
-| [bambu-studio-ai](https://github.com/heyixuan2/bambu-studio-ai) | Idea to print in one flow, with model search, AI generation and monitoring |
-| [3dprint-scout](https://github.com/madrobotnet/3dprint-scout) | Reference-first design and evidence-based checks, without needing Fusion |
-| [fusion360-bambu-print-skill](https://github.com/thibaud-sanchez/fusion360-bambu-print-skill) | Print-mode guidance and checking a saved project against expected parts |
-| [bambu-3mf](https://github.com/woolimi/bambu-3mf) | CLI-built projects from system profiles, on many printer models |
-| [bambu-studio-model-builder](https://github.com/DaveBitter/bambu-studio-model-builder) | Quick single-object iteration with live reload in Claude Cowork |
+Each of these does something this plugin does not:
 
-Several `.3mf` facts in `bambu-project` were confirmed by, or first learned from, these projects.
+- **[bambu-printer-mcp](https://github.com/DMontgomery40/bambu-printer-mcp):** slicing, printing, AMS and monitoring over LAN
+- **[bambu-studio-ai](https://github.com/heyixuan2/bambu-studio-ai):** idea to print in one flow, with model search and AI generation
+- **[3dprint-scout](https://github.com/madrobotnet/3dprint-scout):** reference-first design with strict, evidence-based checks
+- **[fusion360-bambu-print-skill](https://github.com/thibaud-sanchez/fusion360-bambu-print-skill):** print modes, and checking a saved project against expected parts
+- **[bambu-3mf](https://github.com/woolimi/bambu-3mf):** projects built from system profiles, on many printer models
+- **[bambu-studio-model-builder](https://github.com/DaveBitter/bambu-studio-model-builder):** quick single-object iteration with live reload in Claude Cowork
+
+Several `.3mf` facts in `bambu-project` were confirmed by, or first learned from, these projects. See something wrong in the table? [Open an issue](https://github.com/Avrmaster/fusion-bambulab/issues) or edit `docs/comparison.py`.
 
 ## Contributing
 

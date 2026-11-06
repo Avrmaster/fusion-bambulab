@@ -1,0 +1,117 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 976 440" width="976" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif">
+<rect width="976" height="440" rx="10" fill="#ffffff"/>
+<text x="315" y="26" text-anchor="middle" font-size="12.5" font-weight="600" fill="#1f2933">Fusion</text>
+<line x1="254" y1="35" x2="376" y2="35" stroke="#c2560f" stroke-width="2"/>
+<text x="530" y="26" text-anchor="middle" font-size="12.5" font-weight="600" fill="#1f2933">Bambu project</text>
+<line x1="402" y1="35" x2="658" y2="35" stroke="#c2560f" stroke-width="2"/>
+<text x="778.5" y="26" text-anchor="middle" font-size="12.5" font-weight="600" fill="#1f2933">Beyond</text>
+<line x1="684" y1="35" x2="873" y2="35" stroke="#c2560f" stroke-width="2"/>
+<text x="926.5" y="26" text-anchor="middle" font-size="12.5" font-weight="600" fill="#1f2933">Install</text>
+<line x1="899" y1="35" x2="954" y2="35" stroke="#c2560f" stroke-width="2"/>
+<text x="281.5" y="55" text-anchor="middle" font-size="10.5" fill="#66737d">Live</text>
+<text x="281.5" y="69" text-anchor="middle" font-size="10.5" fill="#66737d">Fusion</text>
+<text x="348.5" y="55" text-anchor="middle" font-size="10.5" fill="#66737d">Checked</text>
+<text x="348.5" y="69" text-anchor="middle" font-size="10.5" fill="#66737d">STL export</text>
+<text x="429.5" y="55" text-anchor="middle" font-size="10.5" fill="#66737d">Multi-plate</text>
+<text x="429.5" y="69" text-anchor="middle" font-size="10.5" fill="#66737d">.3mf build</text>
+<text x="496.5" y="55" text-anchor="middle" font-size="10.5" fill="#66737d">Keeps hand</text>
+<text x="496.5" y="69" text-anchor="middle" font-size="10.5" fill="#66737d">edits</text>
+<text x="563.5" y="55" text-anchor="middle" font-size="10.5" fill="#66737d">Support</text>
+<text x="563.5" y="69" text-anchor="middle" font-size="10.5" fill="#66737d">blockers</text>
+<text x="630.5" y="55" text-anchor="middle" font-size="10.5" fill="#66737d">Guards an</text>
+<text x="630.5" y="69" text-anchor="middle" font-size="10.5" fill="#66737d">open file</text>
+<text x="711.5" y="55" text-anchor="middle" font-size="10.5" fill="#66737d">Printer</text>
+<text x="711.5" y="69" text-anchor="middle" font-size="10.5" fill="#66737d">control</text>
+<text x="778.5" y="55" text-anchor="middle" font-size="10.5" fill="#66737d">Modelling</text>
+<text x="778.5" y="69" text-anchor="middle" font-size="10.5" fill="#66737d">without CAD</text>
+<text x="845.5" y="55" text-anchor="middle" font-size="10.5" fill="#66737d">Finds existing</text>
+<text x="845.5" y="69" text-anchor="middle" font-size="10.5" fill="#66737d">models</text>
+<text x="926.5" y="55" text-anchor="middle" font-size="10.5" fill="#66737d">Claude Code</text>
+<text x="926.5" y="69" text-anchor="middle" font-size="10.5" fill="#66737d">plugin</text>
+<rect x="10" y="92" width="956" height="42" rx="7" fill="#fdf0e4"/>
+<text x="20" y="118" font-size="14" font-weight="700" fill="#1f2933">fusion-bambulab</text>
+<circle cx="281.5" cy="113" r="8" fill="#1f7a5c"/>
+<circle cx="348.5" cy="113" r="8" fill="#1f7a5c"/>
+<circle cx="429.5" cy="113" r="8" fill="#1f7a5c"/>
+<circle cx="496.5" cy="113" r="8" fill="#1f7a5c"/>
+<circle cx="563.5" cy="113" r="8" fill="#1f7a5c"/>
+<circle cx="630.5" cy="113" r="8" fill="#1f7a5c"/>
+<circle cx="711.5" cy="113" r="3" fill="#c6ced3"/>
+<circle cx="778.5" cy="113" r="3" fill="#c6ced3"/>
+<circle cx="845.5" cy="113" r="3" fill="#c6ced3"/>
+<circle cx="926.5" cy="113" r="8" fill="#1f7a5c"/>
+<text x="20" y="160" font-size="14" font-weight="500" fill="#1f2933">bambu-printer-mcp</text>
+<circle cx="281.5" cy="155" r="7" fill="none" stroke="#b98a12" stroke-width="2"/><path d="M281.5 148 a7 7 0 0 0 0 14 z" fill="#b98a12"/>
+<circle cx="348.5" cy="155" r="7" fill="none" stroke="#b98a12" stroke-width="2"/><path d="M348.5 148 a7 7 0 0 0 0 14 z" fill="#b98a12"/>
+<circle cx="429.5" cy="155" r="7" fill="none" stroke="#b98a12" stroke-width="2"/><path d="M429.5 148 a7 7 0 0 0 0 14 z" fill="#b98a12"/>
+<circle cx="496.5" cy="155" r="3" fill="#c6ced3"/>
+<circle cx="563.5" cy="155" r="3" fill="#c6ced3"/>
+<circle cx="630.5" cy="155" r="3" fill="#c6ced3"/>
+<circle cx="711.5" cy="155" r="8" fill="#1f7a5c"/>
+<circle cx="778.5" cy="155" r="7" fill="none" stroke="#b98a12" stroke-width="2"/><path d="M778.5 148 a7 7 0 0 0 0 14 z" fill="#b98a12"/>
+<circle cx="845.5" cy="155" r="3" fill="#c6ced3"/>
+<circle cx="926.5" cy="155" r="3" fill="#c6ced3"/>
+<line x1="16" y1="176" x2="960" y2="176" stroke="#dfe4e8"/>
+<text x="20" y="202" font-size="14" font-weight="500" fill="#1f2933">bambu-studio-ai</text>
+<circle cx="281.5" cy="197" r="3" fill="#c6ced3"/>
+<circle cx="348.5" cy="197" r="3" fill="#c6ced3"/>
+<circle cx="429.5" cy="197" r="7" fill="none" stroke="#b98a12" stroke-width="2"/><path d="M429.5 190 a7 7 0 0 0 0 14 z" fill="#b98a12"/>
+<circle cx="496.5" cy="197" r="3" fill="#c6ced3"/>
+<circle cx="563.5" cy="197" r="3" fill="#c6ced3"/>
+<circle cx="630.5" cy="197" r="3" fill="#c6ced3"/>
+<circle cx="711.5" cy="197" r="8" fill="#1f7a5c"/>
+<circle cx="778.5" cy="197" r="8" fill="#1f7a5c"/>
+<circle cx="845.5" cy="197" r="8" fill="#1f7a5c"/>
+<circle cx="926.5" cy="197" r="3" fill="#c6ced3"/>
+<line x1="16" y1="218" x2="960" y2="218" stroke="#dfe4e8"/>
+<text x="20" y="244" font-size="14" font-weight="500" fill="#1f2933">3dprint-scout</text>
+<circle cx="281.5" cy="239" r="7" fill="none" stroke="#b98a12" stroke-width="2"/><path d="M281.5 232 a7 7 0 0 0 0 14 z" fill="#b98a12"/>
+<circle cx="348.5" cy="239" r="7" fill="none" stroke="#b98a12" stroke-width="2"/><path d="M348.5 232 a7 7 0 0 0 0 14 z" fill="#b98a12"/>
+<circle cx="429.5" cy="239" r="7" fill="none" stroke="#b98a12" stroke-width="2"/><path d="M429.5 232 a7 7 0 0 0 0 14 z" fill="#b98a12"/>
+<circle cx="496.5" cy="239" r="3" fill="#c6ced3"/>
+<circle cx="563.5" cy="239" r="3" fill="#c6ced3"/>
+<circle cx="630.5" cy="239" r="3" fill="#c6ced3"/>
+<circle cx="711.5" cy="239" r="3" fill="#c6ced3"/>
+<circle cx="778.5" cy="239" r="8" fill="#1f7a5c"/>
+<circle cx="845.5" cy="239" r="8" fill="#1f7a5c"/>
+<circle cx="926.5" cy="239" r="3" fill="#c6ced3"/>
+<line x1="16" y1="260" x2="960" y2="260" stroke="#dfe4e8"/>
+<text x="20" y="286" font-size="14" font-weight="500" fill="#1f2933">fusion360-bambu-print-skill</text>
+<circle cx="281.5" cy="281" r="7" fill="none" stroke="#b98a12" stroke-width="2"/><path d="M281.5 274 a7 7 0 0 0 0 14 z" fill="#b98a12"/>
+<circle cx="348.5" cy="281" r="7" fill="none" stroke="#b98a12" stroke-width="2"/><path d="M348.5 274 a7 7 0 0 0 0 14 z" fill="#b98a12"/>
+<circle cx="429.5" cy="281" r="3" fill="#c6ced3"/>
+<circle cx="496.5" cy="281" r="3" fill="#c6ced3"/>
+<circle cx="563.5" cy="281" r="3" fill="#c6ced3"/>
+<circle cx="630.5" cy="281" r="3" fill="#c6ced3"/>
+<circle cx="711.5" cy="281" r="3" fill="#c6ced3"/>
+<circle cx="778.5" cy="281" r="3" fill="#c6ced3"/>
+<circle cx="845.5" cy="281" r="3" fill="#c6ced3"/>
+<circle cx="926.5" cy="281" r="3" fill="#c6ced3"/>
+<line x1="16" y1="302" x2="960" y2="302" stroke="#dfe4e8"/>
+<text x="20" y="328" font-size="14" font-weight="500" fill="#1f2933">bambu-3mf</text>
+<circle cx="281.5" cy="323" r="3" fill="#c6ced3"/>
+<circle cx="348.5" cy="323" r="3" fill="#c6ced3"/>
+<circle cx="429.5" cy="323" r="8" fill="#1f7a5c"/>
+<circle cx="496.5" cy="323" r="3" fill="#c6ced3"/>
+<circle cx="563.5" cy="323" r="3" fill="#c6ced3"/>
+<circle cx="630.5" cy="323" r="3" fill="#c6ced3"/>
+<circle cx="711.5" cy="323" r="3" fill="#c6ced3"/>
+<circle cx="778.5" cy="323" r="3" fill="#c6ced3"/>
+<circle cx="845.5" cy="323" r="3" fill="#c6ced3"/>
+<circle cx="926.5" cy="323" r="8" fill="#1f7a5c"/>
+<line x1="16" y1="344" x2="960" y2="344" stroke="#dfe4e8"/>
+<text x="20" y="370" font-size="14" font-weight="500" fill="#1f2933">bambu-studio-model-builder</text>
+<circle cx="281.5" cy="365" r="3" fill="#c6ced3"/>
+<circle cx="348.5" cy="365" r="3" fill="#c6ced3"/>
+<circle cx="429.5" cy="365" r="7" fill="none" stroke="#b98a12" stroke-width="2"/><path d="M429.5 358 a7 7 0 0 0 0 14 z" fill="#b98a12"/>
+<circle cx="496.5" cy="365" r="7" fill="none" stroke="#b98a12" stroke-width="2"/><path d="M496.5 358 a7 7 0 0 0 0 14 z" fill="#b98a12"/>
+<circle cx="563.5" cy="365" r="3" fill="#c6ced3"/>
+<circle cx="630.5" cy="365" r="7" fill="none" stroke="#b98a12" stroke-width="2"/><path d="M630.5 358 a7 7 0 0 0 0 14 z" fill="#b98a12"/>
+<circle cx="711.5" cy="365" r="3" fill="#c6ced3"/>
+<circle cx="778.5" cy="365" r="7" fill="none" stroke="#b98a12" stroke-width="2"/><path d="M778.5 358 a7 7 0 0 0 0 14 z" fill="#b98a12"/>
+<circle cx="845.5" cy="365" r="3" fill="#c6ced3"/>
+<circle cx="926.5" cy="365" r="3" fill="#c6ced3"/>
+<circle cx="28" cy="412" r="8" fill="#1f7a5c"/><text x="42" y="416" font-size="12" fill="#66737d">yes</text>
+<circle cx="88" cy="412" r="7" fill="none" stroke="#b98a12" stroke-width="2"/><path d="M88 405 a7 7 0 0 0 0 14 z" fill="#b98a12"/><text x="102" y="416" font-size="12" fill="#66737d">partly</text>
+<circle cx="158" cy="412" r="3" fill="#c6ced3"/><text x="168" y="416" font-size="12" fill="#66737d">not found</text>
+<text x="960" y="416" text-anchor="end" font-size="12" fill="#66737d">From each project's code and README, November 2026</text></svg>

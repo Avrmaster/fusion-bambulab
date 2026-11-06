@@ -80,6 +80,24 @@ class Sync(Base):
         self.assertEqual(sync3mf.sync(self.proj, self.plates())['swapped'], ['A'])
 
 
+class HandEdits(Base):
+    """The user picks another filament and a brim in Bambu, then the model changes and the build runs again."""
+    def edit_in_bambu(self):
+        infos, files = bambu3mf.load(self.proj); ps = json.loads(files[PS])
+        ps['filament_settings_id'] = ['Bambu PETG @X']; ps['brim_type'] = 'outer_only'; ps['brim_width'] = '7'
+        ps['different_settings_to_system'][0] = 'brim_type;brim_width'
+        files[PS] = json.dumps(ps).encode(); bambu3mf.save(self.proj, files, infos)
+
+    def test_they_survive_a_rebuild_with_a_new_mesh(self):
+        plates, config = [('a', [('A', self.stl, False)])], {'brim_type': 'no_brim'}
+        bambu3mf.new_project(self.tpl, self.proj, 'PLA'); bambu3mf.build(self.proj, '/', plates, project=config)
+        self.edit_in_bambu(); bambu3mf.purge_stl(self.stl, 900)
+        rep = sync3mf.sync(self.proj, plates, project=config)
+        ps = json.loads(self.files()[PS])
+        self.assertEqual(rep['swapped'], ['A'])
+        self.assertEqual((ps['filament_settings_id'], ps['brim_type'], ps['brim_width']), (['Bambu PETG @X'], 'outer_only', '7'))
+
+
 class Setup(unittest.TestCase):
     def test_second_run_keeps_existing_work(self):
         d = tempfile.mkdtemp(); self.addCleanup(shutil.rmtree, d); run = [sys.executable, os.path.join(ROOT, 'tools', 'setup_project.py'), d, '--name', 'Demo']
