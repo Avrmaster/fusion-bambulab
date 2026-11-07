@@ -59,6 +59,10 @@ Scaling a model must hold its interfaces: scale the body, and keep screw bosses,
 
 Large parts in nylon blends lift at the corners while the brim stays down. A wider brim does nothing, because shrink in the layers above does the pulling. Cut the part fan to 0–10 %, use fewer walls and lower infill where strength allows, round sharp corners on the bed outline, and cool the bed slowly (`bambu3mf.slow_cooldown`). Dry the filament.
 
+## Visible PLA parts
+
+Layers that take very different times show as bands on PLA walls (see "Even layer times on PLA" in the bambu-project skill). For parts where looks matter, avoid an internal floor or shelf part-way up a visible wall: start floors on the bed, or accept a band at that height and say so.
+
 ## A flawed print
 
 Propose one of two classes, and let the user decide:

@@ -33,11 +33,27 @@ claude plugin list
 
 ## Turn on Fusion's MCP server
 
-In Fusion, open **Preferences > General > API** and enable **Fusion MCP Server**. Note the port; the default is 27182.
+Fusion has a built-in MCP server; the plugin talks to it. It is off by default.
 
-The plugin connects to `http://127.0.0.1:27182/mcp`. It attaches at session start, so if Fusion started later, run `/mcp` to reconnect or open a new session. When Fusion is not running, the server shows as failed in `/mcp`, which is harmless.
+**1.** In Fusion, click your profile picture at the top right, then **Preferences** (or press <kbd>⌘</kbd><kbd>,</kbd> on macOS).
 
-If Fusion shows another port, add a `.mcp.json` with that URL to the project.
+<img src="docs/fusion-setup-1.png" width="580" alt="Fusion profile menu with Preferences highlighted">
+
+**2.** Open **General > API**, tick **Fusion MCP Server**, and click **OK**. Leave the port at 27182 unless something else uses it.
+
+<img src="docs/fusion-setup-2.png" width="760" alt="Fusion Preferences, General > API page, with Fusion MCP Server ticked on port 27182">
+
+**3.** Check that it answers. Fusion must be running:
+
+```bash
+curl -s -X POST http://127.0.0.1:27182/mcp -H 'Content-Type: application/json' -H 'Accept: application/json, text/event-stream' -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"check","version":"1"}}}'
+```
+
+A reply with `"serverInfo"` means it works. In a project set up by the plugin, `python3 fusion/tools/fusion_mcp.py ping` does the same.
+
+**4.** In Claude Code, run `/mcp`: the plugin's `fusion` server should show as connected. Claude Code connects at session start, so if Fusion was started later, reconnect it there or open a new session. When Fusion is not running the server shows as failed, which is harmless.
+
+If you changed the port, add a `.mcp.json` with that URL to the project.
 
 ## Update
 

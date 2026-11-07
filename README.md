@@ -24,7 +24,7 @@
 Install the fusion-bambulab skills from https://github.com/Avrmaster/fusion-bambulab, refer to the repo's AGENTS.md for instructions.
 ```
 
-Update, uninstall and older versions: [INSTALL.md](INSTALL.md). Only Claude Code has been tested so far.
+Then turn on Fusion's MCP server: [two clicks, with screenshots](INSTALL.md#turn-on-fusions-mcp-server). Update, uninstall and older versions: [INSTALL.md](INSTALL.md). Only Claude Code has been tested so far.
 
 ## What it does
 
@@ -88,7 +88,7 @@ Claude picks the last four up on its own when the task calls for them.
 ## Requirements
 
 - [Claude Code](https://code.claude.com) and Python 3
-- Autodesk Fusion with **Preferences > General > API > Fusion MCP Server** on
+- Autodesk Fusion with **Preferences > General > API > Fusion MCP Server** on ([how, with screenshots](INSTALL.md#turn-on-fusions-mcp-server))
 - Bambu Studio, for the print side
 
 The core tools use only the Python standard library. `numpy`, `scipy` and `shapely` add wall-thickness checks, bed packing and exact plate checks.
@@ -117,6 +117,7 @@ Tools are copied into each project, so it keeps building without the plugin and 
 - Scripts drive your real Fusion document. Save before heavy work.
 - Files are only rewritten with Bambu Studio closed; a wrapper closes and reopens it for you.
 - A `.3mf` that slices in the CLI can still be refused by the GUI, so open a new project in the GUI once.
+- On PLA, layers that take very different times show as bands on the walls. `slice_check.py` points them out, and the `bambu-project` skill evens them out. PETG and nylon blends don't need this.
 - The numbers in `print-design` come from one printer. Measure your own.
 
 ## Printing from Claude

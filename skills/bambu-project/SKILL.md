@@ -67,7 +67,19 @@ The first run creates the project. Later runs use `sync3mf.sync`: new meshes go 
 python3 bambulab/tools/slice_check.py bambulab/Project.3mf
 ```
 
-This is safe with the GUI open, and reports grams per plate. **A passing CLI slice does not prove the GUI opens the file**: the GUI validates more strictly. After the first build of a new project, and after filament changes, have it opened in the GUI, and say plainly if that has not happened. Reopen Bambu only if it was already running.
+This is safe with the GUI open, and reports grams per plate. On PLA plates it also flags layers whose time is far from the typical layer (see below). **A passing CLI slice does not prove the GUI opens the file**: the GUI validates more strictly. After the first build of a new project, and after filament changes, have it opened in the GUI, and say plainly if that has not happened. Reopen Bambu only if it was already running.
+
+## Even layer times on PLA
+
+On PLA, a layer that takes much longer or much shorter than its neighbours cools differently, and the outer wall shows a band or gloss change at that height. Bambu's default minimum layer time for PLA is only 4 s, so small tops print in seconds while walls take half a minute. PETG, PETG-CF and PA6-CF don't show this; leave them alone.
+
+Aim for wall layers within about 1.5x of each other. `slice_check.py` prints the layers outside that, with their Z, and Bambu shows the same in Preview > Color Scheme > Layer Time.
+
+- **Too short** (small tops, thin towers): raise the filament's `slow_down_layer_time` to about the typical layer time from `slice_check`, and lower `slow_down_min_speed` to 10 so the slowdown can reach it: `bambu3mf.set_filament(ps, slot, {'slow_down_layer_time': '28', 'slow_down_min_speed': '10'})`. Put this in the project, not per object.
+- **Too long** (an internal floor or a solid top part-way up): speed can't fix these. Tell the user where the band will be. A design fix is a floor that starts on the bed, so the long layers sit at the bottom edge; or make the floor solid all the way through so there is one long stretch instead of a sparse-to-solid jump.
+- Report the extra print time from slowing down.
+
+Re-run `slice_check.py` after the change.
 
 ## Other tools
 

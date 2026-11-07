@@ -2,7 +2,7 @@
 import json, os, re, shutil, subprocess, sys, tempfile, unittest, zipfile
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, 'tools', 'bambu'))
-import bambu3mf, sync3mf
+import bambu3mf, sync3mf, slice_check
 sync3mf.GUARD = False
 PS, MS = 'Metadata/project_settings.config', 'Metadata/model_settings.config'
 
@@ -118,3 +118,28 @@ class Safety(Base):
     def test_save_leaves_no_temp_file(self):
         shutil.copy(self.tpl, self.proj); infos, files = bambu3mf.load(self.proj); bambu3mf.save(self.proj, files, infos)
         self.assertEqual([f for f in os.listdir(self.d) if f.endswith('.tmp')], [])
+
+
+class LayerTimes(unittest.TestCase):
+    def gcode(self, side_mm, ftype='PLA'):
+        """One square loop per layer at 60 mm/s; side_mm[i] is layer i+1's square."""
+        d = tempfile.mkdtemp(); self.addCleanup(shutil.rmtree, d); p = os.path.join(d, 'plate_1.gcode')
+        out = ['; filament_type = %s' % ftype, 'G90']
+        for i, a in enumerate(side_mm):
+            out += ['; Z_HEIGHT: %.2f' % (0.2 * (i + 1)), 'M73 L%d' % (i + 1), 'G1 X0 Y0 F3600',
+                    'G1 X%g Y0' % a, 'G1 X%g Y%g' % (a, a), 'G1 X0 Y%g' % a, 'G1 X0 Y0']
+        open(p, 'w').write('\n'.join(out) + '\n'); return p
+
+    def test_short_top_layers_are_flagged_with_their_height(self):
+        times = slice_check.layer_times(self.gcode([100] * 10 + [10] * 3))
+        self.assertAlmostEqual(times[5][0], 400 / 60, delta=0.5)
+        med, runs = slice_check.uneven_layers(times)
+        self.assertEqual([(r[0], r[1]) for r in runs], [(11, 13)])
+        self.assertAlmostEqual(runs[0][2], 2.2)
+
+    def test_even_layers_and_petg_are_quiet(self):
+        self.assertEqual(slice_check.uneven_layers(slice_check.layer_times(self.gcode([100] * 12)))[1], [])
+        import io, contextlib
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf): slice_check.check_layer_times(self.gcode([100] * 10 + [10] * 3, 'PETG'))
+        self.assertEqual(buf.getvalue(), '')
