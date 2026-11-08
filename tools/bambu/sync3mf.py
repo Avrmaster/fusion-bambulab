@@ -71,13 +71,23 @@ def part_mesh(P, oid, pid):
 
 
 def signature(V, F):
-    lo, hi = bambu3mf.bbox(V)
-    return [len(F), round(bambu3mf.volume(V, F), 3)] + [round(hi[i] - lo[i], 4) for i in range(3)]
+    """[triangles, volume, bbox size ×3, volume centroid from the bbox min ×3]. The centroid catches a change that keeps the
+    other five, such as a pocket moved to the opposite face of a part. It does not move with the part, so a mesh Bambu
+    re-centred still matches."""
+    lo, hi = bambu3mf.bbox(V); vol = cx = cy = cz = 0.0
+    for a, b, c in F:
+        (x1, y1, z1), (x2, y2, z2), (x3, y3, z3) = V[a], V[b], V[c]
+        v = (x1 * (y2 * z3 - z2 * y3) - y1 * (x2 * z3 - z2 * x3) + z1 * (x2 * y3 - y2 * x3)) / 6
+        vol += v; cx += v * (x1 + x2 + x3) / 4; cy += v * (y1 + y2 + y3) / 4; cz += v * (z1 + z2 + z3) / 4
+    cen = [round(q / vol - lo[i], 3) for i, q in enumerate((cx, cy, cz))] if vol else [0.0, 0.0, 0.0]
+    return [len(F), round(bambu3mf.volume(V, F), 3)] + [round(hi[i] - lo[i], 4) for i in range(3)] + cen
 
 
 def same_mesh(a, b):
-    """Same triangle count, volume within 0.05 mm³ (absolute; the file's float precision moves it by ~0.01), bbox within 0.005 mm."""
-    return a[0] == b[0] and abs(a[1] - b[1]) < 0.05 and all(abs(x - y) < 0.005 for x, y in zip(a[2:], b[2:]))
+    """Same triangle count, volume within 0.05 mm³ (absolute; the file's float precision moves it by ~0.01), bbox within 0.005 mm,
+    centroid within 0.01 mm (only when both have it: older snapshots have 5 entries)."""
+    return (a[0] == b[0] and abs(a[1] - b[1]) < 0.05 and all(abs(x - y) < 0.005 for x, y in zip(a[2:5], b[2:5]))
+            and (len(a) < 8 or len(b) < 8 or all(abs(x - y) < 0.01 for x, y in zip(a[5:8], b[5:8]))))
 
 
 def main_part(o):
@@ -379,7 +389,7 @@ def sync(proj, plate_list, stl_dir='/', settings=None, extra=None, filament=1, t
         ang = sb.get('angle', packed_angle(d)) if sb else packed_angle(d); d['_angle'] = ang   # the turn it has in the project
         V, F, bl = posed(d, stl_dir, ang); sig = signature(V, F); d['_sig'] = sig
         mid = main_part(o)[0]; V0, F0 = part_mesh(P, oid, mid)
-        last = sb['mesh'] if sb else signature(V0, F0)
+        last = sb['mesh'] if sb and len(sb['mesh']) >= 8 else signature(V0, F0)   # an older 5-entry snapshot: compare with the project's mesh
         if same_mesh(sig, last) and len(bl) == len(blocker_parts(o)) and same_blockers(P, oid, o, V0, V, bl): continue
         if len(bl) != len(blocker_parts(o)):
             return _rebuild(proj, plate_list, stl_dir, settings, extra, filament, title, bed, project, P, D, S, rep,

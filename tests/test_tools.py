@@ -1,5 +1,5 @@
 """Run: python3 -m unittest discover tests. Needs neither Fusion nor Bambu Studio: the template is synthetic."""
-import json, os, re, shutil, subprocess, sys, tempfile, unittest, zipfile
+import json, os, re, shutil, struct, subprocess, sys, tempfile, unittest, zipfile
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, 'tools', 'bambu'))
 import bambu3mf, sync3mf, slice_check
@@ -77,6 +77,21 @@ class Sync(Base):
         bambu3mf.new_project(self.tpl, self.proj, 'PLA'); bambu3mf.build(self.proj, '/', self.plates())
         self.assertFalse(sync3mf.sync(self.proj, self.plates()).get('changed'))
         bambu3mf.purge_stl(self.stl, 900)
+        self.assertEqual(sync3mf.sync(self.proj, self.plates())['swapped'], ['A'])
+
+    def wedge(self, flip):
+        """a right-angled wedge; flipped upside down it has the same triangles, volume and bbox, only the centroid moves"""
+        z = (lambda v: 10 - v) if flip else (lambda v: v)
+        P = [(0, 0, z(0)), (10, 0, z(0)), (0, 0, z(10)), (0, 10, z(0)), (10, 10, z(0)), (0, 10, z(10))]
+        T = [(0, 2, 1), (3, 4, 5), (0, 1, 4), (0, 4, 3), (0, 3, 5), (0, 5, 2), (1, 2, 5), (1, 5, 4)]
+        if flip: T = [(a, c, b) for a, b, c in T]
+        with open(self.stl, 'wb') as f:
+            f.write(b'\0' * 80 + struct.pack('<I', len(T)))
+            for t in T: f.write(struct.pack('<12fH', 0, 0, 0, *[c for i in t for c in P[i]], 0))
+
+    def test_a_change_that_keeps_size_and_volume_is_seen(self):
+        self.wedge(False); bambu3mf.new_project(self.tpl, self.proj, 'PLA'); bambu3mf.build(self.proj, '/', self.plates())
+        self.wedge(True)
         self.assertEqual(sync3mf.sync(self.proj, self.plates())['swapped'], ['A'])
 
 

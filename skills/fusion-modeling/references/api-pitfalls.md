@@ -44,6 +44,7 @@ Each of these cost real work. None raises a useful error at the moment it goes w
 - As-built joints and rigid groups cannot be edited without rolling back ("Cannot be edited before rolling back"). Delete at value 0 and recreate, or add a new rigid group.
 - Deleting bodies inside a base feature's `startEdit`, using objects fetched before it, raised "refers to a deleted Object" and dropped the design to Direct mode. Change bodies with a new base feature plus Remove and Move features.
 - `finishEdit` on a base feature, and any timeline recompute, can reset body appearances.
+- A body object held from before `finishEdit` fails as a combine tool with `ALL_TOOL_BODY_REFERENCE_LOST`. Take it from `baseFeature.bodies` after `finishEdit`.
 
 ## Joints
 
@@ -57,6 +58,7 @@ Each of these cost real work. None raises a useful error at the moment it goes w
 - Appearances on base-feature bodies do not survive recomputes. Set them on the **occurrence**.
 - A document can hold several appearances with one name, so `itemByName` returns one of them.
 - Setting hundreds of appearances in one call times out. Do a few components per call.
+- A physical material can come with an appearance that renders see-through (a PETG material showed parts as clear plastic, text and edges unreadable). Assign an explicit opaque appearance per occurrence.
 
 ## Add-ins and UI
 
@@ -74,6 +76,7 @@ Each of these cost real work. None raises a useful error at the moment it goes w
 ## Recovery
 
 - **Timeouts on tiny scripts:** Fusion may be busy with an autosave. Run a one-line read-only probe, then retry.
+- **A full rebuild and an export in one call time out** even when each fits on its own. Run them as separate calls.
 - **Fusion crashes on opening one document, after a hung or killed quit:** with Fusion closed, on macOS move (do not delete) `$(getconf DARWIN_USER_CACHE_DIR)/com.autodesk.fusion360`, then reopen. Next: reboot, then change the graphics driver in Preferences.
 - **Hang on quit:** a save finishes in two steps, and the background publish runs for up to a few minutes. Wait for the version label to come back before quitting.
 - **Read-only after a kill:** the user must click Make Editable; the API cannot.

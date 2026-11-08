@@ -32,6 +32,7 @@ Fusion is one process, often shared by several sessions. A stuck script blocks a
 
 - Drive dimensions from **user parameters** with named, commented expressions, so a change is one edit and the timeline rebuilds.
 - Build clean: all solids first, all cuts last. A JOIN after a CUT refills holes; re-check every hole and pocket after any join.
+- Extrude an outline as one solid, then cut the openings. Picking which sketch regions to extrude, by size or bounding box, can keep a region meant to stay open: a sleeve came out with a solid floor across its bore.
 - Set `participantBodies` on every cut and join. The default hits bodies of **other components** silently.
 - Name components, bodies and features in plain words saying what or where the thing is, not axis codes like `+Y`.
 - Bought parts are references: keep them in their own components, never as bodies inside a printed part's component. Export takes the part's own bodies only.
@@ -39,9 +40,9 @@ Fusion is one process, often shared by several sessions. A stuck script blocks a
 
 ## After every edit
 
-1. Read back what you changed: body count, volume, world bounding boxes. Sum volumes across bodies, since a cut can split one body in two.
+1. Read back what you changed: body count, volume, world bounding boxes. Sum volumes across bodies, since a cut can split one body in two. **Compare the volume with a rough hand estimate** (rings, discs, plates): a part 50 % heavier than the sum of its shapes has an opening filled in.
 2. Scan the timeline for features that landed in a component you did not edit.
-3. Take close-up screenshots with `fusion_mcp_read` `queryType: "screenshot"`, from above and below, and **look at them**. Numeric checks pass while slots, misaligned faces and clipped holes are plainly visible. To file one, use `app.activeViewport.saveAsImageFile` into `.shots/`.
+3. Take close-up screenshots with `fusion_mcp_read` `queryType: "screenshot"`, from above and below, and **look at them**. Numeric checks pass while slots, misaligned faces and clipped holes are plainly visible. To file one, use `app.activeViewport.saveAsImageFile` into `.shots/`. Show only that part and fit the view to all of it: a view cropped to half the part hides exactly the faults you are looking for. Keep `viewport.camera` before you start and assign it back at the end, so the user's view is where they left it. After a change, shoot only the parts that changed.
 4. Run the `thin` check from the `fusion-export` skill: it must end with `TOTAL 0`, or every hit must be intentional.
 5. Show the user any geometry you added only as a consequence of something else, with a simpler alternative.
 

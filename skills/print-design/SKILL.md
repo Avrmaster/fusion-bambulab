@@ -47,6 +47,26 @@ Read bought-part sizes off their models, then **measure the real part**: vendor 
 
 Scaling a model must hold its interfaces: scale the body, and keep screw bosses, bearing seats and magnet pockets at their real size.
 
+## Copying an existing part
+
+When the job is a replica of a real part:
+
+1. **Measure before modelling.** Photos against a ruler are about 5 % off when the ruler and the part are at different heights; use them for shape, a caliper for numbers. Ask for one caliper value per part rather than guessing.
+2. **Ask with pictures.** Draw numbered arrows and circles on the user's own photo of the part, with a line per number saying what to measure. Answers come back as "1 155, 2 147", with no ambiguity about which edge was meant.
+3. **Record each number with its source** (caliper, photo, owner) in the project, and keep a separate list of where the copy deliberately differs and why: a bed that is too small, a screw that can't be bought.
+4. **Compare every part with photos of the original**, one part at a time, from renders that show the whole part. Check each claimed difference again before acting on it. Small things hide here: an opening filled in, a bowed edge modelled straight, a rib a third of its real height.
+
+## Parts that mate
+
+- Derive a pocket's depth from the part that goes in it (`flange thickness`), never type it again. A 4 mm pocket under a 4.3 mm flange leaves it proud.
+- Two parts that lie on each other take their outline from one function, so a change to one moves both.
+- An insert longer than the material it sits in pokes through the other face. Check insert length against floor thickness, and thicken the floor (and what sits on it) if needed.
+- Swapping a fastener length moves everything stacked on it: a 2 mm shorter set screw above a bolt head lifts the bolt 2 mm and shortens its stud by 2. Say so.
+
+## Fine relief on the first layer
+
+Thin raised lines printed face down peel off the bed one by one: there is nothing between them. Join them into a net: union the relief with a copy of itself turned about the centre, so the lines cross. On a pattern with 4-fold symmetry turn by 45°; 90° lands the copy on itself.
+
 ## Test, then commit
 
 1. Print in cheap material first (PLA, about 10 % infill), for fit only.

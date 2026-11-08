@@ -44,6 +44,8 @@ PLATES = [
 
 The first run creates the project. Later runs use `sync3mf.sync`: new meshes go in place, and anything changed by hand in Bambu stays and is reported. If it refuses, read the conflicts; `accept_loss=True` only with the user's OK.
 
+Never rebuild an existing project from the template, even from a script you wrote yourself: that wipes the filament, colours and settings the user chose in Bambu, and they cannot be recovered. Before an update, compare the saved file with the last build to see what the user changed, and commit their version first if the project is in git.
+
 ## Settings
 
 - **Global first.** What is the same on every part goes in `PROJECT`. Per-object settings are for real exceptions only.
