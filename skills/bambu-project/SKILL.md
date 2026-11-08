@@ -15,7 +15,7 @@ Tools are in `bambulab/tools/`, and the project's `bambulab/build_3mf.py` is the
 python3 bambulab/tools/with_bambu_closed.py bambulab/Project.3mf python3 bambulab/build_3mf.py
 ```
 
-It quits Bambu, runs the command, and reopens the project only if Bambu was open before. If a save prompt blocks the quit it exits with an error: ask the user to answer it and run again. Never fall back to writing directly. If the user saved from that prompt, check their save did not undo your work.
+An open Bambu is not a reason to stop or to ask first: run it. It asks Bambu to quit; with nothing unsaved Bambu closes on its own, the command runs and the project reopens. With unsaved changes Bambu shows its save prompt and the tool exits with code 3, having edited nothing. Then ask the user whether to keep those changes. They answer Bambu's prompt, Save or Don't Save. Run again with `--reopen`, which waits for Bambu to close and reopens the project afterwards. Never fall back to writing directly. If the user saved, the sync keeps their edits; check it did not undo yours.
 
 Open one project at a time. A second `open` imports its parts into the first as geometry.
 
