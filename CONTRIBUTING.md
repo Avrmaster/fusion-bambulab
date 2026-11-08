@@ -41,4 +41,5 @@ Welcome. Disclose them in the PR, and read the whole diff first: the person subm
 
 1. Bump `version` in `.claude-plugin/plugin.json`.
 2. Run `claude plugin tag --push`.
-3. Publish a GitHub release with the changes.
+
+No GitHub release: users update from `main` by the version, and the tag marks it.
