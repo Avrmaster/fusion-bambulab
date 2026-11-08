@@ -11,6 +11,16 @@ Read the project's `DESIGN_RULES.md` first, and cite the rule behind each decisi
 
 For a common object, search Printables and MakerWorld before modelling, and report licences. Model it when the user wants their own or the fit is specific.
 
+## Print-friendly by default
+
+Every shape you design is meant to print well without supports, unless the user says otherwise:
+
+- No downward face steeper than 45° from vertical, and no hanging parts. Slope or chamfer at 45° instead.
+- If a side clearly has to go on the bed (a flat mounting face, a tile side, a flange), orient for that from the start. Do not model first and pick the orientation afterwards.
+- Taking on a support, an overhang or a bridge to match a look or a reference is a trade-off. Ask the user first, saying what it buys and what it costs.
+
+On custom parts a 45° slope almost never matters to the function, but it does improve the print. So 45° wins unless the user chooses otherwise.
+
 ## Order of decisions
 
 1. **Print orientation first.** One flat bed face, nothing below it. Small features rise from the bed side, never mid-height on a wall.
@@ -21,10 +31,11 @@ Surfaces that must be accurate go on the bed or face up.
 
 ## Overhangs
 
-- Use planar **45°** chamfers on downward faces. Avoid lofts.
-- Two 45° faces sloping different ways meet in a shallower edge, which the slicer supports. Check edges, not only faces.
+- Use **45°** chamfers on downward faces.
+- Two 45° faces sloping different ways meet in a shallower edge, which the slicer supports. Check edges, not only faces. This is why a pyramid under a square corner looks faceted and prints worse at its ridge: a rounded outline with a taper or loft gives one smooth surface. A loft is fine when its steepest line, usually at a corner, is still 45°. Set its height from that line.
+- Where a rounded part meets a sharp part above it, the sharp corner hangs out past the round one: a small overhang. Give both the same corner radius.
 - Bridges up to about 6 mm.
-- Tiny leftover overhangs get slicer supports, not a redesign. Do not change an exported or printing part for an overhang unless asked.
+- Do not change a part that is already exported or printing just to fix an overhang, unless asked.
 
 ## Starting values
 
