@@ -66,11 +66,11 @@ When the job is a replica of a real part:
 
 ## Shafts, clamps and adjusters
 
-- **A small shaft or stem under torque or bending snaps along a layer line if it was printed standing up.** A Ø9 stem printed vertically broke between layers in PETG-CF. Lay it flat so the layers run along it, or carry the load on a metal pin or a bought shaft.
+- **A small shaft or stem under torque or bending snaps along a layer line if it was printed standing up.** Strong filaments do not save it: the layer bond is the weak plane. Lay it flat so the layers run along it, or carry the load on a metal pin or a bought shaft.
 - **A friction clamp held by one screw on its own rotation axis works loose.** Every turn of the shaft works on that screw. Use at least two screws off the axis, or lock the angle with shape (flats, a key, teeth), not friction alone.
 - **An adjuster without a stop gives no feedback.** If the user cannot tell when it is tight enough, it ends up too loose or broken. Give it a scale, a hard stop at the target, or a measured tightening torque.
 - **Printed tools need real sections.** Thin tangs on a printed key or fork break on the first firm turn. Use a hex or flats of at least a few millimetres, or a bought hex key.
-- **Check a spring's stroke, not only its force.** A small disc spring (DIN 2093, 6 × 3.2 × 0.3) gives about 120 N but only about 0.15 mm of travel, less than a printed stack's tolerance, so it cannot set a preload. Compare the stroke with the tolerance it has to take up.
+- **Check a spring's stroke, not only its force.** Small disc springs give high force over only a tenth of a millimetre or so, less than the tolerance of a printed stack, so they cannot set a preload there. Compare the stroke with the tolerance it has to take up.
 
 ## Fine relief on the first layer
 
