@@ -1,0 +1,5 @@
+{
+  "machine": "{{MACHINE}}",
+  "lang": "{{LANG}}",
+  "root": "C:\\cnc"
+}

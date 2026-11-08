@@ -59,6 +59,10 @@ The server connects only at session start. If Fusion started later, run `/mcp` t
 
 State the folder, the template and its printer, whether Fusion answered, and what to do next. Continue with `fusion-modeling`, or with `bambu-project` if the STLs already exist.
 
+## CNC
+
+For a CNC machine, add `--cnc "<machine> · gSender"` (and `--lang`), alone or with the rest. It creates `cnc/` with the operator station; continue with the `cnc-station` skill.
+
 ## Refreshing tools
 
 After a plugin update, in an existing project:
@@ -67,4 +71,4 @@ After a plugin update, in an existing project:
 python3 ${CLAUDE_PLUGIN_ROOT}/tools/setup_project.py <dir> --update-tools
 ```
 
-This overwrites the vendored copies. Check `git diff` first if the project has local fixes.
+This overwrites the vendored copies, `cnc/` scripts included when the project has it. Check `git diff` first if the project has local fixes.

@@ -1,0 +1,14 @@
+{
+  "title": "Connect the machine",
+  "status": "ready",
+  "summary": "Once: gSender on this laptop sees the machine. Nothing is cut here.",
+  "facts": [["Machine", "{{MACHINE}}"], ["Cable", "USB from the controller to this laptop"], ["Program", "gSender"], ["Tool", "none"]],
+  "steps": [
+    {"text": "Check that the **emergency stop** is released: turn it along the arrow.", "danger": true},
+    {"text": "Switch the machine on and plug its **USB cable** into this laptop."},
+    {"text": "Close any other sender (Candle, UGS, a second gSender).", "note": "Only one program can hold the machine's port."},
+    {"text": "Start **gSender**, press **Connect** and pick the machine's port (`CH340`, `FTDI` or `CP210x`).", "note": "No port: unplug USB, plug it back, wait 10 s. Still none: tell Claude."},
+    {"text": "The state turns `Idle` or `Alarm`. On `Alarm` press **Home**: the machine drives to its switches. Hands away from the axes.", "danger": true},
+    {"text": "Tell Claude **connected**. It reads the machine settings next, without moving anything."}
+  ]
+}

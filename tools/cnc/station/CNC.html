@@ -1,0 +1,197 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CNC</title>
+<style>
+  :root {
+    --bg: #f4f2ee; --panel: #ffffff; --ink: #1d1d1b; --muted: #6b6860; --line: #e2ded6;
+    --accent: #c2410c; --accent-soft: #fdeee4; --ok: #15803d; --ok-soft: #e3f4e8; --warn: #a16207; --warn-soft: #fbf1d6;
+    --sel: #1d1d1b; --sel-ink: #ffffff; --code: #efece6;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #161614; --panel: #201f1c; --ink: #eeebe4; --muted: #a29e94; --line: #34322d;
+      --accent: #fb923c; --accent-soft: #3a2416; --ok: #4ade80; --ok-soft: #173222; --warn: #facc15; --warn-soft: #3a3214;
+      --sel: #eeebe4; --sel-ink: #161614; --code: #2b2a26;
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body { background: var(--bg); color: var(--ink); font: 17px/1.45 "Segoe UI", system-ui, -apple-system, sans-serif; display: flex; flex-direction: column; }
+  header { display: flex; align-items: baseline; gap: 16px; padding: 14px 24px; border-bottom: 1px solid var(--line); background: var(--panel); }
+  header h1 { font-size: 22px; margin: 0; letter-spacing: .02em; }
+  header .machine { color: var(--muted); }
+  header .sync { margin-left: auto; color: var(--muted); font-size: 15px; display: flex; align-items: center; gap: 8px; }
+  .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--ok); display: inline-block; }
+  .dot.fresh { animation: pulse 1.2s ease-out 4; }
+  @keyframes pulse { 0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--ok) 60%, transparent); } 100% { box-shadow: 0 0 0 12px transparent; } }
+  .wrap { flex: 1; display: flex; min-height: 0; }
+  nav { width: 300px; flex: none; border-right: 1px solid var(--line); overflow-y: auto; padding: 12px; }
+  nav button { all: unset; display: block; width: 100%; box-sizing: border-box; padding: 12px 14px; border-radius: 10px; cursor: pointer; margin-bottom: 6px; }
+  nav button:hover { background: var(--panel); }
+  nav button.on { background: var(--sel); color: var(--sel-ink); }
+  nav .t { font-weight: 600; display: block; }
+  nav .m { font-size: 14px; opacity: .75; }
+  main { flex: 1; overflow-y: auto; padding: 24px 32px 90px; }
+  .chip { display: inline-block; font-size: 13px; font-weight: 600; padding: 2px 9px; border-radius: 999px; vertical-align: 2px; }
+  .chip.ready { background: var(--accent-soft); color: var(--accent); }
+  .chip.done { background: var(--ok-soft); color: var(--ok); }
+  .chip.draft { background: var(--warn-soft); color: var(--warn); }
+  .chip.later { background: var(--line); color: var(--muted); }
+  nav button.on .chip { background: transparent; color: inherit; border: 1px solid currentColor; }
+  h2 { font-size: 30px; margin: 0 0 6px; line-height: 1.2; }
+  .summary { color: var(--muted); margin: 0 0 22px; max-width: 70ch; }
+  .facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 10px; margin-bottom: 26px; }
+  .fact { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; }
+  .fact .k { font-size: 13px; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; }
+  .fact .v { font-weight: 600; margin-top: 2px; }
+  .pic { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 12px; margin-bottom: 26px; }
+  .pic img { max-width: 100%; display: block; margin: 0 auto; }
+  h3 { font-size: 15px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 0 0 10px; display: flex; align-items: center; gap: 12px; }
+  h3 .reset { all: unset; font-size: 14px; text-transform: none; letter-spacing: 0; color: var(--accent); cursor: pointer; margin-left: auto; }
+  ol.steps { list-style: none; margin: 0 0 30px; padding: 0; counter-reset: s; }
+  ol.steps li { counter-increment: s; display: flex; gap: 14px; align-items: flex-start; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; margin-bottom: 8px; cursor: pointer; user-select: none; }
+  ol.steps li::before { content: counter(s); flex: none; width: 34px; height: 34px; border-radius: 50%; border: 2px solid var(--ink); display: grid; place-items: center; font-weight: 700; }
+  ol.steps li.done { opacity: .5; }
+  ol.steps li.done::before { content: "✓"; background: var(--ok); border-color: var(--ok); color: #fff; }
+  ol.steps li.danger { border-left: 5px solid var(--accent); }
+  ol.steps .note { display: block; color: var(--muted); font-size: 15px; margin-top: 3px; }
+  code { background: var(--code); padding: 1px 6px; border-radius: 5px; font: 15px Consolas, ui-monospace, monospace; }
+  .files { display: grid; gap: 8px; margin-bottom: 30px; }
+  .file { display: flex; gap: 14px; align-items: center; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 12px 16px; }
+  .file .n { font-weight: 600; word-break: break-all; }
+  .file .d { color: var(--muted); font-size: 15px; }
+  .file button { all: unset; margin-left: auto; flex: none; background: var(--sel); color: var(--sel-ink); padding: 9px 14px; border-radius: 9px; cursor: pointer; font-weight: 600; font-size: 15px; }
+  .file button.copied { background: var(--ok); color: #fff; }
+  .empty { color: var(--muted); padding: 40px 0; }
+  footer { position: fixed; left: 0; right: 0; bottom: 0; background: var(--accent); color: #fff; padding: 10px 24px; font-weight: 600; font-size: 16px; }
+  @media (max-width: 760px) { .wrap { flex-direction: column; } nav { width: auto; border-right: 0; border-bottom: 1px solid var(--line); max-height: 40vh; } main { padding: 18px 16px 90px; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>CNC</h1><span class="machine" id="machine"></span>
+  <span class="sync"><span class="dot" id="dot"></span><span id="sync"></span></span>
+</header>
+<div class="wrap">
+  <nav id="list"></nav>
+  <main id="job"><p class="empty" id="nojobs"></p></main>
+</div>
+<footer id="footer"></footer>
+<script>
+(function () {
+  var data = null, current = null, ROOT = 'C:\\cnc\\jobs\\';
+  var STR = {
+    en: { waiting: 'waiting for data from the Mac…', none: 'No jobs yet. They appear here by themselves as soon as Claude sends them from the Mac.',
+      footer: 'The emergency stop is on the machine. Stay next to it while the spindle runs. Glasses on.',
+      ready: 'ready', done: 'done', draft: 'draft', later: 'later', files: ' file(s)', pick: 'Pick a job on the left.',
+      filesFor: 'Files for the sender', steps: 'Steps', restart: 'start over', copy: 'Copy path', copied: 'Copied',
+      synced: 'updated from the Mac: ', depth: 'cuts down to Z {0} · rises to Z {1} · ≈ {2} min' },
+    uk: { waiting: 'чекаю на дані з Mac…', none: "Завдань ще немає. Вони з'являться тут самі, щойно Claude надішле їх із Mac.",
+      footer: 'Аварійна кнопка — на верстаті. Поки крутиться шпиндель, ти поруч. Окуляри.',
+      ready: 'до запуску', done: 'зроблено', draft: 'чернетка', later: 'пізніше', files: ' файл(и)', pick: 'Обери завдання зліва.',
+      filesFor: 'Файли для gSender', steps: 'Кроки', restart: 'почати спочатку', copy: 'Копіювати шлях', copied: 'Скопійовано',
+      synced: 'оновлено з Mac: ', depth: 'ріже до Z {0} · піднімається до Z {1} · ≈ {2} хв' }
+  }, T = STR.en;
+  function fmt(s, a) { return s.replace(/\{(\d)\}/g, function (m, i) { return a[+i] == null ? '?' : a[+i]; }); }
+  function lang(code) {
+    T = STR[code] || STR.en; document.documentElement.lang = STR[code] ? code : 'en';
+    document.getElementById('footer').textContent = T.footer;
+    var e = document.getElementById('nojobs'); if (e) e.textContent = T.none;
+  }
+  lang((navigator.language || 'en').slice(0, 2)); document.getElementById('sync').textContent = T.waiting;
+  function store(k, v) { try { if (v === undefined) return JSON.parse(localStorage.getItem(k) || 'null'); localStorage.setItem(k, JSON.stringify(v)); } catch (e) { return null; } }
+  function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
+  function md(s) { return esc(s).replace(/\*\*(.+?)\*\*/g, '<b>$1</b>').replace(/`(.+?)`/g, '<code>$1</code>'); }
+
+  function renderList() {
+    var nav = document.getElementById('list');
+    nav.innerHTML = data.jobs.map(function (j) {
+      return '<button data-id="' + esc(j.id) + '" class="' + (j.id === current ? 'on' : '') + '">' +
+        '<span class="t">' + esc(j.title) + '</span>' +
+        '<span class="m"><span class="chip ' + esc(j.status) + '">' + esc(T[j.status] || j.status) + '</span> ' +
+        (j.files && j.files.length ? j.files.length + T.files : '') + '</span></button>';
+    }).join('');
+    Array.prototype.forEach.call(nav.querySelectorAll('button'), function (b) {
+      b.onclick = function () { current = b.getAttribute('data-id'); store('cnc.current', current); render(); };
+    });
+  }
+
+  function renderJob() {
+    var j = data.jobs.filter(function (x) { return x.id === current; })[0], el = document.getElementById('job');
+    if (!j) { el.innerHTML = '<p class="empty">' + esc(T.pick) + '</p>'; return; }
+    var key = 'cnc.steps.' + j.id + '.' + (j.rev || ''), done = store(key) || [];
+    var facts = (j.facts || []).map(function (f) { return '<div class="fact"><div class="k">' + esc(f[0]) + '</div><div class="v">' + md(f[1]) + '</div></div>'; }).join('');
+    var h = '<h2>' + esc(j.title) + ' <span class="chip ' + esc(j.status) + '">' + esc(T[j.status] || j.status) + '</span></h2>' +
+      (j.summary ? '<p class="summary">' + md(j.summary) + '</p>' : '') +
+      (facts ? '<div class="facts">' + facts + '</div>' : '') +
+      (j.image ? '<div class="pic"><img src="jobs/' + esc(j.id) + '/' + esc(j.image) + '?r=' + esc(j.rev || '') + '" alt=""></div>' : '');
+    if (j.files && j.files.length) {
+      h += '<h3>' + esc(T.filesFor) + '</h3><div class="files">' + j.files.map(function (f, i) {
+        return '<div class="file"><div><div class="n">' + esc(f.name) + '</div><div class="d">' + md([f.tool, f.time].filter(Boolean).join(' · ')) +
+          (f.check ? '<br>' + esc(fmt(T.depth, [(f.check.cut.Z || [])[0], f.check.top, f.check.minutes])) : '') + '</div></div>' +
+          '<button data-path="' + esc(ROOT + j.id + '\\' + f.name) + '">' + esc(T.copy) + '</button></div>';
+      }).join('') + '</div>';
+    }
+    if (j.steps && j.steps.length) {
+      h += '<h3>' + esc(T.steps) + ' <button class="reset" id="reset">' + esc(T.restart) + '</button></h3><ol class="steps">' + j.steps.map(function (s, i) {
+        var o = typeof s === 'string' ? { text: s } : s;
+        return '<li data-i="' + i + '" class="' + (done.indexOf(i) >= 0 ? 'done ' : '') + (o.danger ? 'danger' : '') + '"><div>' + md(o.text) +
+          (o.note ? '<span class="note">' + md(o.note) + '</span>' : '') + '</div></li>';
+      }).join('') + '</ol>';
+    }
+    el.innerHTML = h;
+    Array.prototype.forEach.call(el.querySelectorAll('ol.steps li'), function (li) {
+      li.onclick = function () {
+        var i = +li.getAttribute('data-i'), k = done.indexOf(i);
+        if (k >= 0) done.splice(k, 1); else done.push(i);
+        store(key, done); li.classList.toggle('done');
+      };
+    });
+    var r = document.getElementById('reset');
+    if (r) r.onclick = function () { store(key, []); renderJob(); };
+    Array.prototype.forEach.call(el.querySelectorAll('.file button'), function (b) {
+      b.onclick = function () { copy(b.getAttribute('data-path')); b.textContent = T.copied; b.classList.add('copied'); setTimeout(function () { b.textContent = T.copy; b.classList.remove('copied'); }, 1800); };
+    });
+  }
+
+  function copy(t) {
+    var ta = document.createElement('textarea'); ta.value = t; document.body.appendChild(ta); ta.select();
+    try { document.execCommand('copy'); } catch (e) {}
+    document.body.removeChild(ta);
+    try { navigator.clipboard && navigator.clipboard.writeText(t); } catch (e) {}
+  }
+
+  function render() {
+    if (!data.jobs.some(function (j) { return j.id === current; })) current = (data.jobs.filter(function (j) { return j.status === 'ready'; })[0] || data.jobs[0] || {}).id;
+    renderList(); renderJob();
+  }
+
+  function poll() {
+    var s = document.createElement('script');
+    s.src = 'jobs.js?t=' + Date.now();
+    s.onload = function () {
+      document.head.removeChild(s);
+      var d = window.CNC_DATA;
+      if (!d) return;
+      var fresh = !data || d.version !== data.version;
+      if (d.lang) lang(d.lang);
+      if (d.root) ROOT = d.root.replace(/\\?$/, '\\') + 'jobs\\';
+      document.getElementById('machine').textContent = d.machine || '';
+      document.getElementById('sync').textContent = T.synced + d.built;
+      if (fresh) {
+        var first = !data; data = d; if (first) current = store('cnc.current');
+        render();
+        if (!first) { var dot = document.getElementById('dot'); dot.classList.remove('fresh'); void dot.offsetWidth; dot.classList.add('fresh'); }
+      }
+    };
+    s.onerror = function () { document.head.removeChild(s); };
+    document.head.appendChild(s);
+  }
+  poll(); setInterval(poll, 4000);
+})();
+</script>
+</body>
+</html>

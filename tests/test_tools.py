@@ -160,6 +160,36 @@ class LayerTimes(unittest.TestCase):
         self.assertEqual(buf.getvalue(), '')
 
 
+sys.path.insert(0, os.path.join(ROOT, 'tools', 'cnc'))
+import nc_check
+HEAD = 'G90 G94\nG17\nG21\nT3\nS12000 M3\nG54\n'
+
+
+class NcCheck(unittest.TestCase):
+    def test_g28_and_g53_are_errors_unless_allowed(self):
+        r = nc_check.check(HEAD + 'G28 G91 Z0\nG90\nG53 G0 Z-5\nG0 X1 Y1 Z5\n')
+        self.assertEqual(len(r['errors']), 2)
+        self.assertEqual(len(nc_check.check(HEAD + 'G53 G0 Z-5\n', allow=['G53'])['errors']), 0)
+
+    def test_helix_depth_and_arc_extents(self):
+        r = nc_check.check(HEAD + 'G0 X10 Y0\nZ30\nZ5\nG1 Z0 F400\nG3 X10 Y0 Z-5 I-2 J0\nG0 Z30\n')
+        self.assertEqual(r['cut']['Z'], [-5.0, 0.0])
+        self.assertEqual(r['cut']['X'], [6.0, 10.0])
+        self.assertEqual(r['all']['Z'][1], 30.0)
+        self.assertEqual(r['errors'], [])
+        self.assertTrue(any('sideways at the current Z' in w for w in r['warnings']))
+
+    def test_rapid_sideways_below_zero_and_limits(self):
+        r = nc_check.check(HEAD + 'G0 Z5\nG1 Z-2 F100\nG0 X50\n')
+        self.assertTrue(any('rapid sideways' in e for e in r['errors']))
+        r = nc_check.check(HEAD + 'G0 Z5\nX0 Y0\nG1 Z-12 F100\nG0 Z5\n', limits={'Z': (-11, None)})
+        self.assertTrue(any('below the limit' in e for e in r['errors']))
+
+    def test_inches_are_converted(self):
+        r = nc_check.check('G20 G90\nM3 S1000\nG0 Z1\nG1 Z-0.1 F10\n')
+        self.assertAlmostEqual(r['cut']['Z'][0], -2.54)
+
+
 class AddPlate(Base):
     """add_plate.py: grid cells for the final plate count, layout refusals, pauses."""
     def setUp(self):

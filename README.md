@@ -82,9 +82,10 @@ The plugin connects Claude Code to Fusion's built-in MCP server, so every sessio
 | `fusion-export` | Checked STL export, stamped with the Fusion version, plus stale-part and thin-feature checks |
 | `bambu-project` | Builds and updates `.3mf` projects from code, keeping what you changed by hand |
 | `print-design` | Orientation, tolerances, inserts, test prints, and what to do with a flawed print |
-| `fusion-cam` | CNC from Fusion Manufacture: stock that matches the part, helical holes, facing, GRBL-safe posting |
+| `fusion-cam` | CNC from Fusion Manufacture: stock that matches the part, helical holes, facing, GRBL-safe posting, `cam_refresh` and `nc_check` |
+| `cnc-station` | A laptop with gSender next to the machine, fed from the Mac: job pages with steps, sync, read-only GRBL queries |
 
-Claude picks the last five up on its own when the task calls for them.
+Claude picks the last six up on its own when the task calls for them.
 
 ## Requirements
 

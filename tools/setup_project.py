@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
 """Set a folder up for the Fusion -> Bambu workflow. Safe to run again: what exists is left alone, CLAUDE.md gets its section once.
     python3 setup_project.py <dir> --name "Bracket" [--proj Bracket.3mf] [--template <name-or-path>] [--fusion-doc "Bracket"]
-    python3 setup_project.py <dir> --update-tools        refresh only the vendored tools"""
+    python3 setup_project.py <dir> --cnc "<machine>" [--lang uk]   add the CNC operator station in <dir>/cnc (also alone)
+    python3 setup_project.py <dir> --update-tools        refresh only the vendored tools (cnc/ too when it exists)"""
 import argparse, json, os, re, shutil, sys
 HERE = os.path.dirname(os.path.abspath(__file__)); PLUGIN = os.path.dirname(HERE)
 sys.path.insert(0, os.path.join(HERE, 'bambu')); import bambu_template
+CNC_GITIGNORE = ['cnc/laptop/laptop.json', 'cnc/station/jobs.js']
 GITIGNORE = ['.DS_Store', '__pycache__/', '.shots/', '.claude/settings.local.json', 'result.json', 'bambulab/.fusion_export_log.jsonl', 'bambulab/.backups/']
 
 def say(what, path): print('%-9s %s' % (what, path))
@@ -24,12 +26,40 @@ def vendor(root):
         for f in sorted(os.listdir(os.path.join(HERE, src))):
             if f.endswith(('.py', '.json')): shutil.copy(os.path.join(HERE, src, f), d)
         open(os.path.join(d, 'VERSION'), 'w').write('fusion-bambulab %s\n' % version); say('vendored', d)
+    if os.path.isdir(os.path.join(root, 'cnc')): vendor_cnc(root, version)
+
+def vendor_cnc(root, version):
+    src, d = os.path.join(HERE, 'cnc'), os.path.join(root, 'cnc')
+    for sub in ('', 'station', 'laptop'):
+        os.makedirs(os.path.join(d, sub), exist_ok=True)
+        for f in sorted(os.listdir(os.path.join(src, sub))):
+            if f.endswith(('.py', '.sh', '.ps1', '.html')): shutil.copy(os.path.join(src, sub, f), os.path.join(d, sub))
+    open(os.path.join(d, 'VERSION'), 'w').write('fusion-bambulab %s\n' % version); say('vendored', d)
+
+def setup_cnc(root, machine, lang):
+    v = {'MACHINE': machine, 'LANG': lang}
+    tpl = lambda f: fill(open(os.path.join(PLUGIN, 'templates', 'cnc', f), encoding='utf-8').read(), v)
+    os.makedirs(os.path.join(root, 'cnc'), exist_ok=True)
+    vendor_cnc(root, json.load(open(os.path.join(PLUGIN, '.claude-plugin', 'plugin.json')))['version'])
+    write_new(os.path.join(root, 'cnc', 'station.json'), tpl('station.json'))
+    if not os.path.isdir(os.path.join(root, 'cnc', 'jobs')):
+        write_new(os.path.join(root, 'cnc', 'jobs', '00-connect', 'job.json'), tpl(os.path.join('jobs', '00-connect', 'job.json')))
+    gitignore(root, CNC_GITIGNORE)
+
+def gitignore(root, lines):
+    gi = os.path.join(root, '.gitignore'); have = open(gi, encoding='utf-8').read().splitlines() if os.path.exists(gi) else []
+    add = [l for l in lines if l not in have]
+    if add: open(gi, 'w', encoding='utf-8').write('\n'.join(have + add) + '\n'); say('updated', gi)
 
 def main():
     a = argparse.ArgumentParser(); a.add_argument('dir'); a.add_argument('--name'); a.add_argument('--proj'); a.add_argument('--template')
-    a.add_argument('--fusion-doc'); a.add_argument('--update-tools', action='store_true'); a = a.parse_args()
+    a.add_argument('--fusion-doc'); a.add_argument('--update-tools', action='store_true')
+    a.add_argument('--cnc', metavar='MACHINE'); a.add_argument('--lang', default='en'); a = a.parse_args()
     root = os.path.abspath(a.dir)
     if a.update_tools: vendor(root); return
+    if a.cnc:
+        setup_cnc(root, a.cnc, a.lang)
+        if not a.name: return
     if not a.name: sys.exit('--name is required')
     proj = a.proj or re.sub(r'[^\w-]+', '', a.name.title()) + '.3mf'
     v = {'NAME': a.name, 'PROJ': proj, 'FUSION_DOC': a.fusion_doc or a.name}
@@ -44,9 +74,7 @@ def main():
     if 'fusion-bambulab:start' in old: say('kept', md)
     else:
         open(md, 'w', encoding='utf-8').write((old.rstrip() + '\n\n' if old.strip() else '') + tpl('CLAUDE.md')); say('updated', md)
-    gi = os.path.join(root, '.gitignore'); have = open(gi, encoding='utf-8').read().splitlines() if os.path.exists(gi) else []
-    add = [l for l in GITIGNORE if l not in have]
-    if add: open(gi, 'w', encoding='utf-8').write('\n'.join(have + add) + '\n'); say('updated', gi)
+    gitignore(root, GITIGNORE)
     dst = os.path.join(root, 'bambulab', 'template.3mf')
     if os.path.exists(dst): say('kept', dst)
     elif a.template:
