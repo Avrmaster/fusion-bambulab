@@ -52,17 +52,17 @@ Scaling a model must hold its interfaces: scale the body, and keep screw bosses,
 When the job is a replica of a real part:
 
 1. **Measure before modelling.** Photos against a ruler are about 5 % off when the ruler and the part are at different heights; use them for shape, a caliper for numbers. Ask for one caliper value per part rather than guessing.
-2. **Ask with pictures.** Draw numbered arrows and circles on the user's own photo of the part, with a line per number saying what to measure. Answers come back as "1 155, 2 147", with no ambiguity about which edge was meant.
+2. **Ask with pictures.** Draw numbered arrows and circles on the user's own photo of the part, with a line per number saying what to measure. Answers then come back as a numbered list, with no doubt about which edge was meant.
 3. **Record each number with its source** (caliper, photo, owner) in the project, and keep a separate list of where the copy deliberately differs and why: a bed that is too small, a screw that can't be bought.
 4. **Compare every part with photos of the original**, one part at a time, from renders that show the whole part. Check each claimed difference again before acting on it. Small things hide here: an opening filled in, a bowed edge modelled straight, a rib a third of its real height.
 
 ## Parts that mate
 
-- Derive a pocket's depth from the part that goes in it (`flange thickness`), never type it again. A 4 mm pocket under a 4.3 mm flange leaves it proud.
+- Derive a pocket's depth from the thickness of the part that sits in it; never type the number twice. A pocket a few tenths too shallow leaves that part standing proud.
 - Two parts that lie on each other take their outline from one function, so a change to one moves both.
 - An insert longer than the material it sits in pokes through the other face. Check insert length against floor thickness, and thicken the floor (and what sits on it) if needed.
 - **Choose each screw length, then check both ends.** Take a length that is sold (for M3: 6, 8, 10, 12, 14, 16, 20, 25 mm), then check that the tip ends inside the insert or nut and short of the pocket floor, and that the head sits 0.5–2 mm below the surface. If no stocked length fits, deepen the counterbore or fill under the head, rather than leaving the head proud or the tip on the floor. Count the thread engaged: a screw that grips only 2–3 mm of a 4 mm insert pulls out under load.
-- Swapping a fastener length moves everything stacked on it: a 2 mm shorter set screw above a bolt head lifts the bolt 2 mm and shortens its stud by 2. Say so.
+- Swapping a fastener for a shorter or longer one moves everything stacked on it by the difference: what sits on it rises or drops, and what sticks out changes length. Work it out and tell the user.
 
 ## Shafts, clamps and adjusters
 

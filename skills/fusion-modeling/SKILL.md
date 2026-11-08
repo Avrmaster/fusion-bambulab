@@ -35,7 +35,7 @@ Fusion is one process, often shared by several sessions. A stuck script blocks a
 
 - Drive dimensions from **user parameters** with named, commented expressions, so a change is one edit and the timeline rebuilds.
 - Build clean: all solids first, all cuts last. A JOIN after a CUT refills holes; re-check every hole and pocket after any join.
-- Extrude an outline as one solid, then cut the openings. Picking which sketch regions to extrude, by size or bounding box, can keep a region meant to stay open: a sleeve came out with a solid floor across its bore.
+- Extrude an outline as one solid, then cut the openings. Picking which sketch regions to extrude, by size or bounding box, can keep a region meant to stay open, and a bore comes out closed.
 - Set `participantBodies` on every cut and join. The default hits bodies of **other components** silently.
 - Name components, bodies and features in plain words saying what or where the thing is, not axis codes like `+Y`.
 - **Change the existing document in place.** Fusion versions and git keep the history. A test copy ("Part V2") splits every reference, export map and slicer project in two, and merging it back costs more than the change.

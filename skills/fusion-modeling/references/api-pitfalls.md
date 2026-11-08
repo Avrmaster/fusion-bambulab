@@ -64,7 +64,7 @@ Each of these cost real work. None raises a useful error at the moment it goes w
 - Appearances on base-feature bodies do not survive recomputes. Set them on the **occurrence**.
 - A document can hold several appearances with one name, so `itemByName` returns one of them.
 - Setting hundreds of appearances in one call times out. Do a few components per call.
-- A physical material can come with an appearance that renders see-through (a PETG material showed parts as clear plastic, text and edges unreadable). Assign an explicit opaque appearance per occurrence.
+- A physical material can come with an appearance that renders see-through: parts look like clear plastic, and text and edges become unreadable. Assign an explicit opaque appearance per occurrence.
 
 ## Add-ins and UI
 
