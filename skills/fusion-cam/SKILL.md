@@ -37,7 +37,7 @@ g = {'__file__': P}; exec(open(P, encoding='utf-8').read(), g); run = g['run']  
 `cnc/nc_check.py` (or `${CLAUDE_PLUGIN_ROOT}/tools/cnc/nc_check.py`) reads `.nc` files and changes nothing:
 
 ```bash
-python3 cnc/nc_check.py job.nc --x 0:400 --y=-300:0 --z=-11:
+python3 cnc/nc_check.py job.nc --x 0:<width> --y=-<depth>:0 --z=-<deepest>:
 ```
 
 - It prints the cutting box and overall box (arcs included), first Z, tools, speeds, feeds and a rough time.

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Read a posted G-code file and report what it will do. Never changes the file.
-    python3 nc_check.py job.nc [more.nc] [--x 0:400 --y -300:0 --z -11:40] [--allow G53] [--json]
+    python3 nc_check.py job.nc [more.nc] [--x LO:HI --y LO:HI --z LO:HI] [--allow G53] [--json]
 
 Reports, per file: the cutting box and the overall box (arcs included, in mm), first Z, tools, spindle speeds, feeds,
 coolant, and a rough time. Exit code 1 when a file has an error:
