@@ -63,6 +63,14 @@ When the job is a replica of a real part:
 - An insert longer than the material it sits in pokes through the other face. Check insert length against floor thickness, and thicken the floor (and what sits on it) if needed.
 - Swapping a fastener length moves everything stacked on it: a 2 mm shorter set screw above a bolt head lifts the bolt 2 mm and shortens its stud by 2. Say so.
 
+## Shafts, clamps and adjusters
+
+- **A small shaft or stem under torque or bending snaps along a layer line if it was printed standing up.** A Ø9 stem printed vertically broke between layers in PETG-CF. Lay it flat so the layers run along it, or carry the load on a metal pin or a bought shaft.
+- **A friction clamp held by one screw on its own rotation axis works loose.** Every turn of the shaft works on that screw. Use at least two screws off the axis, or lock the angle with shape (flats, a key, teeth), not friction alone.
+- **An adjuster without a stop gives no feedback.** If the user cannot tell when it is tight enough, it ends up too loose or broken. Give it a scale, a hard stop at the target, or a measured tightening torque.
+- **Printed tools need real sections.** Thin tangs on a printed key or fork break on the first firm turn. Use a hex or flats of at least a few millimetres, or a bought hex key.
+- **Check a spring's stroke, not only its force.** A small disc spring (DIN 2093, 6 × 3.2 × 0.3) gives about 120 N but only about 0.15 mm of travel, less than a printed stack's tolerance, so it cannot set a preload. Compare the stroke with the tolerance it has to take up.
+
 ## Fine relief on the first layer
 
 Thin raised lines printed face down peel off the bed one by one: there is nothing between them. Join them into a net: union the relief with a copy of itself turned about the centre, so the lines cross. On a pattern with 4-fold symmetry turn by 45°; 90° lands the copy on itself.
@@ -100,6 +108,7 @@ A result counts only if it comes from the current model. After any change, earli
 
 - [ ] One flat bed face, and orientation noted
 - [ ] Every hole and pocket clear after the last join
+- [ ] Shafts and stems lie along their layers; clamps on a rotating axis have more than one screw or a shape lock
 - [ ] `thin` ends `TOTAL 0` and `wall_thickness.py` shows no neck
 - [ ] Mating parts checked against each other, stationary ones too, through the full travel of anything that moves
 - [ ] Close-up screenshots looked at

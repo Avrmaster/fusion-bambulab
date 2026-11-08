@@ -11,12 +11,14 @@ Each of these cost real work. None raises a useful error at the moment it goes w
 - Nested occurrence bounding boxes read stale inside the same script. Verify in a separate call, and compare **body** world bounding boxes, not occurrence ones.
 - `deleteMe()` on a native occurrence of a non-active component can leave it at root. Delete through the root-context proxy.
 - A model can hold several occurrences of a component. Pick by `fullPathName`, never by `[o for o in all if o.component.name == NAME][0]`.
+- `occurrence.replace(newFile, True)` fails while as-built joints use an occurrence **inside** the old reference. Record those joints (both occurrences, geometry, offsets), delete them, replace, recreate them, and compare body bounding boxes with the record.
 - `activeProduct` is not the Design in other workspaces. Use `activeDocument.products.itemByProductType('DesignProductType')`.
 
 ## Deleting and moving components
 
 - **Never delete a sub-assembly emptied with `moveToComponent`.** Components created inside it die with it, history included, even after the move. Rename the shell, hide it, and leave it.
 - If a shell must go: export bodies as backup, make Paste New copies (`addNewComponentCopy` keeps history), delete, then re-place every `addExistingComponent` occurrence, because the cascade drops captured positions. Diff volumes and feature counts against the record.
+- `DataFile.deleteMe()` can raise `InternalValidationError` on a document other designs referenced, even after the references are gone. Ask the user to delete it in the Data panel, then check from the API that it is gone.
 - Try `features.removeFeatures.add(occ)` first: Remove drops the occurrence without deleting components, unless it was the component's only occurrence.
 
 ## Sketches and features
@@ -65,6 +67,7 @@ Each of these cost real work. None raises a useful error at the moment it goes w
 - Event handlers created from an MCP script die when the script ends. An add-in with UI must be started from Utilities > Add-Ins > Run.
 - `commandDefinition.execute()` from an MCP script never starts the command.
 - Bodies visible in the API but not drawn: toggle their light bulbs off and on, then `activeViewport.refresh()`. After a base-feature edit, call `design.activateRootComponent()` if the model renders ghosted.
+- The first camera assignment after opening a document can ignore `viewExtents` and keep the old zoom. Assign the camera, take the image, and repeat once; use the second image.
 - To make a reference unclickable, set `isSelectable = False` on the root occurrence too.
 
 ## Meshes

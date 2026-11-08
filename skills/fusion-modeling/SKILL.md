@@ -11,6 +11,7 @@ Fusion is one process, often shared by several sessions. A stuck script blocks a
 
 - The plugin provides the Fusion MCP server. Its tools end in `fusion_mcp_execute`, `fusion_mcp_read` and `fusion_mcp_update`; the prefix depends on how it was configured.
 - Call `fusion_mcp_execute` with `featureType: "script"`. The script must define `def run(_context: str):`. Without it the call fails and the edits are rolled back.
+- **Define `run` in every script, even a helper-only one.** The server keeps one Python namespace between calls and calls whatever `run` it finds, so a script without its own runs the previous script's `run` again. A stale export-and-save ran after every later call that way, re-exporting a part and saving the document each time.
 - Set `readOnly: true` for anything that only looks. It also runs while a command dialog is open.
 - **A script that raises rolls back the whole call**, including steps that had succeeded. Run risky steps in separate calls.
 - Units are **centimetres** in the API. Convert at the edges, and print in mm.
@@ -35,6 +36,8 @@ Fusion is one process, often shared by several sessions. A stuck script blocks a
 - Extrude an outline as one solid, then cut the openings. Picking which sketch regions to extrude, by size or bounding box, can keep a region meant to stay open: a sleeve came out with a solid floor across its bore.
 - Set `participantBodies` on every cut and join. The default hits bodies of **other components** silently.
 - Name components, bodies and features in plain words saying what or where the thing is, not axis codes like `+Y`.
+- **Change the existing document in place.** Fusion versions and git keep the history. A test copy ("Part V2") splits every reference, export map and slicer project in two, and merging it back costs more than the change.
+- **Reference documents directly.** An assembly inserts each design it uses as its own external reference. An in-between "envelope" document that only wraps another design adds a layer that has to be replaced and deleted later.
 - Bought parts are references: keep them in their own components, never as bodies inside a printed part's component. Export takes the part's own bodies only.
 - Never call `rollTo`, edit old features, or mass-delete features from a script. To fix something, append a corrected feature at the end. Check `design.designType` is parametric (1) at the start and end of an editing script: the design can silently drop to Direct mode and lose its timeline.
 
