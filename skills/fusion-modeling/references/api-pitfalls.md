@@ -13,6 +13,8 @@ Each of these cost real work. None raises a useful error at the moment it goes w
 - A model can hold several occurrences of a component. Pick by `fullPathName`, never by `[o for o in all if o.component.name == NAME][0]`.
 - `occurrence.replace(newFile, True)` fails while as-built joints use an occurrence **inside** the old reference. Record those joints (both occurrences, geometry, offsets), delete them, replace, recreate them, and compare body bounding boxes with the record.
 - `activeProduct` is not the Design in other workspaces. Use `activeDocument.products.itemByProductType('DesignProductType')`.
+- **Work on another open document without activating it.** Take it from `app.documents` by name and its design from `products.itemByProductType('DesignProductType')`. Reading, features, lightbulbs, `MeshCalculator` and `doc.save()` all work on it, so the user can keep working in their own document. Code that reads `activeDocument` or `activeProduct` (helpers, export scripts) silently works on the wrong document: pass the document in.
+- **Lightbulbs of an externally referenced component belong to its source document.** Hiding origin planes or bodies of a referenced design from the assembly marks that document modified, and the change is lost on the next reload unless that document is saved too. Save it only when its unsaved changes are yours; otherwise tell the user.
 
 ## Deleting and moving components
 
@@ -43,6 +45,8 @@ Each of these cost real work. None raises a useful error at the moment it goes w
 ## Editing history
 
 - Editing an extrude's extent after suppressing other features can drop a later cut's target ("No target body"). Suppress the broken feature and append a new cut.
+- **A joint that does not move when its value changes** is usually held by a rigid group or as-built joint that ties its moving side to the ground side, such as one occurrence too many in a group. List each rigid group's occurrences, and recreate the group without the stray one.
+- **Deleting a base feature that a later combine uses fails.** Delete newest first: the combine, then the base feature.
 - As-built joints and rigid groups cannot be edited without rolling back ("Cannot be edited before rolling back"). Delete at value 0 and recreate, or add a new rigid group.
 - Deleting bodies inside a base feature's `startEdit`, using objects fetched before it, raised "refers to a deleted Object" and dropped the design to Direct mode. Change bodies with a new base feature plus Remove and Move features.
 - `finishEdit` on a base feature, and any timeline recompute, can reset body appearances.

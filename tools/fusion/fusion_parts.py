@@ -2,7 +2,9 @@
 The part list is fusion/parts.json, {stl name: spec}:
     {"bracket": {"path": ["Assembly:1", "Bracket:1"]},      occurrence path from the root; its one visible body
      "cube":    {"body": "Cube"},                           a body of the root component (a single-part document)
-     "lid":     {"path": ["Box:1"], "body": "Lid"}}         a named body of that occurrence
+     "lid":     {"path": ["Box:1"], "body": "Lid"},         a named body of that occurrence
+     "washer":  {"path": ["Washers:1"], "one": true}}       one of several identical bodies in one component:
+                                                            the first is exported, the count goes into the plate name
 
 Run through fusion_mcp_execute (featureType script) with this wrapper; use readOnly true for stale and thin:
     P = r'<project>/fusion/tools/fusion_parts.py'
@@ -12,6 +14,9 @@ run: writes stl/<name>.stl. Call it again until it prints DONE: each call works 
 version already exported. It refuses while the document has unsaved changes, because the saved version number is the stamp in
 the STL header and in bambulab/fusion_export.json (per part: version, time, B-rep signature, STL sha1). Save first.
 Set ONLY = ['name'] in the wrapper's globals to redo those parts.
+Set DOC = '<document name>' to work on an open document that is not the active one, so the user can keep working in another
+document: nothing is activated, MeshCalculator tessellates bodies of any open document, and the save check and the version stamp
+read that document.
 
 Mesh: a fresh MeshCalculator tessellation per part, not displayMeshes.bestMesh, whose density depends on what was last drawn and
 which does not exist for a part never shown. Checks before a file is written (a part that fails is listed and not written):
@@ -26,6 +31,7 @@ LOG = os.path.join(REPO, 'bambulab', '.fusion_export_log.jsonl')
 STL_DIR = os.path.join(REPO, 'stl')
 BUDGET = 20.0
 ONLY = None
+DOC = None      # name of an open document to use instead of the active one
 TOL_OFF, TOL_DIST = 0.03, 0.1   # mm
 QUALITY = ('High', 'Normal', 'VeryHigh')   # tried in turn: one may give a non-manifold edge where faces touch along an arc
 MIN_WIDTH = 1.2  # mm, thin(): narrower planar faces are slivers, ledges or crescent leftovers of old holes
@@ -35,8 +41,16 @@ def parts():
     return json.load(open(PARTS_FILE, encoding='utf-8'))
 
 
+def document():
+    app, name = adsk.core.Application.get(), globals().get('DOC')
+    if not name: return app.activeDocument
+    docs = [d for d in app.documents if d.name == name]
+    if not docs: raise KeyError('no open document %r; open: %s' % (name, [d.name for d in app.documents]))
+    return docs[0]
+
+
 def design():
-    return adsk.fusion.Design.cast(adsk.core.Application.get().activeDocument.products.itemByProductType('DesignProductType'))
+    return adsk.fusion.Design.cast(document().products.itemByProductType('DesignProductType'))
 
 
 def find(root, path):
@@ -53,6 +67,9 @@ def part_body(d, spec):
     comp = occ.component if occ else d.rootComponent
     if spec.get('body'): bodies = [b for b in comp.bRepBodies if b.name == spec['body']]
     else: bodies = [b for b in comp.bRepBodies if b.isLightBulbOn] or list(comp.bRepBodies)
+    if spec.get('one'):
+        vols = {round(b.volume * 1000, 1) for b in bodies}
+        assert len(vols) == 1, (spec, 'the bodies differ in volume: %s' % sorted(vols)); bodies = bodies[:1]
     assert len(bodies) == 1, (spec, [b.name for b in comp.bRepBodies])
     return bodies[0].createForAssemblyContext(occ) if occ else bodies[0]
 
@@ -102,8 +119,8 @@ def check(body, T):
 
 
 def fusion_version():
-    """('v57', dirty): the saved version of the active document; dirty = unsaved changes on top of it."""
-    doc = adsk.core.Application.get().activeDocument
+    """('v57', dirty): the saved version of the document; dirty = unsaved changes on top of it."""
+    doc = document()
     return ('v%d' % doc.dataFile.versionNumber if doc.dataFile else 'v?'), doc.isModified
 
 

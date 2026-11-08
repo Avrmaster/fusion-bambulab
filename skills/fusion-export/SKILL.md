@@ -15,11 +15,12 @@ Everything here is `fusion/tools/fusion_parts.py`, run inside Fusion. If the pro
 {
   "bracket": {"path": ["Assembly:1", "Bracket:1"]},
   "cube":    {"body": "Cube"},
-  "lid":     {"path": ["Box:1"], "body": "Lid"}
+  "lid":     {"path": ["Box:1"], "body": "Lid"},
+  "washer":  {"path": ["Washers:1"], "one": true}
 }
 ```
 
-`path` is the occurrence path from the root, and `body` picks a named body. Without `body`, the occurrence must have exactly one visible body. A single-part document uses `body` alone. Hardware and reference components stay out.
+`path` is the occurrence path from the root, and `body` picks a named body. `one` exports one of several identical bodies (same volume, checked); the count goes in the plate name. Without `body`, the occurrence must have exactly one visible body. A single-part document uses `body` alone. Hardware and reference components stay out.
 
 ## Run it
 
@@ -36,7 +37,7 @@ g = {'__file__': P}; exec(open(P, encoding='utf-8').read(), g); run = g['run']
 | `g['stale']` | Parts whose B-rep changed since their export. |
 | `g['run']` | Writes `stl/<name>.stl`. Call again until it prints `DONE`. |
 
-To limit work to some parts, add `g['ONLY'] = ['bracket']` after the `exec`.
+To limit work to some parts, add `g['ONLY'] = ['bracket']` after the `exec`. To export from an open document that is not the active one, without switching the user's view, add `g['DOC'] = '<document name>'`.
 
 ## Rules
 

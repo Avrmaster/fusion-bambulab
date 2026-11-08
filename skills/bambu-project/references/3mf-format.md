@@ -22,7 +22,9 @@ A project is a zip. These facts were found by breaking it.
 - **Part ids** in `model_settings.config` must be the component `objectid`s from the model. With ids 1, 2, 3, Bambu ignored `subtype="support_blocker"` and printed the blocker boxes as solid parts.
 - **Mesh precision:** weld vertices on exact float32 values and write `%.9g`. Rounding to 6 digits made non-manifold edges.
 - **"Unchanged" mesh:** same triangle count, bbox size and volume within 0.001 mm³ absolute. A relative check missed a 10 mm³ change.
-- **Plate grid:** plates sit on a grid with a 20 % gap, `ceil(sqrt(n))` columns, rows going −Y. Object transforms are world coordinates on that grid.
+- **Plate grid:** plates sit on a grid with a 20 % gap, `ceil(sqrt(n))` columns, rows going −Y. Object transforms are world coordinates on that grid. The column count depends on the plate count, so adding a plate can move every later cell: place all plates for the final count.
+- **Pauses** live in `custom_gcode_per_layer.xml`, one `<plate>` per plate with `<plate_info id="N"/>`, then `<layer top_z="<mm>" type="1" extruder="<slot>" color="" extra="" gcode="M400 U1"/>` per pause (type 1 = pause; the gcode is the printer's `machine_pause_gcode`) and `<mode value="MultiAsSingle"/>`. In the G-code the pause comes right after `; Z_HEIGHT: <top_z>`, before that layer prints.
+- **Keep-out areas** are in `project_settings.config`: `bed_exclude_area`, and `wrapping_exclude_area` while `enable_wrapping_detection` is `1`, as corner points `"153x256"`.
 - **Names** must not contain `< > : / \ | ? * "`, or Bambu shows an error dialog on open. `bambu_name` cleans them.
 - **Quitting:** quitting Bambu during startup crashed it. Let it run 30 s first.
 - **Reloading:** Bambu does not watch files, and opening the same path again does not refresh an open project. It must be closed and reopened. A `* ` at the start of the window title means unsaved changes.

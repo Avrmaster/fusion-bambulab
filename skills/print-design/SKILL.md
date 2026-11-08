@@ -61,6 +61,7 @@ When the job is a replica of a real part:
 - Derive a pocket's depth from the part that goes in it (`flange thickness`), never type it again. A 4 mm pocket under a 4.3 mm flange leaves it proud.
 - Two parts that lie on each other take their outline from one function, so a change to one moves both.
 - An insert longer than the material it sits in pokes through the other face. Check insert length against floor thickness, and thicken the floor (and what sits on it) if needed.
+- **Choose each screw length, then check both ends.** Take a length that is sold (for M3: 6, 8, 10, 12, 14, 16, 20, 25 mm), then check that the tip ends inside the insert or nut and short of the pocket floor, and that the head sits 0.5–2 mm below the surface. If no stocked length fits, deepen the counterbore or fill under the head, rather than leaving the head proud or the tip on the floor. Count the thread engaged: a screw that grips only 2–3 mm of a 4 mm insert pulls out under load.
 - Swapping a fastener length moves everything stacked on it: a 2 mm shorter set screw above a bolt head lifts the bolt 2 mm and shortens its stud by 2. Say so.
 
 ## Shafts, clamps and adjusters

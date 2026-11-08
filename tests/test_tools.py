@@ -1,5 +1,5 @@
 """Run: python3 -m unittest discover tests. Needs neither Fusion nor Bambu Studio: the template is synthetic."""
-import json, os, re, shutil, struct, subprocess, sys, tempfile, unittest, zipfile
+import json, math, os, re, shutil, struct, subprocess, sys, tempfile, unittest, zipfile
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, 'tools', 'bambu'))
 import bambu3mf, sync3mf, slice_check
@@ -158,3 +158,87 @@ class LayerTimes(unittest.TestCase):
         buf = io.StringIO()
         with contextlib.redirect_stdout(buf): slice_check.check_layer_times(self.gcode([100] * 10 + [10] * 3, 'PETG'))
         self.assertEqual(buf.getvalue(), '')
+
+
+sys.path.insert(0, os.path.join(ROOT, 'tools', 'cnc'))
+import nc_check
+HEAD = 'G90 G94\nG17\nG21\nT3\nS12000 M3\nG54\n'
+
+
+class NcCheck(unittest.TestCase):
+    def test_g28_and_g53_are_errors_unless_allowed(self):
+        r = nc_check.check(HEAD + 'G28 G91 Z0\nG90\nG53 G0 Z-5\nG0 X1 Y1 Z5\n')
+        self.assertEqual(len(r['errors']), 2)
+        self.assertEqual(len(nc_check.check(HEAD + 'G53 G0 Z-5\n', allow=['G53'])['errors']), 0)
+
+    def test_helix_depth_and_arc_extents(self):
+        r = nc_check.check(HEAD + 'G0 X10 Y0\nZ30\nZ5\nG1 Z0 F400\nG3 X10 Y0 Z-5 I-2 J0\nG0 Z30\n')
+        self.assertEqual(r['cut']['Z'], [-5.0, 0.0])
+        self.assertEqual(r['cut']['X'], [6.0, 10.0])
+        self.assertEqual(r['all']['Z'][1], 30.0)
+        self.assertEqual(r['errors'], [])
+        self.assertTrue(any('sideways at the current Z' in w for w in r['warnings']))
+
+    def test_rapid_sideways_below_zero_and_limits(self):
+        r = nc_check.check(HEAD + 'G0 Z5\nG1 Z-2 F100\nG0 X50\n')
+        self.assertTrue(any('rapid sideways' in e for e in r['errors']))
+        r = nc_check.check(HEAD + 'G0 Z5\nX0 Y0\nG1 Z-12 F100\nG0 Z5\n', limits={'Z': (-11, None)})
+        self.assertTrue(any('below the limit' in e for e in r['errors']))
+
+    def test_inches_are_converted(self):
+        r = nc_check.check('G20 G90\nM3 S1000\nG0 Z1\nG1 Z-0.1 F10\n')
+        self.assertAlmostEqual(r['cut']['Z'][0], -2.54)
+
+
+class AddPlate(Base):
+    """add_plate.py: grid cells for the final plate count, layout refusals, pauses."""
+    def setUp(self):
+        super().setUp(); import add_plate; self.ap = add_plate
+        bambu3mf.new_project(self.tpl, self.proj, 'PLA'); bambu3mf.build(self.proj, self.d, [('a', [('A', 'part.stl', False)])])
+
+    def add(self, name, **kw):
+        import io, contextlib
+        with contextlib.redirect_stdout(io.StringIO()): self.ap.add_plate(self.proj, name, self.d, [(name, 'part.stl', False)], **kw)
+
+    def cells(self):
+        f = self.files(); ms, m3 = f[MS].decode(), f['3D/3dmodel.model'].decode(); stride = 1.2 * 180
+        tr = {o: t.split() for o, t in re.findall(r'<item objectid="(\d+)"[^>]*transform="([^"]+)"', m3)}
+        out = []
+        for p in re.findall(r'<plate>.*?</plate>', ms, re.S):
+            o = re.search(r'object_id" value="(\d+)"', p).group(1); x, y = float(tr[o][9]), float(tr[o][10])
+            out.append((math.floor(x / stride), math.ceil(-y / stride - 1e-9)))
+        return out
+
+    def test_plates_added_one_at_a_time_end_in_the_final_grid(self):
+        for n in 'bcde': self.add(n)
+        self.assertEqual(self.cells(), [(i % 3, i // 3) for i in range(5)])     # 5 plates: 3 columns
+
+    def test_a_part_off_the_bed_or_on_a_keep_out_area_is_refused(self):
+        with self.assertRaises(SystemExit): self.add('off', at={'off': (178.0, 90.0)})
+        f = self.files(); ps = json.loads(f[PS])
+        self.assertEqual(self.ap.keep_out({'enable_wrapping_detection': '1', 'wrapping_exclude_area': ['10x170', '40x170', '40x180', '10x180']}), [(10, 170, 40, 180)])
+        self.assertEqual(self.ap.keep_out({'enable_wrapping_detection': '0', 'wrapping_exclude_area': ['10x170', '40x170', '40x180']}), [])
+        bad = self.ap.layout_problems(['a'], [(25, 165)], [(20, 20, 5)], 180, [(10, 170, 40, 180)])
+        self.assertTrue(any('keep-out' in b for b in bad))
+        self.assertEqual(len(re.findall(r'<plate>', f[MS].decode())), 1)              # nothing written
+
+    def test_pauses_go_on_the_new_plate(self):
+        self.add('p', pauses=[0.4])
+        cg = self.files()['Metadata/custom_gcode_per_layer.xml'].decode()
+        self.assertIn('<plate_info id="2"/>', cg); self.assertIn('top_z="0.4" type="1"', cg)
+
+
+class GcodeChecks(unittest.TestCase):
+    def write(self, text):
+        d = tempfile.mkdtemp(); self.addCleanup(shutil.rmtree, d); p = os.path.join(d, 'plate_1.gcode'); open(p, 'w').write(text); return p
+
+    def test_pause_reports_the_layer_after_it_and_the_height_printed(self):
+        p = self.write('; machine_pause_gcode = M400 U1\n; Z_HEIGHT: 1.2\nG1 X1\n; Z_HEIGHT: 1.4\n; PAUSE_PRINTING\nM400 U1\nG1 X2\n')
+        self.assertEqual(slice_check.pause_heights(p), [(1.4, 1.2)])
+
+    def test_plate_filament_is_the_slot_it_uses(self):
+        self.assertEqual(slice_check.plate_filament_types('; filament: 3\n; filament_type = PLA;PLA;PETG-CF\n'), ['PETG-CF'])
+
+    def test_conflict_lines_name_the_object(self):
+        log = 'x\nDisc B is too close to clumping detection area, there may be collisions when printing.\nrun found error, exit\n'
+        self.assertEqual(slice_check.conflict_lines(log), ['Disc B is too close to clumping detection area, there may be collisions when printing.'])

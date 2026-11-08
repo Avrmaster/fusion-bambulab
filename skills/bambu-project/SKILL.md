@@ -57,11 +57,22 @@ Never rebuild an existing project from the template, even from a script you wrot
 
 - Name every plate. Never leave one empty.
 - Start with a plain status: `[TODO]`, `[OK]`, `[FAIL]`, `[CHANGED]`. Keep names short, because Bambu cuts them off, and put a count near the front: `2x link`.
-- A part printed N times is **one object**. The count goes in the plate name.
+- A part printed N times is **one object**. The count goes in the plate name. When the design holds the N copies as identical bodies of one component, export one: `"one": true` in `parts.json`.
 - Never drop a part from the project because it is printed. Mark the plate `[OK]`. The project is the parts list.
 - One layer height per plate. Keep parts with different settings two brims apart, or Bambu reports G-code conflicts.
 - Bambu Studio crashes at a 37th plate. Split by purpose into several projects: test, production.
-- Some printers have an exclusion zone, such as the clumping-detection strip at the back of the P2S (X 153–216, Y 235–256). Keep it clear.
+- Some printers have an exclusion zone, such as the clumping-detection strip at the back of the P2S (X 153–216, Y 235–256). Keep it clear: a part over it fails the slice with "<object> is too close to clumping detection area". `add_plate.py` refuses a layout that leaves the bed, overlaps or covers a keep-out area; place objects with `--at "<object>=x,y"` or `--cols n`.
+- Adding plates can move earlier ones: the grid has `ceil(sqrt(n))` columns, so plate 3 sits in another cell once there are 5. `add_plate.py` moves every plate's objects to its new cell.
+
+## Print pauses
+
+For an insert, bearing or nut that the print closes over:
+
+- `add_plate.py … --pause <z1>,<z2>` adds pauses on the new plate. The height is `top_z`, a multiple of the layer height.
+- Bambu pauses **before** printing the layer whose top is `top_z`: at the pause the part stands one layer lower. Use the top of the pocket for `top_z`; the insert must not stand above it.
+- Put a part that needs pauses alone on its plate, since the pause stops every object on the plate.
+- Check in the slice: `slice_check.py` prints each pause with the height printed at that moment.
+- Thin loose pieces that go in at a pause (shims, holders) print first, as their own plate.
 
 ## Verify
 

@@ -28,6 +28,8 @@ Fusion is one process, often shared by several sessions. A stuck script blocks a
 - Before a sweep or clash check, compare bounding boxes by hand and drop parts that cannot reach each other.
 - If Fusion stops answering, **stop calling it** and tell the user. Do not queue more calls.
 - Ask the user to save before anything heavy or risky. Do not save their document unless they told you to.
+- **Do not switch the active document** while the user works in Fusion. Work on another open document through `app.documents` (see [api-pitfalls](references/api-pitfalls.md)).
+- **In a big assembly every feature recomputes the whole design**, which takes seconds per feature in a large one. For many cuts or fills, build the tool bodies with `TemporaryBRepManager`, add them in one base feature and apply one combine: one recompute instead of one per feature.
 
 ## Modelling
 
