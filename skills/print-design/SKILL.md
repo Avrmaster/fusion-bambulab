@@ -49,7 +49,7 @@ Measured on one Bambu P2S with a 0.6 mm nozzle. Treat them as a first guess, and
 | Narrowest face | 1.2 mm |
 | Plastic under a screw head | 5 mm |
 | Counterbore | head + 0.5 to 2 mm: pick a longer screw, do not sink the head |
-| M3×4×5 heat-set insert | straight Ø4.4 × 6.5 pocket under a Ø7.5 × 0.54 melt relief; open on a top face |
+| M3×4×5 heat-set insert | Ø4.4 × 1.5 lead-in, then Ø3.6 to 6.5 deep, under a Ø7.5 × 0.54 melt relief; open on a top face (see Heat-set inserts) |
 | Pegs into Ø2.2 holes | Ø2.0 |
 
 Prefer hex-socket screws in standard lengths, and few of them.
@@ -66,6 +66,26 @@ When the job is a replica of a real part:
 2. **Ask with pictures.** Draw numbered arrows and circles on the user's own photo of the part, with a line per number saying what to measure. Answers then come back as a numbered list, with no doubt about which edge was meant.
 3. **Record each number with its source** (caliper, photo, owner) in the project, and keep a separate list of where the copy deliberately differs and why: a bed that is too small, a screw that can't be bought.
 4. **Compare every part with photos of the original**, one part at a time, from renders that show the whole part. Check each claimed difference again before acting on it. Small things hide here: an opening filled in, a bowed edge modelled straight, a rib a third of its real height.
+
+## Heat-set inserts
+
+Measured on M3×4×5 inserts (knurl Ø5.0, plain pilot band Ø4.2, length 4.0) in PETG-CF on a Bambu P2S, slicer X-Y hole compensation 0.125. The datasheet hole (Ø4.4) is too big once the slicer compensation is on.
+
+| Pocket, as modelled | Printed (≈) | Result |
+|---|---|---|
+| straight Ø4.4 | Ø4.65 | holds almost nothing: pulled out by hand with a screw |
+| straight Ø3.7 | Ø3.95 | grips well, but the insert goes in tilted |
+| Ø4.4 × 1.5 lead-in + Ø3.6 | Ø4.65 / Ø3.85 | grips and goes in straight: **use this** |
+| Ø4.4 × 1.5 lead-in + Ø3.4 | Ø4.65 / Ø3.65 | too tight: displaced plastic bulges into the insert's thread |
+
+- **Pocket:** a lead-in a little over the pilot band (Ø4.4 for a Ø4.2 band), about as deep as that band, so the cold insert stands straight before it melts in; then a hole well under the knurl for the rest of the depth. Never a lead-in as wide as the knurl: the knurl grips nothing there.
+- **Depth:** insert length + about 2.5 below the relief floor, so the displaced plastic and the screw tip have room.
+- **Melt relief:** a shallow counterbore (Ø7.5 × 0.54 for M3, three layers) on the face the mating part lands on. The ring of plastic the insert pushes up stays in it instead of holding the mating part off. The insert ends flush with the relief floor.
+- **Wall:** at least 1.6 around the pocket. A tighter hole pushes harder on thin walls.
+- **PLA hides a loose pocket.** PLA prints holes small, so a pocket that is fine in a PLA test can be loose in a CF filament. Test the pocket in the filament the real part uses.
+- **Test coupon first.** Before changing every pocket in a project, print a small block with 4 to 7 pockets of different sizes and the hole size engraved by each (about 10 g, 25 minutes). The right one lets a cold insert drop only the pilot band's depth, then needs heat; after install, try to pull the insert out by hand with a screw in it.
+- **Install** with a stop: a screw and a flat washer on the insert, so it ends flush. To rescue a loose insert, use 2-part epoxy with the same stop and a greased screw, not superglue: it is brittle and wicks into the thread.
+- **Changing pockets that already exist:** add a sleeve (outer Ø = old pocket, inner Ø = new hole) from the lead-in floor to the pocket floor and join it at the end of the timeline, one part at a time. Do not edit old features. Afterwards check every pocket: the new diameter's length, the lead-in's length, and that nothing solid is left on the axis (a short core leaves a thin plug). On a long hole with inserts at both ends, treat each end as its own pocket.
 
 ## Parts that mate
 
