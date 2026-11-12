@@ -17,6 +17,8 @@ python3 bambulab/tools/with_bambu_closed.py bambulab/Project.3mf python3 bambula
 
 An open Bambu is not a reason to stop or to ask first: run it. It asks Bambu to quit; with nothing unsaved Bambu closes on its own, the command runs and the project reopens. With unsaved changes Bambu shows its save prompt and the tool exits with code 3, having edited nothing. Then ask the user whether to keep those changes. They answer Bambu's prompt, Save or Don't Save. Run again with `--reopen`, which waits for Bambu to close and reopens the project afterwards. Never fall back to writing directly. If the user saved, the sync keeps their edits; check it did not undo yours.
 
+Bambu Studio 2.08 on macOS sometimes crashes while exiting ("BambuStudio quit unexpectedly"), on a manual close as well as from this tool: its network plugin and MakerWorld web view keep threads running while exit() unloads them. The project is already closed by then, so nothing is lost. The tool prints a `note:` when a crash report appears during its quit and checks the projects still open as 3MF; tell the user it was Bambu's exit bug, not the edit. Newer Bambu releases may fix it; updating is the user's call.
+
 Open one project at a time. A second `open` imports its parts into the first as geometry.
 
 ## Where this skill stops
