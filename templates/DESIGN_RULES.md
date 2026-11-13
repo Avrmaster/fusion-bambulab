@@ -18,6 +18,6 @@ Tags: **[M]** measured on a real print · **[S]** simulated or derived · **[U]*
 | Slicer X-Y hole compensation | | |
 | Press fit | | |
 | Sliding fit | | |
-| Heat-set insert pocket | | |
+| Heat-set insert pocket | plugin default: `POCKETS` in `fusion/tools/insert_pockets.py` (M3×4×5: relief Ø7.5 × 0.54, lead-in Ø4.4 × 1.5, Ø3.6 to 6.5). Write a value here only if this printer or filament measured otherwise | |
 
 ## Decisions

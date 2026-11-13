@@ -78,6 +78,7 @@ Measured on M3×4×5 inserts (knurl Ø5.0, plain pilot band Ø4.2, length 4.0) i
 | Ø4.4 × 1.5 lead-in + Ø3.6 | Ø4.65 / Ø3.85 | grips and goes in straight: **use this** |
 | Ø4.4 × 1.5 lead-in + Ø3.4 | Ø4.65 / Ø3.65 | too tight: displaced plastic bulges into the insert's thread |
 
+- **The sizes live in one place:** `POCKETS` in `${CLAUDE_PLUGIN_ROOT}/tools/fusion/insert_pockets.py` (vendored to `fusion/tools/` in a project). Projects use them and do not copy the numbers; a project writes its own value in `DESIGN_RULES.md` only when a print on its printer measured otherwise. The same file cuts new pockets (`cut`), converts old straight ones (`plan`, `convert`) and checks them (`audit`).
 - **Pocket:** a lead-in a little over the pilot band (Ø4.4 for a Ø4.2 band), about as deep as that band, so the cold insert stands straight before it melts in; then a hole well under the knurl for the rest of the depth. Never a lead-in as wide as the knurl: the knurl grips nothing there.
 - **Depth:** insert length + about 2.5 below the relief floor, so the displaced plastic and the screw tip have room.
 - **Melt relief:** a shallow counterbore (Ø7.5 × 0.54 for M3, three layers) on the face the mating part lands on. The ring of plastic the insert pushes up stays in it instead of holding the mating part off. The insert ends flush with the relief floor.
@@ -85,7 +86,7 @@ Measured on M3×4×5 inserts (knurl Ø5.0, plain pilot band Ø4.2, length 4.0) i
 - **PLA hides a loose pocket.** PLA prints holes small, so a pocket that is fine in a PLA test can be loose in a CF filament. Test the pocket in the filament the real part uses.
 - **Test coupon first.** Before changing every pocket in a project, print a small block with 4 to 7 pockets of different sizes and the hole size engraved by each (about 10 g, 25 minutes). The right one lets a cold insert drop only the pilot band's depth, then needs heat; after install, try to pull the insert out by hand with a screw in it.
 - **Install** with a stop: a screw and a flat washer on the insert, so it ends flush. To rescue a loose insert, use 2-part epoxy with the same stop and a greased screw, not superglue: it is brittle and wicks into the thread.
-- **Changing pockets that already exist:** add a sleeve (outer Ø = old pocket, inner Ø = new hole) from the lead-in floor to the pocket floor and join it at the end of the timeline, one part at a time. Do not edit old features. Afterwards check every pocket: the new diameter's length, the lead-in's length, and that nothing solid is left on the axis (a short core leaves a thin plug). On a long hole with inserts at both ends, treat each end as its own pocket.
+- **Changing pockets that already exist** (`convert`): add a sleeve (outer Ø = old pocket, inner Ø = new hole) from the lead-in floor to the pocket floor and join it at the end of the timeline, one part at a time. Do not edit old features. Afterwards check every pocket: the new diameter's length, the lead-in's length, and that nothing solid is left on the axis (a short core leaves a thin plug). On a long hole with inserts at both ends, treat each end as its own pocket.
 
 ## Parts that mate
 
