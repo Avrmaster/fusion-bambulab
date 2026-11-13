@@ -20,7 +20,7 @@ counts as two pockets. A curved through exit (a radial set-screw pocket into a s
 Each convert() adds one base feature of sleeves and one combine JOIN per host body at the end of the part's timeline."""
 import adsk.core, adsk.fusion, math, re
 
-# measured 2026-11-12, PETG-CF, Bambu P2S 0.4, slicer X-Y hole compensation 0.125 (skills/print-design)
+# measured in PETG-CF on a Bambu P2S (0.4 nozzle), slicer X-Y hole compensation 0.125 (skills/print-design)
 POCKETS = {
     'M3x4x5': dict(relief_d=7.5, relief_depth=0.54, lead_d=4.4, lead_depth=1.5, hole_d=3.6, depth=6.5,
                    old_d=4.4,                        # the straight pocket it replaces (too loose with hole compensation)
