@@ -260,6 +260,8 @@ def _pockets(b, K):
             s = se                                     # walk up the lead-in until its wall (a ring just outside it) ends
             while abs(s - se) < 2 * K['lead'] + 0.2 and _ring(b, o, a, u, v, s + sg * 0.01, K['r_lead'] + 0.02, 8) >= 6:
                 s += sg * 0.005
+            if abs(s - se) >= 2 * K['lead'] + 0.2:     # never left the material: a wider hole goes on, not a lead-in
+                continue
             if abs(s - se) >= K['lead'] / 2:            # a plain open end (through hole) has no lead-in wall
                 out.append((o, a, sg, s))
     return out
@@ -268,13 +270,13 @@ def _pockets(b, K):
 def _relief_d(b, o, a, sg, s_top):
     """diameter (mm) of the relief above a lead-in, 0 when the lead-in opens straight onto the face"""
     u, v = _frame(a)
-    q = s_top + sg * 0.01
-    if _ring(b, o, a, u, v, q, 0.45, 16) == 0:          # air all round: the lead-in ends at the part's face
-        return 0
+    q = s_top + sg * 0.01                              # just above the lead-in: inside the relief if there is one
     r = 0.25
-    while r < 0.6 and _ring(b, o, a, u, v, q, r, 16) == 0:
+    while r < 0.6:
+        if _ring(b, o, a, u, v, q, r, 16):             # material: the relief wall (any relief size, also the fallbacks)
+            return round(20 * r, 1)
         r += 0.005
-    return round(20 * r, 1)
+    return 0                                           # air out to D12: the lead-in ends at the part's face
 
 
 def audit(comp_name, kind=None):
