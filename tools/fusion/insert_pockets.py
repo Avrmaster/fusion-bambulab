@@ -6,7 +6,8 @@ Run through the Fusion MCP (fusion_mcp_execute, featureType script) with exec():
     g = {}; exec(open(P, encoding='utf-8').read(), g); g['DOC'] = 'MyDesign'      # DOC: the user may switch tabs mid-run
     g['plan']('Bracket')                 read-only: one row per old pocket, what convert() would do and why not
     g['convert']('Bracket')              one part per call: old straight pockets -> lead-in + narrow hole (sleeve join)
-    g['audit']('Bracket')                read-only: every pocket has its lead-in and nothing solid on its axis
+    g['audit']('Bracket')                read-only: every pocket has its lead-in, nothing solid on its axis, and a melt relief
+    g['relief']('Bracket', dry=True)     melt reliefs where a pocket opens straight onto the face (convert() never adds them)
     g['cut']('Bracket', 'Body1', [((x, y, z), (ax, ay, az))])   new pockets: point on the face (mm), axis out of the material
 
 Pocket, from the face down: melt relief (D x depth), lead-in (D x depth), hole down to `depth` below the relief floor.
@@ -31,6 +32,8 @@ DOC = None
 HW_PREFIX = 'HW (ref)'
 INSERT_RE = r'^insert M3x'
 FEATURE = 'insert pocket sleeves'
+RELIEF_FALLBACK_D = (6.5, 5.9)          # where the full relief leaves too little wall (print-design, Heat-set inserts)
+RELIEF_WALL = 1.2                         # mm of plastic kept beside a relief
 
 _app = adsk.core.Application.get()
 _TOL_R, _TOL_AX = 0.003, 0.004
@@ -246,10 +249,39 @@ def cut(comp_name, body_name, points, kind=None):
     return dict(part=comp_name, pockets=len(points))
 
 
+def _pockets(b, K):
+    """converted pockets of a body: (o, a, sign, s_top) with s_top the lead-in's open end, sign pointing out of it"""
+    out = []
+    for o, a, lo, hi in _faces(b, K['r_new']):
+        u, v = _frame(a)
+        for sg, se in ((1, hi), (-1, lo)):
+            if not (not _inside(b, _P(o, a, u, v, se + sg * 0.05)) and _ring(b, o, a, u, v, se + sg * 0.05, K['r_new'] + 0.02, 8) == 0):
+                continue
+            s = se                                     # walk up the lead-in until its wall (a ring just outside it) ends
+            while abs(s - se) < 2 * K['lead'] + 0.2 and _ring(b, o, a, u, v, s + sg * 0.01, K['r_lead'] + 0.02, 8) >= 6:
+                s += sg * 0.005
+            if abs(s - se) >= K['lead'] / 2:            # a plain open end (through hole) has no lead-in wall
+                out.append((o, a, sg, s))
+    return out
+
+
+def _relief_d(b, o, a, sg, s_top):
+    """diameter (mm) of the relief above a lead-in, 0 when the lead-in opens straight onto the face"""
+    u, v = _frame(a)
+    q = s_top + sg * 0.01
+    if _ring(b, o, a, u, v, q, 0.45, 16) == 0:          # air all round: the lead-in ends at the part's face
+        return 0
+    r = 0.25
+    while r < 0.6 and _ring(b, o, a, u, v, q, r, 16) == 0:
+        r += 0.005
+    return round(20 * r, 1)
+
+
 def audit(comp_name, kind=None):
-    """read-only: every new-size hole has a lead-in at one end and nothing solid on its axis."""
+    """read-only: every new-size hole has a lead-in at one end and nothing solid on its axis, and a melt relief over the
+    lead-in (no_relief: where it opens straight onto the face; relief() adds them)."""
     K = _k(kind); comp = _occ(comp_name).component
-    n = 0; bad = []
+    n = 0; bad = []; no_relief = []
     for b in [b for b in comp.bRepBodies if b.isSolid]:
         for o, a, lo, hi in _faces(b, K['r_new']):
             n += 1; u, v = _frame(a)
@@ -258,5 +290,36 @@ def audit(comp_name, kind=None):
                     for sg, se in ((1, hi), (-1, lo))]
             if solid or not any(lead):
                 bad.append(dict(at_mm=tuple(round(10 * (o[k] + a[k] * (lo + hi) / 2), 2) for k in range(3)), solid_on_axis=solid, lead_in=lead))
+        for o, a, sg, s_top in _pockets(b, K):
+            if _relief_d(b, o, a, sg, s_top) == 0:
+                no_relief.append(tuple(round(10 * (o[k] + a[k] * s_top), 2) for k in range(3)))
     old = [r['at_mm'] for r in plan(comp_name, kind=kind) if r.get('insert') and r['ok']]
-    return dict(part=comp_name, pockets=n, bad=bad, old_pockets_left=old)
+    return dict(part=comp_name, pockets=n, bad=bad, old_pockets_left=old, no_relief=no_relief)
+
+
+def relief(comp_name, dry=False, kind=None):
+    """add the melt relief where a converted pocket opens straight onto the face (the mating part lands on the plastic ring
+    the insert pushes up). Relief D from POCKETS, else the smaller fallbacks while at least RELIEF_WALL of plastic stays
+    beside it; none fits -> skipped (shave the ring by hand). The lead-in is cut 1 relief deeper so it keeps its length
+    under the relief floor; the narrow hole is left as it is. One base feature + one combine CUT per host body."""
+    K = _k(kind); comp = _occ(comp_name).component
+    TB = adsk.fusion.TemporaryBRepManager.get(); tools = []; rows = []
+    for b in [b for b in comp.bRepBodies if b.isSolid]:
+        for o, a, sg, s_top in _pockets(b, K):
+            if _relief_d(b, o, a, sg, s_top) != 0:
+                continue
+            u, v = _frame(a); at = tuple(round(10 * (o[k] + a[k] * s_top), 2) for k in range(3))
+            mid = s_top - sg * K['relief'] / 2
+            r = next((r for r in [K['r_relief']] + [d / 20 for d in RELIEF_FALLBACK_D]
+                      if _ring(b, o, a, u, v, mid, r + RELIEF_WALL / 10, 24) == 24), None)
+            if r is None:
+                rows.append(dict(at_mm=at, skipped='less than %g mm of wall for any relief' % RELIEF_WALL)); continue
+            t = _cyl(o, a, s_top - sg * K['relief'], s_top + sg * 0.03, r)
+            TB.booleanOperation(t, _cyl(o, a, s_top - sg * (K['relief'] - 0.001), s_top - sg * (K['relief'] + K['lead']), K['r_lead']),
+                                adsk.fusion.BooleanTypes.UnionBooleanType)
+            tools.append((b, t)); rows.append(dict(at_mm=at, relief_d=round(20 * r, 1)))
+    if tools and not dry:
+        p = K['p']
+        _join_or_cut(comp, tools, adsk.fusion.FeatureOperations.CutFeatureOperation,
+                     'insert melt reliefs D%g x %g' % (p['relief_d'], p['relief_depth']), 'insert relief tools')
+    return dict(part=comp_name, reliefs=len(tools), dry=dry, rows=rows)
