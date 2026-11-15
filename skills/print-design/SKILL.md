@@ -94,6 +94,7 @@ Measured on M3×4×5 inserts (knurl Ø5.0, plain pilot band Ø4.2, length 4.0) i
 - Two parts that lie on each other take their outline from one function, so a change to one moves both.
 - An insert longer than the material it sits in pokes through the other face. Check insert length against floor thickness, and thicken the floor (and what sits on it) if needed.
 - **Choose each screw length, then check both ends.** Take a length that is sold (for M3: 6, 8, 10, 12, 14, 16, 20, 25 mm), then check that the tip ends inside the insert or nut and short of the pocket floor, and that the head sits 0.5–2 mm below the surface. If no stocked length fits, deepen the counterbore or fill under the head, rather than leaving the head proud or the tip on the floor. Count the thread engaged: a screw that grips only 2–3 mm of a 4 mm insert pulls out under load.
+- **Every screw must be reachable.** A screw goes in along its axis and the hex key follows it: nothing printed may sit in that straight path, not even a thin ledge over the edge of a head seat. Run `tools/fusion/screw_access.py` `access(doc)` after every change near screws; each hit names the part and the distance from the head. A hit by a part mounted later is fine only when the assembly order says so; name it to the user.
 - Swapping a fastener for a shorter or longer one moves everything stacked on it by the difference: what sits on it rises or drops, and what sticks out changes length. Work it out and tell the user.
 
 ## Shafts, clamps and adjusters
@@ -141,6 +142,7 @@ A result counts only if it comes from the current model. After any change, earli
 
 - [ ] One flat bed face, and orientation noted
 - [ ] Every hole and pocket clear after the last join
+- [ ] `screw_access.py` finds no printed part in any screw's path (or each hit is a later-mounted part, named)
 - [ ] Shafts and stems lie along their layers; clamps on a rotating axis have more than one screw or a shape lock
 - [ ] `thin` ends `TOTAL 0` and `wall_thickness.py` shows no neck
 - [ ] Mating parts checked against each other, stationary ones too, through the full travel of anything that moves
