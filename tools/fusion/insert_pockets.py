@@ -8,6 +8,7 @@ Run through the Fusion MCP (fusion_mcp_execute, featureType script) with exec():
     g['convert']('Bracket')              one part per call: old straight pockets -> lead-in + narrow hole (sleeve join)
     g['audit']('Bracket')                read-only: every pocket has its lead-in, nothing solid on its axis, and a melt relief
     g['relief']('Bracket', dry=True)     melt reliefs where a pocket opens straight onto the face (convert() never adds them)
+    g['wall']('Bracket')                 read-only GATE: plastic round every pocket; rows under WALL_TARGET say what stops the wall
     g['cut']('Bracket', 'Body1', [((x, y, z), (ax, ay, az))])   new pockets: point on the face (mm), axis out of the material
 
 Pocket, from the face down: melt relief (D x depth), lead-in (D x depth), hole down to `depth` below the relief floor.
@@ -325,3 +326,72 @@ def relief(comp_name, dry=False, kind=None):
         _join_or_cut(comp, tools, adsk.fusion.FeatureOperations.CutFeatureOperation,
                      'insert melt reliefs D%g x %g' % (p['relief_d'], p['relief_depth']), 'insert relief tools')
     return dict(part=comp_name, reliefs=len(tools), dry=dry, rows=rows)
+
+
+WALL_TARGET, WALL_FLOOR = 4.0, 1.6        # mm round the lead-in: the target wherever there is room / the floor (print-design)
+
+
+def _others(po):
+    """solid bodies of every other occurrence (world), without insert refs: [(name, body, bbox)]"""
+    out = []
+    for oc in _d().rootComponent.allOccurrences:
+        if oc.entityToken == po.entityToken:
+            continue
+        for b in oc.bRepBodies:
+            if b.isSolid and not re.match(INSERT_RE, b.name):
+                out.append((oc.component.name if oc.bRepBodies.count == 1 else '%s / %s' % (oc.component.name, b.name), b, b.boundingBox))
+    return out
+
+
+def wall(comp_name, target=None, floor=None, kind=None, neighbours=True):
+    """read-only GATE: the plastic round every insert pocket of a part, measured radially from the lead-in over the insert's
+    length (48 directions, 3 depths). A hot insert softens a thin wall and bulges it, so the wall is `target` wherever there
+    is room and `floor` only where something really stops it. Rows (pockets under target), each with a verdict:
+      FAIL     under the floor
+      GROW     under the target and in some thin direction nothing stands within the target: grow the part there
+      BLOCKED  under the target, every thin direction ends at another body / a cavity of the part itself (named in `by`)
+    `free` counts the thin directions with nothing in the way (static pose only: check moving neighbours yourself).
+    One part per call. Returns dict(part, pockets, fail, grow, blocked, rows)."""
+    K = _k(kind); po = _occ(comp_name); assert po, 'no component %r' % comp_name
+    T = (target or WALL_TARGET) / 10; F = (floor or WALL_FLOOR) / 10; L = K['p']['insert_len'] / 10; RL = K['r_lead']
+    rows = []; n = 0; others = None
+    for b in [b for b in po.bRepBodies if b.isSolid]:
+        for o, a, sg, s_top in _pockets(b, K):
+            n += 1; u, v = _frame(a); thin = []
+            for k in range(48):
+                th = 2 * math.pi * k / 48; w = T
+                for s in (s_top - sg * K['lead'] / 2, s_top - sg * L * 0.6, s_top - sg * L):
+                    r = RL + 0.003
+                    while r < RL + w and _inside(b, _P(o, a, u, v, s, r, th)):
+                        r += 0.01
+                    w = min(w, r - RL)
+                if w < T - 0.006:
+                    thin.append((w, th))
+            if not thin:
+                continue
+            wmin, thmin = min(thin); free = 0; by = {}
+            if neighbours:
+                if others is None:
+                    others = _others(po)
+                sm = s_top - sg * L / 2
+                for w, th in thin:
+                    hit = None; r = RL + w + 0.02
+                    while r <= RL + T and hit is None:
+                        p = _P(o, a, u, v, sm, r, th)
+                        if _inside(b, p):
+                            hit = 'own cavity (hole / slot / pocket)'
+                        else:
+                            for nm, ob, bb in others:
+                                if bb.contains(p) and _inside(ob, p):
+                                    hit = nm; break
+                        r += 0.03
+                    if hit is None:
+                        free += 1
+                    else:
+                        by[hit] = min(by.get(hit, 99), round(10 * w, 1))
+            d = tuple(round(u[i] * math.cos(thmin) + v[i] * math.sin(thmin), 2) for i in range(3))
+            verdict = 'FAIL' if wmin < F - 0.001 else ('GROW' if free or not neighbours else 'BLOCKED')
+            rows.append(dict(at_mm=tuple(round(10 * (o[i] + a[i] * s_top), 1) for i in range(3)), wall_mm=round(10 * wmin, 1),
+                             towards=d, thin_dirs=len(thin), free=free, by=by, verdict=verdict))
+    c = lambda x: sum(r['verdict'] == x for r in rows)
+    return dict(part=comp_name, pockets=n, fail=c('FAIL'), grow=c('GROW'), blocked=c('BLOCKED'), rows=rows)
