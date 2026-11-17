@@ -536,6 +536,17 @@ def _rebuild(proj, plate_list, stl_dir, settings, extra, filament, title, bed, p
             oi = [i for i, p in enumerate(old['plates']) if p['name'] == pname][0]; ni = [i for i, p in enumerate(P['plates']) if p['name'] == pname][0]
             (ax, ay), (bx, by) = plate_origin(oi, n_old, bed), plate_origin(ni, n_new, bed)
             t = list(t); t[9] += bx - ax; t[10] += by - ay
+            # the old mesh may sit off its own centre (a mesh swapped in place keeps the old origin), the rebuilt one is
+            # centred: carry the old transform over so that the part keeps its bbox centre and its bed contact, not its
+            # translation (2026-11-17: two parts ended 5 and 7.75 mm inside the bed)
+            ooid = old_by_key[key][0]
+            def world_box(PP, o_id, tt):
+                W = [apply_tr(tt, v) for v in part_mesh(PP, o_id, main_part(PP['objects'][o_id])[0])[0]]
+                return [(min(w[i] for w in W), max(w[i] for w in W)) for i in range(3)]
+            t0 = list(keep_pos[key][0]); t0[9] += bx - ax; t0[10] += by - ay
+            ob, nb = world_box(old, ooid, t0), world_box(P, oid, t)
+            t[9] += (ob[0][0] + ob[0][1] - nb[0][0] - nb[0][1]) / 2; t[10] += (ob[1][0] + ob[1][1] - nb[1][0] - nb[1][1]) / 2
+            t[11] += ob[2][0] - nb[2][0]
             cfg = set_transform(P, cfg, oid, t)
     # prime towers moved by hand stay on every plate that kept its name
     wt = {}
