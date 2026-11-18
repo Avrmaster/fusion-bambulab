@@ -75,8 +75,9 @@ def part_body(d, spec):
 
 
 def tris(m):
-    p, ii = m.nodeCoordinatesAsFloat, m.nodeIndices
-    return [tuple((p[3 * k] * 10, p[3 * k + 1] * 10, p[3 * k + 2] * 10) for k in ii[t:t + 3]) for t in range(0, len(ii), 3)]
+    # under 1e-9 mm = 0: the two sides of a revolved face's seam come out as 0 and r * sin(2 pi) = 1e-15, and stay unwelded
+    p, ii = [0.0 if abs(c) < 1e-10 else c * 10 for c in m.nodeCoordinatesAsFloat], m.nodeIndices
+    return [tuple((p[3 * k], p[3 * k + 1], p[3 * k + 2]) for k in ii[t:t + 3]) for t in range(0, len(ii), 3)]
 
 
 def shells(T):

@@ -101,6 +101,7 @@ Re-run `slice_check.py` after the change.
 | Tool | Use |
 |---|---|
 | `add_plate.py` | Add a plate, leaving the others untouched. |
+| `weld_3mf.py <proj> [--check]` | Bambu shows "N open edges" on an object: closes unwelded seams in the project's meshes in place (vertices on one spot merged), nothing moves. `--check` only reports. |
 | `update_3mf.py <proj> <stl-dir>` | Swap meshes in a project made by hand in Bambu Studio, keeping position and settings. Not for `build_3mf.py` projects: their meshes are stored already turned onto the bed, so a new mesh would stand in its Fusion orientation. Run `build_3mf.py` instead. |
 | `set_3mf_setting.py` | Per-object settings from the command line. |
 | `split_plates.py` | Move plates into a new project. |

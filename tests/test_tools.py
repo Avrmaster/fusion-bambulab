@@ -135,6 +135,37 @@ class Safety(Base):
         self.assertEqual([f for f in os.listdir(self.d) if f.endswith('.tmp')], [])
 
 
+class Seams(Base):
+    def ring(self):
+        """A square-section ring whose seam is written as k = n (sin(2 pi) = -2.4e-16), not as k = 0."""
+        n = 24; prof = [(5, 0), (8, 0), (8, 3), (5, 3)]; T = []
+        P = lambda r, z, k: (r * math.cos(2 * math.pi * k / n), r * math.sin(2 * math.pi * k / n), z)
+        for (r0, z0), (r1, z1) in zip(prof, prof[1:] + prof[:1]):
+            for k in range(n):
+                a, b, c, e = P(r0, z0, k), P(r0, z0, k + 1), P(r1, z1, k + 1), P(r1, z1, k); T += [(a, b, c), (a, c, e)]
+        with open(self.stl, 'wb') as f:
+            f.write(b' ' * 80 + struct.pack('<I', len(T)))
+            for t in T: f.write(struct.pack('<12fH', 0, 0, 0, *t[0], *t[1], *t[2], 0))
+        return len(T)
+
+    def test_a_seam_written_as_sin_2pi_is_welded_on_read(self):
+        n = self.ring(); V, F = bambu3mf.read_stl(self.stl)
+        self.assertEqual((len(F), bambu3mf.open_edges(F)), (n, 0))
+
+    def test_weld_3mf_closes_a_seam_in_a_project_and_moves_nothing(self):
+        import weld_3mf; weld_3mf.GUARD = False
+        self.ring(); bambu3mf.new_project(self.tpl, self.proj); bambu3mf.build(self.proj, self.d, [('p', [('ring', 'part.stl', False)])])
+        infos, files = bambu3mf.load(self.proj); path = [n for n in files if n.startswith('3D/Objects/')][0]; om = files[path].decode()
+        V = re.findall(r'<vertex [^>]+/>', om); t = re.search(r'<triangle v1="(\d+)" ', om)   # split one vertex in two, as an unwelded seam has it
+        om = om[:t.start()] + '<triangle v1="%d" ' % len(V) + om[t.end():]
+        om = om.replace('     </vertices>', '      ' + V[int(t.group(1))] + '\n     </vertices>', 1)
+        files[path] = om.encode(); bambu3mf.save(self.proj, files, infos)
+        self.assertEqual(weld_3mf.run(self.proj, check=True), 1)
+        self.assertEqual(weld_3mf.run(self.proj), 0); self.assertEqual(weld_3mf.run(self.proj, check=True), 0)
+        after = bambu3mf.load(self.proj)[1][path].decode()
+        self.assertEqual(re.findall(r'<vertex [^>]+/>', after), V)
+
+
 class LayerTimes(unittest.TestCase):
     def gcode(self, side_mm, ftype='PLA'):
         """One square loop per layer at 60 mm/s; side_mm[i] is layer i+1's square."""

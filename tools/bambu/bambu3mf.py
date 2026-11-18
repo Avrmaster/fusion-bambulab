@@ -37,16 +37,34 @@ def backup(proj, keep=10):
     return dst
 
 def read_stl(p):
-    """Binary STL -> (vertices, triangles). Weld on exact float32 values: rounding would merge distinct vertices."""
+    """Binary STL -> (vertices, triangles). Weld on exact float32 values: rounding would merge distinct vertices.
+    Coordinates under 1e-9 mm count as 0: on the seam of a revolved face one side comes out as y = 0 and the other as
+    r * sin(2 pi) = 1e-15, two vertices on one spot, and the seam stayed open in Bambu ("30 open edges", 2026-11-18)."""
     d = open(p, 'rb').read(); n = struct.unpack('<I', d[80:84])[0]; vid = {}; V = []; F = []
     for i in range(n):
         o = 84 + i * 50 + 12; t = []
         for k in range(3):
-            q = struct.unpack('<3f', d[o + 12 * k:o + 12 * k + 12])
+            q = tuple(0.0 if abs(c) < 1e-9 else c for c in struct.unpack('<3f', d[o + 12 * k:o + 12 * k + 12]))
             if q not in vid: vid[q] = len(V); V.append(q)
             t.append(vid[q])
         if len(set(t)) == 3: F.append(t)
     return V, F
+
+def open_edges(F):
+    """Edges not shared by exactly two triangles in opposite directions: what Bambu Studio reports as open edges."""
+    E = {}
+    for a, b, c in F:
+        for e in ((a, b), (b, c), (c, a)): E[e] = E.get(e, 0) + 1
+    return sum(1 for (u, v), n in E.items() if n != 1 or E.get((v, u)) != 1)
+
+def weld(V, F, tol=1e-7):
+    """Merge vertices on the same spot (within tol mm); the first one keeps its coordinates. Triangles that collapse are dropped."""
+    vid, W, m = {}, [], []
+    for v in V:
+        k = tuple(round(c / tol) for c in v)
+        if k not in vid: vid[k] = len(W); W.append(v)
+        m.append(vid[k])
+    return W, [t for t in ([m[i] for i in f] for f in F) if len(set(t)) == 3]
 
 def bbox(V): return [min(v[i] for v in V) for i in range(3)], [max(v[i] for v in V) for i in range(3)]
 
