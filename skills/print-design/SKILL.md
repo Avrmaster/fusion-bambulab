@@ -44,6 +44,7 @@ Measured on one Bambu P2S with a 0.6 mm nozzle. Treat them as a first guess, and
 | Feature | Start with |
 |---|---|
 | Hole sizes | model nominal; slicer X-Y hole compensation 0.125 |
+| Wall between one and two line widths (a thin sleeve round a bore) | per-object `wall_generator = arachne`; classic walls lay two full lines into it and the bore closes (a 3.9 bore in a 0.875 wall measured 3.6) |
 | Sliding fit, printed on printed | 0.25 per side PLA, at least 0.4 per side PA6-CF, in the print plane only |
 | Minimum wall | 1.5 mm; hole to edge 1.5 mm |
 | Narrowest face | 1.2 mm |

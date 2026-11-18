@@ -130,7 +130,11 @@ def update_meshes(proj, stl_dir, plate_prefix=''):
             raise SystemExit('%s: the STL is not in the frame of the mesh in the project (bbox %s, project %s): orient it for the bed first'
                              % (name, ' x '.join('%.1f' % x for x in nsz), ' x '.join('%.1f' % x for x in osz)))
         # unchanged = same triangle count, same bbox size, volume within 0.001 mm³ (absolute: a relative check once skipped a 10 mm³ change)
-        if len(oldF) == len(F) and abs(volume(old, oldF) - volume(V, F)) < 1e-3 and all(abs((ohi[i] - olo[i]) - (nhi[i] - nlo[i])) < 1e-3 for i in range(3)): continue
+        # ... and the same vertices relative to the bbox corner: a hole moved inside the part keeps count, bbox and volume
+        # (2026-11-18: 4 lap screws moved 1.2 mm in two parts and the swap said "nothing changed")
+        same_pts = lambda: sorted((round(x - olo[0], 2), round(y - olo[1], 2), round(z - olo[2], 2)) for x, y, z in set(old)) == \
+            sorted((round(x - nlo[0], 2), round(y - nlo[1], 2), round(z - nlo[2], 2)) for x, y, z in set(V))
+        if len(oldF) == len(F) and abs(volume(old, oldF) - volume(V, F)) < 1e-3 and all(abs((ohi[i] - olo[i]) - (nhi[i] - nlo[i])) < 1e-3 for i in range(3)) and same_pts(): continue
         oc = [(olo[i] + ohi[i]) / 2 for i in range(2)] + [olo[2]]; nc = [(nlo[i] + nhi[i]) / 2 for i in range(2)] + [nlo[2]]
         off = [oc[i] - nc[i] for i in range(3)]
         files[path] = (om[:blk.start(2)] + mesh_xml([(x + off[0], y + off[1], z + off[2]) for x, y, z in V], F) + om[blk.end(2):]).encode()
