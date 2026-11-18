@@ -263,6 +263,11 @@ def _pockets(b, K):
                 s += sg * 0.005
             if abs(s - se) >= 2 * K['lead'] + 0.2:     # never left the material: a wider hole goes on, not a lead-in
                 continue
+            s += sg * 0.005                            # the walk above looks 0.1 mm ahead: finish in 0.005 mm steps, or the
+            for _ in range(40):                        # top reads 0.1 short and relief() cuts 0.64 deep instead of 0.54
+                if _ring(b, o, a, u, v, s + sg * 0.0005, K['r_lead'] + 0.02, 8) < 6:
+                    break
+                s += sg * 0.0005
             if abs(s - se) >= K['lead'] / 2:            # a plain open end (through hole) has no lead-in wall
                 out.append((o, a, sg, s))
     return out
@@ -274,8 +279,8 @@ def _relief_d(b, o, a, sg, s_top):
     q = s_top + sg * 0.01                              # just above the lead-in: inside the relief if there is one
     r = 0.25
     while r < 0.6:
-        if _ring(b, o, a, u, v, q, r, 16):             # material: the relief wall (any relief size, also the fallbacks)
-            return round(20 * r, 1)
+        if _ring(b, o, a, u, v, q, r, 16) >= 12:       # material all round: the relief wall (any size, also the fallbacks).
+            return round(20 * r, 1)                    # A wall on one side only (a spigot beside the pocket) is not a relief
         r += 0.005
     return 0                                           # air out to D12: the lead-in ends at the part's face
 
