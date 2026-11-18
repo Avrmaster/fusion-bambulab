@@ -108,7 +108,10 @@ def set_settings(proj, prefix, kvs, plate_prefix='', exact=False):
 
 def update_meshes(proj, stl_dir, plate_prefix=''):
     """Swap changed meshes for objects on the matching plates whose name matches an STL in stl_dir (same name, or the part name before ' - ').
-    Position, rotation, per-object settings and pauses are kept: the new mesh keeps the old bbox centre (xy) and bed contact (z)."""
+    Position, rotation, per-object settings and pauses are kept: the new mesh keeps the old bbox centre (xy) and bed contact (z).
+    The STL must be in the frame of the mesh it replaces. build() bakes the bed orientation ('+y', '-y', ...) into the vertices,
+    so a part built with one needs its STL turned the same way first (ORIENT[face]); an STL straight from CAD is refused when
+    its bbox is the old one with the axes swapped (2026-11-18: six parts stood on the wrong face after a raw swap)."""
     key = lambda n: n.split(' - ')[0].replace('.stl', '')
     stls = {key(f): os.path.join(stl_dir, f) for f in os.listdir(stl_dir) if f.endswith('.stl')}
     infos, files = load(proj); cfg = files['Metadata/model_settings.config'].decode(); model = files['3D/3dmodel.model'].decode(); changed = []
@@ -122,6 +125,10 @@ def update_meshes(proj, stl_dir, plate_prefix=''):
         old = [tuple(float(x) for x in q) for q in re.findall(r'<vertex x="([-\d.e]+)" y="([-\d.e]+)" z="([-\d.e]+)"', blk.group(2))]
         oldF = [tuple(int(x) for x in t) for t in re.findall(r'<triangle v1="(\d+)" v2="(\d+)" v3="(\d+)"', blk.group(2))]
         V, F = read_stl(src); (olo, ohi), (nlo, nhi) = bbox(old), bbox(V)
+        osz, nsz = [ohi[i] - olo[i] for i in range(3)], [nhi[i] - nlo[i] for i in range(3)]
+        if max(abs(osz[i] - nsz[i]) for i in range(3)) > 3.0 and max(abs(p - q) for p, q in zip(sorted(osz), sorted(nsz))) < 3.0:
+            raise SystemExit('%s: the STL is not in the frame of the mesh in the project (bbox %s, project %s): orient it for the bed first'
+                             % (name, ' x '.join('%.1f' % x for x in nsz), ' x '.join('%.1f' % x for x in osz)))
         # unchanged = same triangle count, same bbox size, volume within 0.001 mm³ (absolute: a relative check once skipped a 10 mm³ change)
         if len(oldF) == len(F) and abs(volume(old, oldF) - volume(V, F)) < 1e-3 and all(abs((ohi[i] - olo[i]) - (nhi[i] - nlo[i])) < 1e-3 for i in range(3)): continue
         oc = [(olo[i] + ohi[i]) / 2 for i in range(2)] + [olo[2]]; nc = [(nlo[i] + nhi[i]) / 2 for i in range(2)] + [nlo[2]]

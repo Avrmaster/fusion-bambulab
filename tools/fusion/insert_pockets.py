@@ -329,6 +329,7 @@ def relief(comp_name, dry=False, kind=None):
 
 
 WALL_TARGET, WALL_FLOOR = 4.0, 1.6        # mm round the lead-in: the target wherever there is room / the floor (print-design)
+WALL_PASS = 3.8                           # a pocket is listed under this: the D12 boss round a D4.4 lead-in passes
 
 
 def _others(po):
@@ -343,18 +344,71 @@ def _others(po):
     return out
 
 
+def _meshes(po):
+    """mesh bodies of the other occurrences (a printed part kept as an STL ref), world cm, triangles bucketed on the y-z
+    plane for a ray along +x: [(name, (lo, hi), grid, xs, ys, zs)]"""
+    out = []
+    for oc in _d().rootComponent.allOccurrences:
+        if oc.entityToken == po.entityToken or not oc.component.meshBodies.count:
+            continue
+        m = oc.transform2; t = m.translation
+        if any(abs(m.getCell(i, j) - (1 if i == j else 0)) > 1e-9 for i in range(3) for j in range(3)):
+            continue                                   # a turned mesh ref: not handled, stays invisible
+        for mb in oc.component.meshBodies:
+            if not mb.isLightBulbOn:                   # a mesh switched off by its own bulb is a retired ref
+                continue
+            dm = mb.displayMesh; c = dm.nodeCoordinatesAsDouble; idx = dm.nodeIndices
+            xs = [c[i] + t.x for i in range(0, len(c), 3)]; ys = [c[i + 1] + t.y for i in range(0, len(c), 3)]
+            zs = [c[i + 2] + t.z for i in range(0, len(c), 3)]
+            if not xs:
+                continue
+            grid = {}
+            for k in range(0, len(idx), 3):
+                tri = (idx[k], idx[k + 1], idx[k + 2])
+                y0 = min(ys[i] for i in tri); y1 = max(ys[i] for i in tri); z0 = min(zs[i] for i in tri); z1 = max(zs[i] for i in tri)
+                for gy in range(int(math.floor(y0 / _CELL)), int(math.floor(y1 / _CELL)) + 1):
+                    for gz in range(int(math.floor(z0 / _CELL)), int(math.floor(z1 / _CELL)) + 1):
+                        grid.setdefault((gy, gz), []).append(tri)
+            out.append(('%s / %s (mesh)' % (oc.component.name, mb.name), ((min(xs), min(ys), min(zs)), (max(xs), max(ys), max(zs))), grid, xs, ys, zs))
+    return out
+
+
+_CELL = 0.5
+
+
+def _in_mesh(m, p):
+    nm, (lo, hi), grid, xs, ys, zs = m
+    q = (p.x, p.y, p.z)
+    if any(q[i] < lo[i] or q[i] > hi[i] for i in range(3)):
+        return False
+    n = 0
+    for a, b, d in grid.get((int(math.floor(q[1] / _CELL)), int(math.floor(q[2] / _CELL))), ()):
+        y0, y1, y2 = ys[a] - q[1], ys[b] - q[1], ys[d] - q[1]; z0, z1, z2 = zs[a] - q[2], zs[b] - q[2], zs[d] - q[2]
+        den = (y1 - y0) * (z2 - z0) - (y2 - y0) * (z1 - z0)
+        if abs(den) < 1e-14:
+            continue
+        u = (-y0 * (z2 - z0) + z0 * (y2 - y0)) / den; v = (-(y1 - y0) * z0 + (z1 - z0) * y0) / den
+        if u < 0 or v < 0 or u + v > 1:
+            continue
+        if xs[a] + u * (xs[b] - xs[a]) + v * (xs[d] - xs[a]) > q[0]:
+            n += 1
+    return n % 2 == 1
+
+
 def wall(comp_name, target=None, floor=None, kind=None, neighbours=True):
     """read-only GATE: the plastic round every insert pocket of a part, measured radially from the lead-in over the insert's
-    length (48 directions, 3 depths). A hot insert softens a thin wall and bulges it, so the wall is `target` wherever there
-    is room and `floor` only where something really stops it. Rows (pockets under target), each with a verdict:
+    length (48 directions, 3 depths). A hot insert softens a thin wall and bulges it, so the wall is WALL_TARGET wherever
+    there is room and `floor` only where something really stops it. Rows (pockets under `target`, default WALL_PASS: the
+    D12 boss), each with a verdict:
       FAIL     under the floor
       GROW     under the target and in some thin direction nothing stands within the target: grow the part there
       BLOCKED  under the target, every thin direction ends at another body / a cavity of the part itself (named in `by`)
     `free` counts the thin directions with nothing in the way (static pose only: check moving neighbours yourself).
+    Neighbours are the solid bodies and the mesh bodies (a printed part kept as an STL ref) of every other occurrence.
     One part per call. Returns dict(part, pockets, fail, grow, blocked, rows)."""
     K = _k(kind); po = _occ(comp_name); assert po, 'no component %r' % comp_name
-    T = (target or WALL_TARGET) / 10; F = (floor or WALL_FLOOR) / 10; L = K['p']['insert_len'] / 10; RL = K['r_lead']
-    rows = []; n = 0; others = None
+    T = (target or WALL_PASS) / 10; F = (floor or WALL_FLOOR) / 10; L = K['p']['insert_len'] / 10; RL = K['r_lead']
+    rows = []; n = 0; others = None; meshes = None
     for b in [b for b in po.bRepBodies if b.isSolid]:
         for o, a, sg, s_top in _pockets(b, K):
             n += 1; u, v = _frame(a); thin = []
@@ -365,7 +419,7 @@ def wall(comp_name, target=None, floor=None, kind=None, neighbours=True):
                     while r < RL + w and _inside(b, _P(o, a, u, v, s, r, th)):
                         r += 0.01
                     w = min(w, r - RL)
-                if w < T - 0.006:
+                if w < T - 0.011:                     # the probe steps 0.1 mm: a wall of exactly T can read 0.1 short
                     thin.append((w, th))
             if not thin:
                 continue
@@ -373,18 +427,27 @@ def wall(comp_name, target=None, floor=None, kind=None, neighbours=True):
             if neighbours:
                 if others is None:
                     others = _others(po)
-                sm = s_top - sg * L / 2
+                    meshes = _meshes(po)
+                G = WALL_TARGET / 10                   # what stands within the design target, at any of the three depths
                 for w, th in thin:
-                    hit = None; r = RL + w + 0.02
-                    while r <= RL + T and hit is None:
-                        p = _P(o, a, u, v, sm, r, th)
-                        if _inside(b, p):
-                            hit = 'own cavity (hole / slot / pocket)'
-                        else:
-                            for nm, ob, bb in others:
-                                if bb.contains(p) and _inside(ob, p):
-                                    hit = nm; break
-                        r += 0.03
+                    hit = None
+                    for sm in (s_top - sg * K['lead'] / 2, s_top - sg * L * 0.6, s_top - sg * L):
+                        r = RL + w + 0.02
+                        while r <= RL + G and hit is None:
+                            p = _P(o, a, u, v, sm, r, th)
+                            if _inside(b, p):
+                                hit = 'own cavity (hole / slot / pocket)'
+                            else:
+                                for nm, ob, bb in others:
+                                    if bb.contains(p) and _inside(ob, p):
+                                        hit = nm; break
+                                if hit is None:
+                                    for m in meshes:
+                                        if _in_mesh(m, p):
+                                            hit = m[0]; break
+                            r += 0.03
+                        if hit:
+                            break
                     if hit is None:
                         free += 1
                     else:
