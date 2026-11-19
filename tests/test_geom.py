@@ -771,6 +771,8 @@ class Units(unittest.TestCase):
             g['run']('')
         with open(job['out'], encoding='utf-8') as f: env = json.load(f)
         if env['error']: raise AssertionError(env['error'])
+        # every call of every probe: the file names the call by the cursor as it was SENT, whatever the probe did with it
+        assert env['asked']['cursor_key'] == gate_fusion_rpc.cursor_key(kw.get('cursor')), probe
         return env
 
     @classmethod
@@ -925,6 +927,21 @@ class Census(Units):
         self.assertEqual((changed['facts'], changed['done'], changed['sig']), ({'stale': True}, False, self.env['sig']))
         self.assertEqual(self.whole(self.app, 'fusion_census', sig=self.env['sig'])[0], self.facts)
 
+    def test_the_openings_of_a_face_cut_by_the_clock_give_the_same_facts(self):
+        """A planar face with openings is walked with point tests; a call that runs out of time inside one face hands its
+        answers on, and the counts of that face are counted once."""
+        self.assertTrue(self.facts['openings'])
+        for limit in (3, 11):
+            steps, calls, _ = self.whole(self.app, 'fusion_census', args={'tape_limit': limit})
+            self.assertEqual(steps, self.facts, limit); self.assertGreater(calls, 3)
+        cut = None
+        cursor = None
+        for _ in range(50):                                                        # the first call that stops inside a face
+            env = self.unit(self.app, 'fusion_census', args={'tape_limit': 3}, cursor=cursor)
+            cursor = env['cursor']
+            if env['done'] or 'tape' in cursor: cut = env; break
+        self.assertFalse(cut['done']); self.assertIn(cut['cursor']['tape']['n'], (1, 2, 3)); self.assertEqual(cut['facts']['openings'], [])
+
     def test_groove_boss_ring_groove_and_broken_wall(self):
         plate = Solid((0.0, 0.0, 0.0), (40.0, 30.0, 6.0), holes=[
             {'o': (20.0, 30.0, 6.0), 'a': UP, 'segs': [(3.0, 6.0)]},              # a half round groove in the edge at y = 30
@@ -1059,6 +1076,62 @@ class Inserts(Units):
         turned = demo(place=placement(-20.0, 55.0, 3.0, turn=90.0))
         facts, _, _ = self.whole(turned, 'fusion_inserts', features=self.only('p2', 'p5'), sig=self.cenv['sig'])
         self.assertEqual(facts['pockets'], [self.p['p2'], self.p['p5']])
+
+    def test_a_neighbour_that_changes_between_two_calls_starts_the_pocket_again(self):
+        """Pocket p5 has a thin wall and a bought part 0.3 mm beyond it. A call stops inside the pocket after it looked at
+        that part. Then the part changes inside its box, or moves away: the answers in the cursor are of a neighbour that
+        is no more, and the pocket is measured again from its start."""
+        feats, sig = self.only('p5'), self.cenv['sig']
+        motor = lambda app: app.design.rootComponent.allOccurrences[1].bRepBodies[0]
+        one = self.whole(self.app, 'fusion_inserts', features=feats, sig=sig)[0]
+        self.assertEqual(one['pockets'][0]['walls']['lead_in']['min_beyond'], 'ref motor')
+        early = self.unit(self.app, 'fusion_inserts', features=feats, sig=sig, args={'tape_limit': 100})['cursor']
+        self.assertEqual((early['env'], early['asked']), (None, {}))                   # only the part was asked so far: its signature holds it
+        cur = self.unit(self.app, 'fusion_inserts', features=feats, sig=sig, args={'tape_limit': 10500})['cursor']
+        self.assertEqual((len(cur['env']), sorted(cur['asked'])), (16, ['1']))          # the motor answered: its state goes with the cursor
+        same = self.unit(demo(), 'fusion_inserts', features=feats, sig=sig, cursor=cur)
+        self.assertEqual(same['facts'], one); self.assertFalse([n for n in same['notes'] if 'measured again' in n])
+        changed = demo()
+        motor(changed).volume += 0.5                                                 # a cut inside the same box
+        env = self.unit(changed, 'fusion_inserts', features=feats, sig=sig, cursor=cur)
+        self.assertEqual(env['facts'], one); self.assertEqual(len([n for n in env['notes'] if 'pocket' in n and 'is measured again from its start' in n]), 1)
+        moved = demo()
+        motor(moved).solid = Solid((40.0, 46.0, 0.0), (60.0, 56.0, 12.0))             # 5.7 mm further away: out of the room the wall would need
+        free = self.whole(moved, 'fusion_inserts', features=feats, sig=sig)[0]
+        self.assertNotEqual(free['pockets'][0]['walls']['lead_in']['min_beyond'], 'ref motor')
+        env = self.unit(moved, 'fusion_inserts', features=feats, sig=sig, cursor=cur)
+        self.assertEqual(env['facts'], free); self.assertTrue([n for n in env['notes'] if 'is measured again from its start' in n])
+        step = cur                                                                   # a neighbour that is another one in every call: counted, then an error
+        for n in (1, 2):
+            app = demo(); motor(app).volume += 0.1 * n
+            step = self.unit(app, 'fusion_inserts', features=feats, sig=sig, cursor=step, args={'tape_limit': 10500})['cursor']
+            self.assertEqual(step['again'], n)
+        app = demo(); motor(app).volume += 0.3
+        with self.assertRaises(AssertionError) as e: self.unit(app, 'fusion_inserts', features=feats, sig=sig, cursor=step, args={'tape_limit': 10500})
+        self.assertIn('met other bodies than the call before in three calls in a row', str(e.exception))
+
+    def test_a_pocket_cut_by_the_clock_gives_the_walls_of_one_call(self):
+        """One pocket is thousands of point tests. A call that runs out of time inside it hands the answers on in its
+        cursor, and the next call goes on with the same pocket: the joined facts are the facts of one call."""
+        feats = self.only('p1', 'p3', 'p6')
+        one = self.whole(self.app, 'fusion_inserts', features=feats, sig=self.cenv['sig'])[0]
+        for limit in (700, 4001):
+            steps, calls, _ = self.whole(self.app, 'fusion_inserts', features=feats, sig=self.cenv['sig'], args={'tape_limit': limit})
+            self.assertEqual(steps, one, limit); self.assertGreater(calls, 3)
+        first = self.unit(self.app, 'fusion_inserts', features=feats, sig=self.cenv['sig'], args={'tape_limit': 500})
+        self.assertEqual((first['done'], first['facts']['pockets'], first['cursor']['i'], first['cursor']['tape']['n']), (False, [], 0, 500))
+        none = self.unit(self.app, 'fusion_inserts', features=feats, sig=self.cenv['sig'], deadline_s=0.001)       # no time: 48 points, so every call moves on
+        self.assertEqual((none['done'], none['cursor']['i'], none['cursor']['tape']['n']), (False, 0, 48))
+        bad = dict(first['cursor'], tape=dict(first['cursor']['tape'], sum=first['cursor']['tape']['sum'] + 1))    # answers to other questions: from the start
+        env = self.unit(self.app, 'fusion_inserts', features=feats, sig=self.cenv['sig'], cursor=bad)
+        self.assertEqual(env['facts']['pockets'], one['pockets']); self.assertTrue(any('measured again from its start' in n for n in env['notes']))
+        cur = bad                                                                        # the same every call: the third call in a row ends the unit
+        for n in (1, 2):
+            env = self.unit(self.app, 'fusion_inserts', features=feats, sig=self.cenv['sig'], cursor=cur, args={'tape_limit': 300})
+            self.assertEqual((env['done'], env['cursor']['i'], env['cursor']['again']), (False, 0, n))
+            cur = dict(env['cursor'], tape=dict(env['cursor']['tape'], sum=env['cursor']['tape']['sum'] + 1))
+        with self.assertRaises(AssertionError) as e: self.unit(self.app, 'fusion_inserts', features=feats, sig=self.cenv['sig'], cursor=cur, args={'tape_limit': 300})
+        self.assertIn('did not ask the same questions in three calls in a row', str(e.exception))
 
     def test_cursor_stale_part_and_missing_census(self):
         steps, calls, _ = self.whole(self.app, 'fusion_inserts', features=self.only('p1', 'p3', 'p6'), sig=self.cenv['sig'], args={'limit': 1})
@@ -1270,6 +1343,35 @@ class Thin(Units):
         facts, _, _ = self.whole(app, 'fusion_thin')
         self.assertEqual(facts['sides_unread'], 2)                                       # the riser itself, and the ledge that meets it
         self.assertEqual(sorted((str(f.get('id')), 'sides' in f) for f in facts['faces'] if f['width'] < 1.0), [('102', True), ('None', False), ('None', False)])
+
+    def test_only_the_listed_sides_cost_a_point_test(self):
+        """A toothed outline has thousands of edges and twelve rows are listed: the sign of a turn (one point test) is asked
+        for those twelve only, and they are the rows the walk over every edge would have listed."""
+        g = {}
+        text = ''
+        for name in ('_geom.py', 'fusion_thin.py'):
+            with open(os.path.join(ROOT, 'tools', 'gate', 'probes', name), encoding='utf-8') as f: text += f.read() + '\n'
+        exec(compile(text, 'thin', 'exec'), g)
+        asked = []
+        g['adsk'] = types.SimpleNamespace(fusion=types.SimpleNamespace(PointContainment=types.SimpleNamespace(PointInsidePointContainment=0)))
+        g['gate_point'] = lambda p: p
+        g['gate_mm'] = lambda p: p
+        body = types.SimpleNamespace(pointContainment=lambda p: (asked.append(p), 0 if p[0] > 0 else 2)[1])
+        this = types.SimpleNamespace(tempId=1)
+        edges = []
+        for k in range(300):
+            nrm = (1.0, 0.0, 0.0) if k % 2 else (-1.0, 0.0, 0.0)
+            other = types.SimpleNamespace(tempId=100 + k, evaluator=types.SimpleNamespace(getNormalAtPoint=lambda p, nrm=nrm: (True, V(*nrm))))
+            seam = k % 50 == 7                                                           # a seam: the face meets itself there, no row
+            e = types.SimpleNamespace(faces=Coll([this] if seam else [this, other]),
+                                      evaluator=types.SimpleNamespace(getPointAtParameter=lambda t, k=k: (True, (float(k % 3 - 1), 0.0, float(k)))))
+            edges.append((0.1 + ((k * 37) % 101) / 100.0 + (0.0 if k % 4 else 0.00001), e, 0.0, 1.0))
+        rows = g['_thn_sides'](body, 1, (0.0, 0.0, 1.0), edges)
+        self.assertEqual(len(rows), 12); self.assertEqual(len(asked), 12)                # it was 294: one for every edge with a neighbour
+        self.assertEqual([r[0] for r in rows], sorted((r[0] for r in rows), reverse=True))
+        every = g['_thn_sides'](body, 1, (0.0, 0.0, 1.0), edges, limit=10 ** 6)          # the walk over every edge, cut to twelve as before
+        self.assertEqual(len(every), 294); self.assertEqual(rows, every[:12])
+        self.assertEqual(set(r[1] for r in every), {90.0, -90.0})
 
     def test_the_cursor_gives_the_same_facts_and_the_edges_come_last(self):
         _, app = self.bar()

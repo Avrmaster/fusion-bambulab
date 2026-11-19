@@ -37,7 +37,9 @@ def probe(job):
     "n_bodies": the bodies of other groups whose bounding box is within the margin, and "groups": how many motion groups
     the document declares (0: nothing can be checked for any part, the judge says so). A part at the root of the document
     is matched to its group by the component name, every other part by its occurrence path.
-    The cursor is the index of the next body in that list."""
+    The cursor is the index of the next body in that list.
+    One measurement between two bodies is one API call and cannot be cut. A call stops before the next body when less
+    time is left than 1.5 times the slowest measurement of this call (at least 2.5 s); the facts are the same."""
     design = gate_design(job)
     occ, comp, body = gate_body(design, job)
     sig = gate_signature(body)
@@ -63,11 +65,13 @@ def probe(job):
     mm = adsk.core.Application.get().measureManager
     start = int(job.get('cursor') or 0)
     i = start
+    slowest = 0.0
     while i < len(world):
-        if i > start and gate_time_up(job, 2.5):
+        if i > start and gate_time_up(job, max(2.5, 1.5 * slowest)):
             return {'facts': facts, 'done': False, 'cursor': i, 'sig': sig}
         rec = world[i]
         i += 1
+        t0 = time.time()
         centre = tuple((rec['box'][0][k] + rec['box'][1][k]) / 2.0 for k in range(3))
         row = {'name': rec['name'], 'kind': rec['kind'], 'part': rec['part'], 'group': rec['group'], 'approx': rec['mesh']}
         p1 = p2 = None
@@ -77,6 +81,7 @@ def probe(job):
                 gap, p1, p2 = res.value * 10.0, gate_mm(res.positionOne), gate_mm(res.positionTwo)
             except Exception as e:
                 row['error'], row['approx'] = ('%s: %s' % (type(e).__name__, e))[:160], True
+            slowest = max(slowest, time.time() - t0)
         if p1 is None:                                                  # a mesh, or a measurement that failed: the boxes
             gap = box_gap(part_box[0], part_box[1], rec['box'][0], rec['box'][1])
             p2 = box_nearest(rec['box'][0], rec['box'][1], box_nearest(part_box[0], part_box[1], centre))

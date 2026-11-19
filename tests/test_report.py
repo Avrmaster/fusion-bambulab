@@ -64,7 +64,7 @@ class Report(Reported):
     def test_the_report_holds_what_the_interface_promises(self):
         r = self.report(intent=[BRACKET], unreachable=['other: document \'Other\' is not open'])
         self.assertEqual(sorted(r), sorted(['run', 'command', 'stage', 'time', 'mode', 'audit', 'intent', 'parts', 'findings', 'questions', 'waivers', 'deferred',
-                                            'unreachable', 'params', 'totals', 'exit', 'groups']))
+                                            'unreachable', 'params', 'totals', 'exit', 'groups', 'over_budget']))
         self.assertEqual((r['run'], r['command'], r['stage'], r['mode'], r['audit'], r['intent'], r['exit']), (self.plan['run'], 'run', 'design', 'observe', False, [BRACKET], 1))
         self.assertEqual(r['totals'], {'block_open': 3, 'attest_open': 3, 'waived': 0, 'inherited': 0, 'not_run': 0, 'info': 0,
                                        'by_verdict': {'FAIL': 1, 'BLOCKED': 1, 'GROW': 1, 'NOT_RUN': 0}, 'by_facts': 0, 'waiting': 0})

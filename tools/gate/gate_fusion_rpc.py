@@ -49,7 +49,34 @@ JOB keys (new_job fills them):
 Timeouts: HTTP timeout = deadline_s + 10. After a timeout: ONE ping of 5 s; no answer = FusionDown, the caller stops
 (exit 4) and never sends a second call into a hung Fusion. The ping is a one-line read-only SCRIPT, not an MCP
 initialize: the add-in's HTTP side can answer an initialize while Fusion's main thread hangs in a script, an autosave
-or a mesh, and only a script that comes back shows that Fusion can run the next unit."""
+or a mesh, and only a script that comes back shows that Fusion can run the next unit.
+
+A call that got no answer is not forgotten. Two notes are kept of it:
+  - gate/run/pending.json, written before a call is sent: which unit, of which run, with which signature and cursor,
+    sent when. ONE file per project: it says "Fusion may still be busy with this call". It is removed when the answer
+    was read, or when a later call of any unit found that the call is over;
+  - the unit's own record in its plan (gate_plan: "flight" = {"sent", "cursor"}), written at the same moment and
+    removed only when THIS unit's answer was processed. A scan or an export between two runs clears pending.json;
+    the unit still knows which call it is waiting for.
+Before a call is sent, settle() asks what became of the earlier one:
+  - the result file of exactly that call is there (the envelope's "asked" names the run, the send time, the signature
+    and the digest of the cursor it was sent with) and holds no error: when the unit that is about to be sent is the
+    same one, the file is ADOPTED as its answer, with a note that says it came late and how long the unit worked.
+    Nothing is sent. A result file is removed only after it was read here and refused, with the reason. A unit that
+    has no signature (fusion_scan: it reads the signatures) is adopted only while its file is younger than
+    LATE_MAX_AGE_S: nothing else ties such an answer to the model as it is now;
+  - the file is there and holds an error: the error is that call's answer (the caller counts it as a failed call,
+    with the text of the probe);
+  - no such file, pending.json is there, and Fusion does not run the ping script: FusionDown, nothing is sent: a
+    second copy of a unit is never put behind the first. The text says which of the two it is: something listens at
+    the endpoint (Fusion is busy with the unit, or hangs), or nothing does (Fusion is not running);
+  - no such file, and Fusion answers (or pending.json was cleared by a call that saw it answer): the unit ended
+    without a result. The caller counts that (gate_plan) and sends the unit again, or gives it up after two such
+    calls in a row.
+A connection that breaks while a unit works (an error from the transport, no result file) is followed by the same
+one ping: no answer means the unit may still be working, and the call ends like a timeout.
+The envelope's "elapsed_s" against the job's "deadline_s" says by how much a call ran over its budget: gate_plan
+keeps one line per such call, and the facts file of the unit has it as a note."""
 import ast, http.client, json, os, socket, time, urllib.error, urllib.parse, urllib.request
 from gate_common import GateError, fusion_tool_path, tools_dir
 
@@ -85,12 +112,21 @@ FUSION_PROBES = ('fusion_scan', 'fusion_census', 'fusion_inserts', 'fusion_beari
 WRITING_PROBES = ('fusion_export',)            # every other unit is sent with readOnly true
 CONNECT_S = 10                                 # the MCP initialize before the one call
 ENVELOPE_KEYS = ('job', 'doc', 'doc_version', 'part', 'sig', 'probe', 'facts', 'done', 'cursor', 'elapsed_s', 'error', 'open_documents')
+PENDING = 'pending.json'                       # gate/run/pending.json: the call that was sent and whose answer was not read yet
+LATE_NOTE = 'late answer'                      # how the note of an adopted result file begins
+LATE_MAX_AGE_S = 600                           # a late answer of a unit with no signature (fusion_scan) is adopted only this young
+NO_FILE = 'it left no result file'             # why a call that got no answer left nothing to adopt
+HELD_ERROR = 'its result file holds an error: '
 LOOPBACK = ('127.0.0.1', 'localhost', '::1')   # the only hosts a unit is sent to
 _OPENER = urllib.request.build_opener(urllib.request.ProxyHandler({}))   # Fusion is local: never through http_proxy
 
 
 class FusionDown(GateError):
-    """Fusion does not answer (no server, or a timeout followed by a dead ping). The run stops with exit 4."""
+    """Fusion does not answer (no server, or a timeout followed by a dead ping). The run stops with exit 4.
+    timed_out  True when THIS call sent a unit that got no answer (its time ran out, or the connection broke and
+               nothing was written): the unit may still be working, and gate/run/pending.json names it. False when
+               nothing was sent (no server, or an earlier unit still works)."""
+    timed_out = False
 
 
 def probes_dir():
@@ -306,6 +342,20 @@ def http_ping(url, timeout_s=PING_S):
     return isinstance(res, dict) and 'result' in res and not (res.get('result') or {}).get('isError')
 
 
+def http_listening(url, timeout_s=PING_S):
+    """Does anything accept a connection at the endpoint? False only when the connection is refused or the address
+    cannot be reached: no server, Fusion is not running or its MCP server is off. A server that accepts and then says
+    nothing counts as listening: Fusion is busy or hangs. One TCP connect, nothing is sent. Never raises."""
+    try:
+        parts = urllib.parse.urlsplit(str(url))
+        with socket.create_connection((parts.hostname, parts.port or 80), timeout=timeout_s):
+            return True
+    except (socket.timeout, TimeoutError):
+        return True
+    except (OSError, ValueError, TypeError):
+        return False
+
+
 def _made_envelope(job, error):
     return {'job': job['id'], 'doc': job['doc'], 'doc_version': None, 'part': job['part'], 'sig': None, 'probe': job['probe'],
             'facts': {}, 'done': False, 'cursor': job['cursor'], 'elapsed_s': 0.0, 'error': error, 'open_documents': []}
@@ -338,41 +388,239 @@ def _read_envelope(job):
     return env, None
 
 
-def run_unit(job, url, transport=None, pinger=None):
+def pending_path(job):
+    """gate/run/pending.json for the project this job belongs to (its "out" is gate/run/<run>/units/<id>.json)."""
+    return os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(job['out']))), PENDING)
+
+
+def cursor_key(cursor):
+    """16 hex characters for a cursor (any JSON value): two calls of a unit are the same call only with the same one.
+    The unit takes the same digest of the cursor as it arrived (probes/_geom.py cursor_digest, "asked"."cursor_key")."""
+    from probes import _geom
+    return _geom.cursor_digest(cursor)
+
+
+def _mark_sent(job):
+    """Note the call that is about to be sent. No absolute path goes into the file."""
+    path = pending_path(job)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    row = {'run': job['run'], 'id': job['id'], 'probe': job['probe'], 'part': job['part'], 'doc': job['doc'], 'sig': job['sig'],
+           'cursor': cursor_key(job['cursor']), 'sent': job['sent'], 'deadline_s': job['deadline_s'],
+           'file': os.path.relpath(job['out'], os.path.dirname(path)).replace(os.sep, '/')}
+    with open(path + '.tmp', 'w', encoding='utf-8') as f:
+        json.dump(row, f, sort_keys=True)
+    os.replace(path + '.tmp', path)
+
+
+def _clear_sent(job):
+    try:
+        os.remove(pending_path(job))
+    except OSError:
+        pass
+
+
+def waiting_call(job=None, path=None):
+    """The call that was sent and whose answer was never read (gate/run/pending.json), or None. A file that cannot be
+    read is no call: the unit it named cannot be found again. job: any job of the project; or path: the file itself
+    (gate_common.gate_path(root, "run", PENDING)), for `gate.py status` and `doctor`, which have no job."""
+    try:
+        with open(path or pending_path(job), encoding='utf-8') as f:
+            row = json.load(f)
+    except (OSError, ValueError):
+        return None
+    if not isinstance(row, dict) or not isinstance(row.get('file'), str) or not isinstance(row.get('sent'), (int, float)) or isinstance(row.get('sent'), bool):
+        return None
+    return row
+
+
+def _same_call(job, waiting):
+    return all(waiting.get(k) == job.get(k) for k in ('run', 'id', 'probe', 'part', 'sig')) and waiting.get('cursor') == cursor_key(job['cursor'])
+
+
+def _wrote(path, waiting):
+    """Did the call `waiting` names write the result file at `path`? (It says so in its "asked".)"""
+    try:
+        with open(path, encoding='utf-8') as f:
+            env = json.load(f)
+    except (OSError, ValueError):
+        return False
+    asked = env.get('asked') if isinstance(env, dict) else None
+    return isinstance(asked, dict) and asked.get('sent') == waiting.get('sent') and asked.get('run') == waiting.get('run') and env.get('job') == waiting.get('id')
+
+
+def late_answer(job, waiting):
+    """(envelope, None) when the result file of `job` is the answer of the call `waiting` describes ({"sent": its send
+    time}) and can stand for the answer of the call that is about to be sent; else (None, why not). It can when the
+    file names this job, was written by that very call (same run, same send time), for the signature and the cursor
+    this job carries (the digest the unit took of its cursor before its probe ran), not before the call was sent, and
+    holds no error. The answer of a unit with no signature must also be younger than LATE_MAX_AGE_S.
+    The error is looked at last: a `why` that begins with HELD_ERROR says the file IS this call's answer."""
+    if not os.path.isfile(job['out']):
+        return None, NO_FILE
+    env, why = _read_envelope(job)
+    if env is None:
+        return None, why or 'its result file cannot be read'
+    asked = env.get('asked')
+    if not isinstance(asked, dict):
+        return None, 'its result file does not say which call wrote it'
+    if asked.get('run') != job['run'] or env.get('probe') != job['probe'] or env.get('part') != job['part']:
+        return None, 'the result file belongs to another unit'
+    if asked.get('sent') != waiting.get('sent'):
+        return None, 'the result file was written by another call of this unit'
+    if asked.get('sig') != job['sig']:
+        return None, 'the result file was written for another signature'
+    if asked.get('cursor_key') != cursor_key(job['cursor']):
+        return None, 'the result file was written for another cursor'
+    try:
+        written = os.path.getmtime(job['out'])
+    except OSError:
+        return None, NO_FILE
+    if written < float(waiting['sent']) - 2.0:
+        return None, 'the result file is older than the call'
+    if env.get('error'):
+        return None, HELD_ERROR + (str(env['error']).strip().splitlines() or [''])[0][:300]
+    if job.get('sig') is None and time.time() - written > LATE_MAX_AGE_S:
+        return None, ('the result file is %.0f s old and nothing ties an answer of %s to the model as it is now (it carries no signature): '
+                      'it is not used, the unit runs again' % (time.time() - written, job['probe']))
+    return env, None
+
+
+def _late_mark(env, job, sent):
+    """The envelope of a result file that was read after its call had been given up, marked as such."""
+    worked = env.get('elapsed_s') if isinstance(env.get('elapsed_s'), (int, float)) and not isinstance(env.get('elapsed_s'), bool) else 0.0
+    env['late'] = {'sent': sent, 'elapsed_s': worked, 'budget_s': job['deadline_s']}
+    return worked
+
+
+def settle(job, url, pinger=None, flight=None):
+    """What became of the call that was sent earlier and never answered (see the top). Called before `job` is sent.
+
+    flight  the unit's own record of such a call ({"sent": its send time, "cursor": cursor_key of the cursor it was
+            sent with}; gate_plan keeps it in the plan), or None. With it the unit finds its result file also after
+            another gate command cleared gate/run/pending.json.
+
+    Returns (state, envelope, why):
+      "none"   no call is waiting
+      "late"   the waiting call was this very job and its result file is adopted: `envelope` is the unit's answer, with
+               "late": {"sent", "elapsed_s", "budget_s"} and a note that begins with LATE_NOTE. Nothing must be sent
+      "lost"   the waiting call was this very job, it is over, and it left nothing that can be used (`why` says what).
+               When the file is that call's own answer and holds an error, `envelope` is that error envelope (with
+               "late"); else None
+      "other"  another unit was waiting and is over
+    gate/run/pending.json is removed in every one of these when it named a call that is over. Raises FusionDown, with
+    nothing sent and the marker kept, while the call it names has written no result and Fusion runs no ping script."""
+    pinger = pinger or http_ping
+    waiting = waiting_call(job)
+    mine = waiting is not None and _same_call(job, waiting)
+    sent = waiting.get('sent') if mine else None
+    if sent is None and isinstance(flight, dict) and isinstance(flight.get('sent'), (int, float)) and not isinstance(flight.get('sent'), bool) \
+            and flight.get('cursor') == cursor_key(job['cursor']):
+        sent = flight['sent']
+    why = None
+    if sent is not None:
+        env, why = late_answer(job, {'sent': sent})
+        if env is not None:
+            if mine:
+                _clear_sent(job)
+            worked = _late_mark(env, job, sent)
+            note = '%s: the call got no answer in time and was not sent again; its result file was read by the next call. The unit worked %.1f s (budget %g s)' % (
+                LATE_NOTE, worked, job['deadline_s'])
+            env['notes'] = [n for n in (env.get('notes') if isinstance(env.get('notes'), list) else []) if n != note] + [note]
+            return 'late', env, None
+    if waiting is not None:
+        out = os.path.join(os.path.dirname(pending_path(job)), *str(waiting['file']).split('/'))
+        if not _wrote(out, waiting) and not pinger(url, PING_S):
+            who = 'unit %s (%s on %s), sent %.0f s ago, has written no result' % (
+                waiting.get('id'), waiting.get('probe'), waiting.get('part') or waiting.get('doc'), max(0.0, time.time() - float(waiting['sent'])))
+            if http_listening(url, PING_S):
+                raise FusionDown('%s and Fusion does not answer a %d s ping: it is still working, or Fusion hangs. '
+                                 'Nothing was sent (a second copy is never put behind a running unit): call again when Fusion answers' % (who, PING_S))
+            raise FusionDown('%s and nothing listens at %s: Fusion is not running, or its MCP server is off (Preferences > General > API > Fusion MCP Server). '
+                             'Nothing was sent. Start Fusion and call again: the unit is then looked for once more' % (who, url))
+        _clear_sent(job)
+    if sent is None:
+        return ('none' if waiting is None else 'other'), None, None
+    refused = None
+    if why and why.startswith(HELD_ERROR):
+        refused, _ = _read_envelope(job)
+        if refused is not None:
+            _late_mark(refused, job, sent)
+    return 'lost', refused, why
+
+
+def run_unit(job, url, transport=None, pinger=None, flight=None, before_send=None, settled=False):
     """Run one call of one unit and return its envelope.
 
-    job        a JOB dict of new_job()
-    url        endpoint(layout)
-    transport  function (url, script, timeout_s) -> the dict of http_transport(); None = http_transport.
-               Tests pass tests/fake_fusion.FakeFusion().transport
-    pinger     function (url, timeout_s) -> bool; None = http_ping
+    job          a JOB dict of new_job()
+    url          endpoint(layout)
+    transport    function (url, script, timeout_s) -> the dict of http_transport(); None = http_transport.
+                 Tests pass tests/fake_fusion.FakeFusion().transport
+    pinger       function (url, timeout_s) -> bool; None = http_ping
+    flight       the unit's own record of a call that never answered (see settle())
+    before_send  function (job) called when job["sent"] is set and gate/run/pending.json is written, just before the
+                 call goes out: gate_plan notes the call in the plan there
+    settled      True: the caller has called settle() for this job itself and acted on it
 
-    Removes an old result file, sends build_script(job) with timeout job["deadline_s"] + HTTP_EXTRA_S, then reads
-    job["out"]. Returns the envelope {"job", "doc", "doc_version", "part", "sig", "probe", "facts", "done", "cursor",
-    "elapsed_s", "error", "open_documents"}. When no file was written the envelope is made here with "done": False and
-    "error" saying why ("no result file", the tool's error text, or "timeout").
+    First settle(): a call that was sent earlier and never answered. Its result file, when it is the answer of this
+    very job, is returned as the envelope and nothing is sent ("late" in the envelope says so). While that call still
+    works in Fusion, FusionDown is raised and nothing is sent.
+    Else: removes an old result file (it was read and refused by settle(), or it is the answer of an earlier call that
+    was read then), notes the call in gate/run/pending.json, sends build_script(job) with timeout job["deadline_s"] +
+    HTTP_EXTRA_S, then reads job["out"]. Returns the envelope {"job", "doc", "doc_version", "part", "sig", "probe",
+    "facts", "done", "cursor", "elapsed_s", "error", "open_documents"}. When no file was written the envelope is made
+    here with "done": False and "error" saying why ("no result file", the tool's error text, or "timeout": then also
+    "timeout": True).
     Which documents are open: every envelope says so in "open_documents"; `gate.py doctor` asks with a fusion_scan job
     whose args are {"limit": 0}.
-    Raises FusionDown when there is no server, or when the call timed out and the one ping after it got no answer."""
+    Raises FusionDown when there is no server, or when the call got no answer (a timeout, or a transport error with no
+    result file) and the one ping after it got none either (then with timed_out True, and the note of the call stays
+    for the next call's settle())."""
     transport = transport or http_transport                 # looked up at call time: a test may replace the module's own
     pinger = pinger or http_ping
+    if not settled:
+        state, env, _ = settle(job, url, pinger, flight)
+        if state == 'late':
+            return env
     job['sent'] = time.time()                               # the unit counts its budget from here (same machine, same clock)
     script = build_script(job)
     for old in (job['out'], job['out'] + '.tmp'):
         if os.path.exists(old):
             os.remove(old)
     os.makedirs(os.path.dirname(job['out']), exist_ok=True)
+    _mark_sent(job)
+    if before_send is not None:
+        before_send(job)
     res = transport(url, script, job['deadline_s'] + HTTP_EXTRA_S)
     if res.get('down'):
+        _clear_sent(job)                                    # nothing reached Fusion
         raise FusionDown('Fusion does not answer at %s (%s). Is Fusion running, with Preferences > General > API > Fusion MCP Server on?'
                          % (url, res.get('error') or 'no server'))
     if res.get('timeout'):
         if not pinger(url, PING_S):                         # ONE ping; never a second call into a Fusion that hangs
-            raise FusionDown('unit %s (%s on %s) got no answer within %.0f s and Fusion does not answer a %d s ping: stopped, nothing else was sent'
-                             % (job['id'], job['probe'], job['part'] or job['doc'], job['deadline_s'] + HTTP_EXTRA_S, PING_S))
+            down = FusionDown('unit %s (%s on %s) got no answer within %.0f s and Fusion does not answer a %d s ping: stopped, nothing else was sent. '
+                              'The unit may still be working: the next call reads its result file when there is one'
+                              % (job['id'], job['probe'], job['part'] or job['doc'], job['deadline_s'] + HTTP_EXTRA_S, PING_S))
+            down.timed_out = True
+            raise down
         env, _ = _read_envelope(job)                        # the script may have finished while the answer was late
-        return env if env is not None else _made_envelope(job, 'timeout')
+        _clear_sent(job)
+        if env is None:
+            env = _made_envelope(job, 'timeout')
+            env['timeout'] = True
+        return env
     env, why = _read_envelope(job)
+    if env is None and not res.get('ok') and not os.path.isfile(job['out']) and not pinger(url, PING_S):
+        # the connection broke, nothing was written, and Fusion runs no ping: the unit may still be working in there
+        down = FusionDown('unit %s (%s on %s): the connection ended without an answer (%s), no result was written and Fusion does not answer a %d s ping: '
+                          'stopped, nothing else was sent. The unit may still be working: the next call reads its result file when there is one'
+                          % (job['id'], job['probe'], job['part'] or job['doc'], _one_line(res.get('error') or 'no answer'), PING_S))
+        down.timed_out = True
+        raise down
+    _clear_sent(job)
     if env is None:
         return _made_envelope(job, why or res.get('error') or 'no result file')
     return env
+
+
+def _one_line(text, n=160):
+    return (str(text).strip().splitlines() or [''])[0][:n]

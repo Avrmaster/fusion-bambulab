@@ -2,7 +2,8 @@
 (fusion_bearings, fusion_openings, fusion_screws, fusion_gap, fusion_thin, fusion_export) run as real unit scripts against
 a small fake `adsk` made of boxes and tubes. The fake proves the control flow and the arithmetic of the probes, not the
 Fusion API: every call it stands in for is listed in the probes' package notes as untested inside Fusion."""
-import json, math, os, shutil, struct, sys, tempfile, types, unittest
+import json, math, os, shutil, struct, sys, tempfile, time, types, unittest
+from unittest import mock
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 GATE = os.path.join(ROOT, 'tools', 'gate')
 sys.path.insert(0, GATE)
@@ -353,6 +354,60 @@ class Gaps(unittest.TestCase):
         self.assertEqual(R.box_of(R.box_corners((1, 2, 3), (4, 5, 6))), ((1, 2, 3), (4, 5, 6)))
         self.assertEqual(R.box_nearest((0, 0, 0), (1, 1, 1), (5, 0.5, -2)), (1, 0.5, 0))
 
+    def test_a_cover_is_asked_once_and_counted_twice(self):
+        """face_cover() = face_first() + face_cover_of(). The cover of the other ring with two offsets is the first list cut
+        to two offsets, so the points of a ring face are asked once for both questions."""
+        import random
+        rnd = random.Random(11)
+        offsets = R.cover_offsets(0.05, 2.0)
+        self.assertEqual((len(offsets), offsets[:3], offsets[-1]), (21, [0.02, 0.07, 0.17], 1.97))
+        for case in range(40):
+            z0 = rnd.choice([0.0, 0.03, 0.06, 0.5, 1.5, 2.5])                      # where the body begins above the face
+            r_in, r_out = sorted((rnd.uniform(0.0, 30.0), rnd.uniform(5.0, 40.0)))
+            a0, a1 = sorted((rnd.uniform(0.0, 6.3), rnd.uniform(0.0, 6.3)))
+            def inside(p, z0=z0, r_in=r_in, r_out=r_out, a0=a0, a1=a1):
+                return p[2] > z0 and r_in < math.hypot(p[0], p[1]) < r_out and a0 <= math.atan2(p[1], p[0]) % (2 * math.pi) <= a1
+            pts = R.annulus_points((0.0, 0.0, 0.0), Z, 12.5, 15.0, 36, 2)
+            first = R.face_first(pts, inside, Z, offsets)
+            self.assertEqual(len(first), len(pts)); self.assertTrue(all(i is None or 0 <= i < 21 for i in first))
+            self.assertEqual(R.face_cover_of(pts, first, offsets, 0.05), R.face_cover(pts, inside, Z, offsets, 0.05), case)
+            self.assertEqual(R.face_cover_of(pts, R.face_first_cut(first, 2), offsets[:2], 0.05), R.face_cover(pts, inside, Z, offsets[:2], 0.05), case)
+            asked = []
+            R.face_first(pts, lambda p: (asked.append(p), inside(p))[1], Z, offsets)
+            self.assertEqual(len(asked), sum(21 if i is None else i + 1 for i in first))       # 21 questions for a point with nothing in front of it
+        self.assertEqual(R.face_first_cut([0, 1, 2, None, 20], 2), [0, 1, None, None, None])
+
+    def test_the_slab_in_front_of_a_face_and_the_box_of_a_seat_say_no_without_a_point(self):
+        import random
+        rnd = random.Random(3)
+        offsets = R.cover_offsets(0.05, 2.0)
+        pts = R.annulus_points((0.0, 0.0, 10.0), Z, 40.0, 42.5, 105, 2)
+        lo, hi = R.slab_box(pts, Z, offsets)
+        self.assertAlmostEqual(lo[2], 10.02); self.assertAlmostEqual(hi[2], 11.97); self.assertLess(hi[0], 42.5); self.assertGreater(lo[0], -42.5)
+        for _ in range(300):                                                       # a box that does not reach the slab holds none of its points
+            c = [rnd.uniform(-60, 60), rnd.uniform(-60, 60), rnd.uniform(0, 20)]
+            h = [rnd.uniform(0.1, 30), rnd.uniform(0.1, 30), rnd.uniform(0.1, 6)]
+            blo, bhi = tuple(c[i] - h[i] for i in range(3)), tuple(c[i] + h[i] for i in range(3))
+            if R.box_gap(blo, bhi, lo, hi) > 0.0:
+                box_has = lambda p: all(blo[i] <= p[i] <= bhi[i] for i in range(3))
+                self.assertEqual(R.face_first(pts, box_has, Z, offsets), [None] * len(pts))
+        said_no = 0
+        for _ in range(400):                                                       # seat_possible() False: seat_scan() gives None for every body in that box
+            outer = rnd.random() < 0.5
+            r_nom, width = rnd.choice([4.0, 12.5, 23.5, 50.0]), rnd.choice([7.0, 12.0])
+            c = [rnd.uniform(-1.5 * r_nom, 1.5 * r_nom), rnd.uniform(-1.5 * r_nom, 1.5 * r_nom), rnd.uniform(-10, 10)]
+            h = [rnd.uniform(0.5, 2.5 * r_nom), rnd.uniform(0.5, 2.5 * r_nom), rnd.uniform(0.5, 20)]
+            blo, bhi = tuple(c[i] - h[i] for i in range(3)), tuple(c[i] + h[i] for i in range(3))
+            solid = (lambda p: math.hypot(p[0], p[1]) > r_nom) if outer else (lambda p: math.hypot(p[0], p[1]) < r_nom)      # a perfect seat, cut to the box
+            inside = lambda p: all(blo[i] <= p[i] <= bhi[i] for i in range(3)) and solid(p)
+            scan = R.seat_scan(inside, (0.0, 0.0, 0.0), Z, r_nom, width, outer=outer)
+            if not R.seat_possible(blo, bhi, (0.0, 0.0, 0.0), Z, r_nom, outer=outer):
+                said_no += 1
+                self.assertIsNone(scan)
+            elif all(blo[i] < -1.4 * r_nom and bhi[i] > 1.4 * r_nom for i in range(2)) and blo[2] < -width and bhi[2] > width:
+                self.assertIsNotNone(scan)                                         # the box holds the whole ring: the seat is found
+        self.assertGreater(said_no, 100)
+
     def test_the_gap_list_keeps_the_least_per_neighbour(self):
         rows = [{'name': 'Pulley', 'group': 'slide', 'gap': 0.8}, {'name': 'Pulley', 'group': 'slide', 'gap': 0.5},
                 {'name': 'Belt', 'group': 'slide', 'gap': 0.2}, {'name': 'Far', 'group': 'slide', 'gap': 9.0}]
@@ -590,12 +645,13 @@ class Probes(unittest.TestCase):
     def setUp(self):
         self.d = os.path.realpath(tempfile.mkdtemp()); self.addCleanup(shutil.rmtree, self.d)
 
-    def unit(self, probe, comps, part='Bracket', features=None, args=None, cursor=None, sig=None, groups=None, deadline_s=20, params=None, body='Body1'):
-        job = gate_fusion_rpc.new_job(unit_id='u-0001', run='r1', probe=probe, doc='Demo Assembly', doc_key='demo',
+    def unit(self, probe, comps, part='Bracket', features=None, args=None, cursor=None, sig=None, groups=None, deadline_s=20, params=None, body='Body1', sent=None):
+        job = self.job = gate_fusion_rpc.new_job(unit_id='u-0001', run='r1', probe=probe, doc='Demo Assembly', doc_key='demo',
                                       out=os.path.join(self.d, 'gate', 'run', 'r1', 'units', 'u-0001.json'), part='demo/' + gate_common.slug(part),
                                       component_id='id-' + part, occurrence=part + ':1', body=body, sig=sig, cursor=cursor, deadline_s=deadline_s,
                                       params=dict(PARAMS, **(params or {})), tables={n: table(n) for n in ('inserts', 'screws', 'bearings', 'washers')},
                                       features=features, not_printed=['^ref '], motion_groups=groups, args=args)
+        if sent is not None: job['sent'] = sent
         mods = comps if isinstance(comps, dict) else fake_adsk(comps)       # a prepared fake (unit_with), or the components of one
         saved = {k: sys.modules.get(k) for k in mods}
         sys.modules.update(mods)
@@ -610,7 +666,18 @@ class Probes(unittest.TestCase):
                 else: sys.modules[k] = v
         with open(job['out'], encoding='utf-8') as f: env = json.load(f)
         self.assertIsNone(env['error'], env['error'])
+        # every call of every probe: the file names the call by the cursor AS IT WAS SENT, whatever the probe did with it
+        self.assertEqual(env['asked']['cursor_key'], gate_fusion_rpc.cursor_key(cursor), probe)
         return env
+
+    def rest(self, probe, comps, env, **kw):
+        """The calls after `env` (the envelope of an earlier call) until the unit is done: (the facts of those calls joined, the notes of all of them)."""
+        facts, notes, calls = None, [], 0
+        while not env['done']:
+            env = self.unit(probe, comps() if callable(comps) else comps, cursor=env['cursor'], **kw)
+            facts, notes, calls = gate_fusion_rpc.merge_facts(facts, env['facts']), notes + env['notes'], calls + 1
+            self.assertLess(calls, 4000, 'the unit does not end')
+        return facts, notes
 
     # -- bearings: a 6005 in a housing (seat with a floor under the outer ring), a lid whose lip clamps the outer ring
 
@@ -690,14 +757,195 @@ class Probes(unittest.TestCase):
         clamp, = self.unit('fusion_bearings', scene(5.0), part='Hub')['facts']['bearings'][0]['clamps']        # nothing stops the washer
         self.assertEqual((clamp['travel'], clamp['travel_capped'], clamp['lands_on'], clamp['room']), (3.0, True, None, 9.0))
 
+    def whole(self, probe, comps, **kw):
+        """A unit called again with its cursor until it is done, as the host does: (merged facts, calls, the last envelope)."""
+        facts, calls, cursor = None, 0, None
+        while True:
+            env = self.unit(probe, comps() if callable(comps) else comps, cursor=cursor, **kw)
+            facts, calls, cursor = gate_fusion_rpc.merge_facts(facts, env['facts']), calls + 1, env['cursor']
+            if env['done']: return facts, calls, env
+            self.assertLess(calls, 4000, 'the unit does not end')
+
     def test_bearings_cursor(self):
         second = Comp('ref bearing 608', [Body('Body1', Rod(30, 30, 0.0, 7.0, 11.0, 4.0))])
-        env = self.unit('fusion_bearings', self.bearing_scene(extra=[second]), part='Housing', deadline_s=0.001)   # no time: one bearing per call
-        self.assertFalse(env['done']); self.assertEqual(env['cursor'], 1); self.assertEqual(len(env['facts']['bearings']), 1)
-        env2 = self.unit('fusion_bearings', self.bearing_scene(extra=[second]), part='Housing', deadline_s=0.001, cursor=1)
-        self.assertTrue(env2['done'])
-        merged = gate_fusion_rpc.merge_facts(env['facts'], env2['facts'])
-        self.assertEqual(sorted(b['designation'] for b in merged['bearings']), ['6005', '608'])
+        scene = lambda: self.bearing_scene(extra=[second])
+        one = self.unit('fusion_bearings', scene(), part='Housing')
+        self.assertTrue(one['done']); self.assertIsNone(one['cursor'])
+        env = self.unit('fusion_bearings', scene(), part='Housing', deadline_s=0.001)   # no time: a call finishes one step or asks 48 points, then stops
+        self.assertFalse(env['done']); self.assertEqual(env['facts']['bearings'], [])
+        cur = env['cursor']
+        self.assertEqual((cur['i'], len(cur['key']), cur['part']['f'], 'tape' in cur['part'], cur['timing']['calls']), (0, 16, {'0|+': []}, False, 1))   # its "+" side is known from the boxes: one step
+        self.assertEqual((len(cur['part']['k']), sorted(cur['part']['asked'])), (16, ['2']))    # what it is measured against: the bodies it uses, and the state of the bearing itself
+        json.dumps(cur)                                                             # plain JSON: no body, no record
+        env = self.unit('fusion_bearings', scene(), part='Housing', deadline_s=0.001, cursor=cur)
+        cur = env['cursor']
+        self.assertEqual((cur['part']['at'], cur['part']['tape']['n'], sorted(cur['part']['asked'])), ('faces:0|-', 48, ['0', '2']))  # inside the next step: 48 points, then the clock; the housing answered
+        facts, calls, last = self.whole('fusion_bearings', scene, part='Housing', deadline_s=0.001)
+        self.assertGreater(calls, 20); self.assertEqual(facts, one['facts'])        # many calls, the facts of one call
+        self.assertEqual(sorted(b['designation'] for b in facts['bearings']), ['6005', '608'])
+        self.assertEqual(last['timing']['calls'], calls)
+        old = self.unit('fusion_bearings', scene(), part='Housing', cursor=1)        # the cursor of an older plan: the index of the next bearing
+        self.assertTrue(old['done']); self.assertEqual([b['designation'] for b in old['facts']['bearings']], ['608'])
+        self.assertEqual((old['facts']['not_bearings'], old['facts']['rejected']), ([], []))
+
+    def test_bearings_every_stop_gives_the_facts_of_one_call(self):
+        """The work on one bearing is cut wherever the time runs out: inside a ring face, inside a seat, inside the travel
+        of a clamp, between two steps. Whatever the cut, the joined facts are the facts of a call with all the time."""
+        def washer_scene():
+            hub = Add(Rod(0, 0, -5.0, 11.0, 12.5), Rod(0, 0, -5.0, 0.0, 16.0))
+            return [Comp('Hub', [Body('Body1', hub)]), Comp('ref bearing 6005', [Body('Body1', Rod(0, 0, 0.0, 12.0, 23.5, 12.5))]),
+                    Comp('ref washer big', [Body('Body1', Rod(0, 0, 12.0, 13.0, 15.0, 2.0))])]
+        seat = {'id': 'h10', 'anchor': {'kind': 'hole', 'axis': [0, 0, 1], 'point': [30, 30, 12]}, 'segments': [{'d': 47.0, 'len': 12.0}], 'depth': 12.0,
+                'through': False, 'class': {'table': 'bearings', 'kind': '6005', 'role': 'bearing_seat', 'match': 'exact'}}
+        printed = Comp('Bearing cap', [Body('Body1', Rod(45, 0, 0.0, 5.0, 4.5, 2.0))])
+        cases = [('Housing', lambda: self.bearing_scene(extra=[printed]), {'holes': [seat], 'openings': []}), ('Hub', washer_scene, None),
+                 ('Housing', lambda: self.bearing_scene(lid=Rod(0, 0, 12.0, 14.0, 30.0)), None)]
+        for part, scene, features in cases:
+            one = self.unit('fusion_bearings', scene(), part=part, features=features)
+            self.assertTrue(one['done'])
+            total = sum(one['timing'][k]['pc'] for k in ('faces', 'seats', 'travel'))
+            for limit in (max(13, total // 40), 1500):
+                facts, calls, last = self.whole('fusion_bearings', scene, part=part, features=features, args={'tape_limit': limit})
+                self.assertEqual(facts, one['facts'], (part, limit)); self.assertGreaterEqual(calls, total // limit)
+                self.assertEqual(json.dumps(facts, sort_keys=True), json.dumps(one['facts'], sort_keys=True))
+                self.assertEqual({k: last['timing'][k]['pc'] for k in ('faces', 'seats', 'travel')}, {k: one['timing'][k]['pc'] for k in ('faces', 'seats', 'travel')})
+
+    def test_bearings_other_bodies_than_the_cursor_was_written_for_start_the_bearing_again(self):
+        first = self.unit('fusion_bearings', self.bearing_scene(), part='Housing', args={'tape_limit': 300})
+        self.assertFalse(first['done']); self.assertTrue(first['cursor']['part']['f'])
+        moved = self.bearing_scene(lid=Add(Rod(0, 0, 12.0, 13.0, 23.4, 21.0), Rod(0, 0, 13.0, 17.0, 35.0, 16.0)))      # the lid grew between the two calls
+        env = self.unit('fusion_bearings', moved, part='Housing', cursor=first['cursor'])
+        self.assertTrue(env['done']); self.assertTrue(any('measured again from its start' in n for n in env['notes']), env['notes'])
+        self.assertEqual(env['facts']['bearings'], self.unit('fusion_bearings', moved, part='Housing')['facts']['bearings'])
+        cur = json.loads(json.dumps(first['cursor'])); cur['part']['tape']['sum'] += 1                                 # a tape that answers other questions
+        env = self.unit('fusion_bearings', self.bearing_scene(), part='Housing', cursor=cur)
+        self.assertTrue(any('a step of a bearing' in n for n in env['notes']), env['notes'])
+        self.assertEqual(env['facts']['bearings'], self.unit('fusion_bearings', self.bearing_scene(), part='Housing')['facts']['bearings'])
+        # a step that never asks the same questions twice is not started again for ever: the third call in a row ends the unit in an error
+        def spoil(c):
+            c = json.loads(json.dumps(c)); c['part']['tape']['sum'] += 1
+            return c
+        cur = first['cursor']
+        for n in (1, 2):
+            env = self.unit('fusion_bearings', self.bearing_scene(), part='Housing', cursor=spoil(cur), args={'tape_limit': 100})
+            self.assertEqual((env['done'], env['cursor']['part']['again']), (False, n))
+            cur = env['cursor']
+        with self.assertRaises(AssertionError) as e: self.unit('fusion_bearings', self.bearing_scene(), part='Housing', cursor=spoil(cur), args={'tape_limit': 100})
+        self.assertIn('did not ask the same questions in three calls in a row', str(e.exception))
+        ok = self.whole('fusion_bearings', self.bearing_scene, part='Housing', args={'tape_limit': 400})[2]      # undisturbed, the count never appears
+        self.assertNotIn('again', json.dumps(ok['cursor']))
+
+    def test_bearings_the_answer_of_a_later_call_names_the_cursor_it_was_sent_with(self):
+        """The probe works on the state of the bearing in progress. The result file still names the call by the cursor
+        the host sent, so a late answer of the second or a later call of the unit is adopted like the one of the first."""
+        first = self.unit('fusion_bearings', self.bearing_scene(), part='Housing', args={'tape_limit': 300})
+        cur = first['cursor']
+        self.assertTrue(cur['part']['f'])
+        sent = time.time()
+        second = self.unit('fusion_bearings', self.bearing_scene(), part='Housing', args={'tape_limit': 300}, cursor=cur, sent=sent)
+        self.assertEqual(cur, first['cursor']); self.assertNotEqual(second['cursor']['part'], cur['part'])       # the unit went on; what was sent is as it was
+        job = self.job
+        env, why = gate_fusion_rpc.late_answer(job, {'sent': sent})
+        self.assertIsNone(why); self.assertEqual((env['cursor'], env['done']), (second['cursor'], False))
+        state, env, why = gate_fusion_rpc.settle(job, 'http://127.0.0.1:1/mcp', pinger=lambda u, t: True,
+                                                 flight={'sent': sent, 'cursor': gate_fusion_rpc.cursor_key(cur)})
+        self.assertEqual((state, env['cursor'], env['late']['sent']), ('late', second['cursor'], sent))
+        self.assertEqual(gate_fusion_rpc.late_answer(dict(job, cursor=second['cursor']), {'sent': sent}), (None, 'the result file was written for another cursor'))
+
+    def test_bearings_a_neighbour_that_changes_between_two_calls_starts_the_bearing_again(self):
+        """One bearing is measured on one state of the model. The lip of the lid is cut back inside the same bounding box
+        while the unit is between two calls: the faces and seats of the lid that are in the cursor are of a lid that is
+        no more. The resumed unit gives the facts of one call on the model as it is now."""
+        def cut():
+            lid = Add(Rod(0, 0, 12.5, 13.0, 23.4, 21.0), Rod(0, 0, 13.0, 16.0, 35.0, 16.0), Blk((33, -1, 12.0), (35, 1, 13.0)))     # the lip 0.5 short of the ring
+            scene = self.bearing_scene(lid=lid)
+            scene[1].bRepBodies[0]._volume = 0.97                                    # a cut changes the volume of a body (and its revision id)
+            return scene
+        whole_lid = lambda: self.bearing_scene(lid=Add(Rod(0, 0, 12.0, 13.0, 23.4, 21.0), Rod(0, 0, 13.0, 16.0, 35.0, 16.0), Blk((33, -1, 12.0), (35, 1, 13.0))))
+        before, after = self.unit('fusion_bearings', whole_lid(), part='Housing'), self.unit('fusion_bearings', cut(), part='Housing')
+        self.assertNotEqual(before['facts']['bearings'], after['facts']['bearings'])
+        self.assertEqual((self.face(before['facts']['bearings'][0], 'outer', '+')[0]['share'], self.face(after['facts']['bearings'][0], 'outer', '+')[0]['share']), (1.0, 0.0))
+        first = self.unit('fusion_bearings', whole_lid(), part='Housing', args={'tape_limit': 5500})
+        self.assertFalse(first['done'])
+        lid_at = '1'                                                                 # the place of the lid in the walk: Housing, Lid, the bearing
+        self.assertIn(lid_at, first['cursor']['part']['asked']); self.assertTrue(any(k.startswith('1|') for k in first['cursor']['part']['f']))
+        facts, notes = self.rest('fusion_bearings', cut, first, part='Housing', args={'tape_limit': 5500})
+        self.assertEqual(facts['bearings'], after['facts']['bearings'])
+        self.assertEqual(len([n for n in notes if 'bearing ref bearing 6005 is measured again from its start' in n]), 1)
+        # unchanged bodies: the same cursor goes on without a note, and gives the facts of the model as it was
+        facts, notes = self.rest('fusion_bearings', whole_lid, first, part='Housing', args={'tape_limit': 5500})
+        self.assertEqual(facts['bearings'], before['facts']['bearings']); self.assertFalse([n for n in notes if 'measured again' in n])
+
+    def test_bearings_a_body_the_bearing_does_not_use_restarts_nothing_and_a_restart_is_counted(self):
+        far = lambda dx: [Comp('ref far block', [Body('Body1', Blk((50, -5, 0), (55 + dx, 5, 5)))])]       # 10 mm from every neighbour of the bearing
+        first = self.unit('fusion_bearings', self.bearing_scene(extra=far(0.0)), part='Housing', args={'tape_limit': 300})
+        facts, notes = self.rest('fusion_bearings', lambda: self.bearing_scene(extra=far(0.5)), first, part='Housing', args={'tape_limit': 300})
+        self.assertFalse([n for n in notes if 'measured again' in n])                # it grew between the calls: no body of this bearing
+        self.assertEqual(facts['bearings'], self.unit('fusion_bearings', self.bearing_scene(), part='Housing')['facts']['bearings'])
+        # a body of the bearing that is another one in every call: started again twice, then the unit ends in an error
+        grown = lambda dz: self.bearing_scene(lid=Add(Rod(0, 0, 12.0, 13.0, 23.4, 21.0), Rod(0, 0, 13.0, 16.0 + dz, 35.0, 16.0)))
+        env = self.unit('fusion_bearings', grown(0.0), part='Housing', args={'tape_limit': 300})
+        for n in (1, 2):
+            env = self.unit('fusion_bearings', grown(0.01 * n), part='Housing', cursor=env['cursor'], args={'tape_limit': 300})
+            self.assertEqual((env['done'], env['cursor']['restarts'], env['cursor']['i']), (False, n, 0))
+        with self.assertRaises(AssertionError) as e: self.unit('fusion_bearings', grown(0.03), part='Housing', cursor=env['cursor'], args={'tape_limit': 300})
+        self.assertIn('bearing ref bearing 6005 met other bodies than the call before in three calls in a row', str(e.exception))
+        env = self.unit('fusion_bearings', grown(0.02), part='Housing', cursor=env['cursor'], args={'tape_limit': 300})      # it stays as it is: the count ends
+        self.assertNotIn('restarts', env['cursor'])
+
+    def test_bearings_another_list_of_bearings_than_the_cursor_counts_in_ends_the_unit(self):
+        second = Comp('ref bearing 608', [Body('Body1', Rod(30, 30, 0.0, 7.0, 11.0, 4.0))])
+        third = Comp('a ref bearing 608 more', [Body('Body1', Rod(-30, 30, 0.0, 7.0, 11.0, 4.0))])        # its key sorts first
+        scene = lambda *more: self.bearing_scene(extra=[second] + list(more))
+        env = self.unit('fusion_bearings', scene(), part='Housing', args={'tape_limit': 3000})
+        while env['cursor']['i'] == 0: env = self.unit('fusion_bearings', scene(), part='Housing', cursor=env['cursor'], args={'tape_limit': 3000})
+        self.assertEqual((env['done'], env['cursor']['i']), (False, 1))              # the first bearing is in the facts, the second is next
+        with self.assertRaises(AssertionError) as e: self.unit('fusion_bearings', scene(third), part='Housing', cursor=env['cursor'])
+        self.assertIn('the bearings near the part changed between two calls of this unit (3 found now): start the unit again', str(e.exception))
+        between = dict(env['cursor'], part={})                                       # also between two bearings, with no step in progress
+        with self.assertRaises(AssertionError): self.unit('fusion_bearings', scene(third), part='Housing', cursor=between)
+        self.assertTrue(self.unit('fusion_bearings', scene(), part='Housing', cursor=between)['done'])
+
+    def test_bearings_the_walk_over_a_large_clamp_body_opens_a_call_of_its_own(self):
+        """The walk over the faces of a clamp body reads no clock. For a body with many faces (here: any, "walk_faces" 0) it
+        does not start in a call that has done other work: the step stops in front of it and the next call begins with it."""
+        one = self.unit('fusion_bearings', self.bearing_scene(), part='Housing')
+        env, calls, facts, stopped = None, 0, None, 0
+        while env is None or not env['done']:
+            env = self.unit('fusion_bearings', self.bearing_scene(), part='Housing', cursor=env['cursor'] if env else None, args={'tape_limit': 100000, 'walk_faces': 0})
+            facts, calls = gate_fusion_rpc.merge_facts(facts, env['facts']), calls + 1
+            if not env['done']:
+                part = env['cursor']['part']
+                self.assertEqual((part['at'], part['pick']), ('travel:outer', {})); stopped += 1                # in front of the walk, no face picked yet
+        self.assertEqual((calls, stopped), (2, 1)); self.assertEqual(facts, one['facts'])
+        self.assertIn('travel_walk_s', env['timing'])
+        again = self.unit('fusion_bearings', self.bearing_scene(), part='Housing', args={'tape_limit': 100000})   # the limit of the probe is 500 faces: this lid has a handful
+        self.assertTrue(again['done'])
+
+    def test_bearings_timing_is_beside_the_facts_and_counts_the_point_tests(self):
+        env = self.unit('fusion_bearings', self.bearing_scene(), part='Housing')
+        t = env['timing']
+        self.assertEqual(sorted(t), ['calls', 'faces', 'prelude_s', 'seats', 'slowest', 'state_s', 'travel', 'travel_walk_s'])
+        self.assertEqual(t['calls'], 1); self.assertGreater(t['faces']['pc'], 500); self.assertGreater(t['seats']['pc'], 50); self.assertGreater(t['travel']['pc'], 10)
+        self.assertEqual(sum(b['pc'] for b in t['slowest']), t['faces']['pc'] + t['seats']['pc'] + t['travel']['pc'])
+        self.assertEqual(sorted(b['name'] for b in t['slowest']), ['Housing', 'Lid'])
+        self.assertNotIn('timing', env['facts']); self.assertNotIn('timing', json.dumps(env['facts']))
+        self.assertEqual(len([n for n in env['notes'] if n.startswith('timing: ')]), 1)
+
+    def test_bearings_what_is_known_without_a_point_test_is_not_asked(self):
+        """A neighbour whose box does not reach the slab in front of a ring face, a body whose box cannot hold a seat
+        wall, and the bearing of another printed part cost no point test."""
+        far = Comp('ref plate', [Body('Body1', Blk((-40, -40, 14.6), (40, 40, 20)))])       # 2.6 above the ring face: near the bearing's box, out of every slab
+        base = self.unit('fusion_bearings', self.bearing_scene(), part='Housing')
+        env = self.unit('fusion_bearings', self.bearing_scene(extra=[far]), part='Housing')
+        self.assertEqual(env['facts']['bearings'][0]['rings'], base['facts']['bearings'][0]['rings'])
+        self.assertNotIn('ref plate', [b['name'] for b in env['timing']['slowest']])
+        cap = Comp('Cap', [Body('Body1', Blk((24, -5, 0), (34, 5, 12)))])                    # a printed part beside the ring: the bearing is not its own
+        env = self.unit('fusion_bearings', self.bearing_scene(extra=[cap]), part='Cap')
+        self.assertEqual((env['facts']['bearings'], env['facts']['near_bearings']), ([], ['ref bearing 6005']))
+        self.assertEqual([b['name'] for b in env['timing']['slowest']], ['Housing'])        # the first printed part at a ring face settles it: the lid is not asked
+        self.assertLess(env['timing']['faces']['pc'], base['timing']['faces']['pc'])
+        self.assertEqual((env['timing']['seats']['pc'], env['timing']['travel']['pc']), (0, 0))
 
     # -- openings, screws, washers, gap: a bracket screwed to a base, a cover over it
 
@@ -760,6 +1008,41 @@ class Probes(unittest.TestCase):
         self.assertEqual([h['name'] for h in head['paths']['tool']['hits']], ['Cover']); self.assertAlmostEqual(head['paths']['tool']['free'], 9.5, delta=0.15)
         self.assertEqual(self.opening(facts, heads[1])['paths']['tool']['free'], 60.0)                 # nothing over the second screw
 
+    def test_openings_cut_by_the_clock_body_by_body_give_the_facts_of_one_call(self):
+        one = self.unit('fusion_openings', self.bracket_scene(), features=self.FEATURES)
+        self.assertTrue(one['done']); self.assertTrue(one['facts']['closed']); self.assertIn('screw_head', [o['of'] for o in one['facts']['openings']])
+        for limit in (1, 3):
+            facts, calls, _ = self.whole('fusion_openings', self.bracket_scene, features=self.FEATURES, args={'path_limit': limit})
+            self.assertEqual(json.dumps(facts, sort_keys=True), json.dumps(one['facts'], sort_keys=True), limit); self.assertGreater(calls, 3)
+
+    def test_openings_a_body_that_changes_between_two_calls_starts_the_feature_again(self):
+        """A call stops inside the first hole after the cover over it was cut. Then the cover is moved off the hole, or gets a
+        window over it inside the same box: the hit in the cursor is of a cover that is no more."""
+        def scene(cover):
+            sc = self.bracket_scene()
+            sc[2] = Comp('Cover', [Body('Body1', cover)])
+            return sc
+        moved = lambda: scene(Blk((45, -5, 22.5), (70, 45, 24)))
+        window = lambda: scene(Sub(Blk((-5, -5, 22.5), (20, 45, 24)), Rod(10, 10, 22.0, 25.0, 3.0)))
+        first = self.unit('fusion_openings', self.bracket_scene(), features=self.FEATURES, args={'path_limit': 1})
+        cur = first['cursor']
+        self.assertEqual((cur['i'], [h['name'] for h in cur['path']['hits']], sorted(cur['asked'])), (0, ['Cover'], ['2']))      # the cover was cut, the screw is next
+        for changed in (moved, window):
+            one = self.unit('fusion_openings', changed(), features=self.FEATURES)
+            facts, notes = self.rest('fusion_openings', changed, first, features=self.FEATURES, args={'path_limit': 1})
+            self.assertEqual(json.dumps(facts['openings'], sort_keys=True), json.dumps(one['facts']['openings'], sort_keys=True))
+            self.assertEqual(self.opening(facts, 'h1')['paths']['own']['free'], 60.0)
+            self.assertEqual(len([n for n in notes if 'feature 1 is measured again from its start' in n]), 1)
+        facts, notes = self.rest('fusion_openings', self.bracket_scene, first, features=self.FEATURES, args={'path_limit': 1})    # nothing changed: it goes on
+        self.assertFalse([n for n in notes if 'measured again' in n]); self.assertLess(self.opening(facts, 'h1')['paths']['own']['free'], 13.0)
+        env = first                                                                  # a body that is another one in every call: counted, then an error
+        for n in (1, 2):
+            env = self.unit('fusion_openings', scene(Blk((-5, -5, 22.5), (20, 45, 24 + 0.01 * n))), features=self.FEATURES, cursor=env['cursor'], args={'path_limit': 1})
+            self.assertEqual(env['cursor']['again'], n)
+        with self.assertRaises(AssertionError) as e:
+            self.unit('fusion_openings', scene(Blk((-5, -5, 22.5), (20, 45, 24.03))), features=self.FEATURES, cursor=env['cursor'], args={'path_limit': 1})
+        self.assertIn('feature 1 met other bodies than the call before in three calls in a row', str(e.exception))
+
     def test_openings_a_hole_closed_by_a_thin_cap(self):
         closed = self.unit('fusion_openings', self.bracket_scene(), features=self.FEATURES)['facts']['closed']
         self.assertEqual([(c['hole'], c['cap'], c['behind']) for c in closed],
@@ -771,9 +1054,21 @@ class Probes(unittest.TestCase):
         pocket = {'id': 'h1', 'anchor': {'kind': 'insert_pocket', 'axis': [0, 0, 1], 'point': [10, 10, 10]}, 'segments': [{'d': 4.4, 'len': 1.5}, {'d': 3.6, 'len': 5.0}],
                   'depth': 6.5, 'through': False, 'floor': 3.5, 'exit': None, 'class': {'table': 'inserts', 'kind': 'M3x4x5', 'role': 'insert_pocket', 'match': 'exact'}, 'coaxial': []}
         part = Add(Sub(Blk((0, 0, 0), (40, 40, 10)), Rod(10, 10, 3.5, 11, 2.2)), Blk((12.5, 0, 10), (40, 40, 18)))     # a wall of the same part 2.5 from the axis
-        env = self.unit('fusion_openings', [Comp('Bracket', [Body('Body1', part)])], features={'holes': [pocket, dict(pocket, id='h2')], 'openings': []}, deadline_s=0.001)
-        self.assertFalse(env['done']); self.assertEqual(env['cursor'], {'i': 1, 'screws': []})       # the index, and the screw heads the first call found
-        o, = env['facts']['openings']
+        comps, feats = [Comp('Bracket', [Body('Body1', part)])], {'holes': [pocket, dict(pocket, id='h2')], 'openings': []}
+        one = self.unit('fusion_openings', comps, features=feats)
+        self.assertTrue(one['done']); self.assertEqual([o['feature'] for o in one['facts']['openings']], ['h1', 'h2'])
+        # no time: a call cuts one body, then stops INSIDE the feature. The cursor has the index, the screw heads the first call found,
+        # the finished paths of the feature and the path it stopped in; the feature is in the facts when all its paths are done
+        env = self.unit('fusion_openings', comps, features=feats, deadline_s=0.001)
+        cur = env['cursor']
+        self.assertEqual((env['done'], env['facts']['openings'], cur['i'], cur['screws'], sorted(cur['paths']), cur['path'], len(cur['world']), sorted(cur['asked'])),
+                         (False, [], 0, [], ['mouth.own'], {'k': 0, 'hits': [], 'key': 'mouth.iron'}, 16, ['0']))
+        facts, calls, _ = self.whole('fusion_openings', comps, features=feats, deadline_s=0.001)
+        self.assertEqual(calls, 4); self.assertEqual(facts, one['facts'])                              # one body per call, the facts of one call
+        other = dict(cur, world='0' * 16)                                                              # written for another list of bodies: from the start
+        again = self.unit('fusion_openings', comps, features=feats, cursor=other)
+        self.assertEqual(again['facts']['openings'], one['facts']['openings']); self.assertTrue(any('measured again from its start' in n for n in again['notes']))
+        o = facts['openings'][0]
         self.assertEqual((o['of'], sorted(o['paths'])), ('insert_pocket', ['iron', 'own']))
         self.assertEqual(o['paths']['own']['hits'], [])                                                # the pocket's own section is free
         hit, = o['paths']['iron']['hits']                                                              # the iron is 8 mm wide
@@ -834,17 +1129,22 @@ class Probes(unittest.TestCase):
                  {'n': 2, 'name': 'ref fasteners / M3x12 DIN 912 head (3)', 'path': 'ref fasteners:1', 'bodies': ['M3x12 DIN 912 head (3)', 'M3x12 DIN 912 shank (4)'],
                   'top': [30.0, 10.0, 13.0], 'seat': [30.0, 10.0, 10.0], 'axis': [0.0, 0.0, 1.0], 'head_r': 2.75}]
         first = self.unit('fusion_openings', comps, features={'holes': holes, 'openings': []}, deadline_s=0.001)
-        self.assertEqual((first['done'], first['cursor']['i']), (False, 1))
+        self.assertEqual((first['done'], first['cursor']['i'], first['facts']['openings']), (False, 0, []))     # it stopped inside the first hole
         self.assertTrue(first['facts']['screws_cut'])                                      # this first call had no time for the shapes: it knows one head only ...
         self.assertEqual([h['n'] for h in first['cursor']['screws']], [1]); self.assertEqual(first['cursor']['screws'][0]['name'], 'ref fasteners / M3x12 DIN 912 head (3)')
         # ... and a later call with all the time in the world measures exactly that head under that number: it does not look for screws again
         rest = self.unit('fusion_openings', comps, features={'holes': holes, 'openings': []}, cursor=first['cursor'])
         self.assertTrue(rest['done']); self.assertNotIn('screws', rest['facts'])
         self.assertEqual([(o['feature'], o.get('ref')) for o in rest['facts']['openings'] if o['of'] == 'screw_head'], [('s1', 'ref fasteners / M3x12 DIN 912 head (3)')])
-        self.assertEqual([o['feature'] for o in rest['facts']['openings'] if o['of'] != 'screw_head'], ['h2', 'h2'])       # h1 was done by the first call
+        self.assertEqual([o['feature'] for o in rest['facts']['openings'] if o['of'] != 'screw_head'], ['h1', 'h1', 'h2', 'h2'])   # h1 was begun by the first call
+        self.assertEqual([o for o in rest['facts']['openings'] if o['of'] != 'screw_head'], [o for o in whole['openings'] if o['of'] != 'screw_head'])
         # the other way round: the first call found both; a later call that is short of time still measures the head the index points at
-        late = self.unit('fusion_openings', comps, features={'holes': holes, 'openings': []}, cursor={'i': 3, 'screws': heads}, deadline_s=0.001)
-        row, = late['facts']['openings']
+        rows, cursor = [], {'i': 3, 'screws': heads}
+        while True:
+            late = self.unit('fusion_openings', comps, features={'holes': holes, 'openings': []}, cursor=cursor, deadline_s=0.001)
+            rows, cursor = rows + late['facts']['openings'], late['cursor']
+            if late['done']: break
+        row, = rows
         self.assertEqual((late['done'], row['feature'], row['ref'], row['anchor']['point']), (True, 's2', want['s2'][0], want['s2'][1]))
         self.assertEqual(row['paths']['tool']['hits'], [])                                 # head and shank are skipped by the names of the cursor
 
@@ -1039,14 +1339,54 @@ class Probes(unittest.TestCase):
         self.assertEqual((row['along'], row['lines'], row['late']), ([None, None], 0, True))
         out = self.judge('screws.shell_bears', {'screws': [dict(s, gaps=[dict(s['gaps'][0], in_gap=[row])])], 'washers': []}, 'demo/lid')
         self.assertEqual([f['verdict'] for f in out], ['FAIL']); self.assertIn('was not measured (the time of that call was used up): collect the facts again', out[0]['text'])
-        # the whole unit with a budget that is used up from the start: the first screw is written and marked, the call ends "not done" before the next
-        scene = self.flange_scene(extra=[Rod(-32, 0, 3.0, 17.0, 1.7)])
-        scene[2].bRepBodies.append(Body('screw M3x12 cap (2)', Add(Rod(-32, 0, 4.0, 16.0, 1.5), Rod(-32, 0, 16.0, 19.0, 2.75))))
-        env = self.unit('fusion_screws', scene, part='Lid', deadline_s=1)
-        self.assertEqual((env['done'], env['cursor'], len(env['facts']['screws'])), (False, 1, 1))
-        self.assertTrue(env['facts']['screws'][0]['gaps'][0]['in_gap'][0]['late'])
-        env = self.unit('fusion_screws', scene, part='Lid', cursor=1)
-        self.assertEqual((env['done'], env['facts']['screws'][0]['gaps'][0]['in_gap'][0]['along']), (True, [0.0, 0.0]))
+        # the whole unit asks through a tape: a budget that is used up from the start stops inside the first screw after 48 point
+        # tests, the next call goes on with it, and no row is ever marked "late"
+        def scene():
+            sc = self.flange_scene(extra=[Rod(-32, 0, 3.0, 17.0, 1.7)])
+            sc[2].bRepBodies.append(Body('screw M3x12 cap (2)', Add(Rod(-32, 0, 4.0, 16.0, 1.5), Rod(-32, 0, 16.0, 19.0, 2.75))))
+            return sc
+        one = self.unit('fusion_screws', scene(), part='Lid')
+        self.assertEqual((one['done'], len(one['facts']['screws'])), (True, 2))
+        env = self.unit('fusion_screws', scene(), part='Lid', deadline_s=1)
+        self.assertEqual((env['done'], env['cursor']['i'], env['cursor']['tape']['n'], env['facts']['screws']), (False, 0, 48, []))
+        facts, calls, _ = self.whole('fusion_screws', scene, part='Lid', deadline_s=1)
+        self.assertGreater(calls, 5); self.assertEqual(facts, one['facts'])
+        self.assertNotIn('"late"', json.dumps(facts))
+        self.assertEqual([s['gaps'][0]['in_gap'][0]['along'] for s in facts['screws']], [[0.0, 0.0], [0.0, 0.0]])
+        for limit in (333, 2000):
+            facts, calls, _ = self.whole('fusion_screws', scene, part='Lid', args={'tape_limit': limit})
+            self.assertEqual(facts, one['facts'], limit)
+        env = self.unit('fusion_screws', scene(), part='Lid', cursor=1)                                # the cursor of an older plan: the index
+        self.assertEqual((env['done'], len(env['facts']['screws']), env['facts']['rejected'], env['facts']['fastener_holes']), (True, 1, [], []))
+
+    def test_screws_a_neighbour_that_changes_inside_its_box_between_two_calls_starts_the_screw_again(self):
+        """A call stops inside the screw. Then a pocket is cut into the housing round the screw, inside the same box: the gap
+        between the clamped parts is 3 mm now. A screw joined from the two states would read 1 mm."""
+        cut = lambda: self.flange_scene(extra=[Rod(32, 0, 8.0, 11.0, 6.0)])
+        before, after = self.unit('fusion_screws', self.flange_scene(), part='Lid'), self.unit('fusion_screws', cut(), part='Lid')
+        self.assertAlmostEqual(before['facts']['screws'][0]['air_gap'], 1.0, delta=0.05); self.assertAlmostEqual(after['facts']['screws'][0]['air_gap'], 3.0, delta=0.05)
+        for limit in (700, 1100):
+            first = self.unit('fusion_screws', self.flange_scene(), part='Lid', args={'tape_limit': limit})
+            cur = first['cursor']
+            self.assertEqual((first['done'], cur['i'], len(cur['world'])), (False, 0, 16)); self.assertIn('0', cur['asked'])      # the housing answered point tests
+            facts, notes = self.rest('fusion_screws', cut, first, part='Lid', args={'tape_limit': limit})
+            self.assertEqual(json.dumps(facts['screws'], sort_keys=True), json.dumps(after['facts']['screws'], sort_keys=True), limit)
+            self.assertEqual(len([n for n in notes if 'is measured again from its start' in n]), 1)
+            facts, notes = self.rest('fusion_screws', self.flange_scene, first, part='Lid', args={'tape_limit': limit})     # nothing changed: it goes on
+            self.assertEqual(facts['screws'], before['facts']['screws']); self.assertFalse([n for n in notes if 'measured again' in n])
+        env = first                                                                  # a body that moves in every call: counted, then an error
+        for n in (1, 2):
+            env = self.unit('fusion_screws', self.flange_scene(ring_top=11.0 - 0.01 * n), part='Lid', cursor=env['cursor'], args={'tape_limit': 300})
+            self.assertEqual(env['cursor']['again'], n)
+        with self.assertRaises(AssertionError) as e: self.unit('fusion_screws', self.flange_scene(ring_top=10.9), part='Lid', cursor=env['cursor'], args={'tape_limit': 300})
+        self.assertIn('met other bodies than the call before in three calls in a row', str(e.exception))
+
+    def test_screws_and_washers_cut_by_the_clock_give_the_facts_of_one_call(self):
+        one = self.unit('fusion_screws', self.bracket_scene(), features=self.FEATURES)
+        self.assertTrue(one['done']); self.assertTrue(one['facts']['screws']); self.assertTrue(one['facts']['washers'])
+        for limit in (57, 400):
+            facts, calls, _ = self.whole('fusion_screws', self.bracket_scene, features=self.FEATURES, args={'tape_limit': limit})
+            self.assertEqual(json.dumps(facts, sort_keys=True), json.dumps(one['facts'], sort_keys=True), limit); self.assertGreater(calls, 2)
 
     def test_screws_the_body_a_thread_ends_in_when_nothing_receives_it(self):
         scene = self.bracket_scene()
@@ -1127,6 +1467,25 @@ class Probes(unittest.TestCase):
                          {'own_group': None, 'margin': 5.0, 'gaps': [], 'groups': 1})                # the part is in no group: nothing measured
         first = self.unit('fusion_gap', self.bracket_scene(), groups=groups, deadline_s=0.001)
         self.assertEqual((first['done'], first['cursor'], len(first['facts']['gaps'])), (False, 1, 1))
+
+    def test_gap_does_not_start_a_measurement_that_the_slowest_one_says_will_not_fit(self):
+        """One distance between two bodies is one API call. After a slow one the next is not started with less time left than
+        1.5 times that: here every measurement takes 4 s of a 20 s call, and the fifth would end exactly at the budget."""
+        groups = [{'key': 'base', 'patterns': ['^Bracket']}, {'key': 'slide', 'patterns': ['^Slider']}]
+        scene = [Comp('Bracket', [Body('Body1', Blk((0, 0, 0), (40, 40, 10)))])] + [Comp('Slider %d' % n, [Body('Body1', Blk((5 * n, 0, 10.5), (5 * n + 4, 40, 14)))]) for n in range(7)]
+        mods = fake_adsk(scene)
+        app = mods['adsk.core'].Application.get()
+        clock = {'t': 1000.0, 'asked': 0}
+
+        def slow(a, b):
+            clock['t'] += 4.0; clock['asked'] += 1
+            return measure(a, b)
+        app.measureManager = types.SimpleNamespace(measureMinimumDistance=slow)
+        with mock.patch('time.time', lambda: clock['t']):
+            env = self.unit_with(mods, 'fusion_gap', groups=groups)
+        self.assertEqual((env['done'], env['cursor'], clock['asked'], env['elapsed_s']), (False, 4, 4, 16.0))      # 4 s left, 6 s wanted: the fifth waits
+        facts, notes = self.rest('fusion_gap', scene, env, groups=groups)
+        self.assertEqual(len(env['facts']['gaps'] + facts['gaps']), 7)               # every neighbour is measured, by the next call
 
     # -- thin faces and the export
 

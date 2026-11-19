@@ -58,7 +58,7 @@ def _thn_sides(body, face_id, n, edges, limit=12):
     the face, and the direction towards it is wrong on the inner side. Under 1 degree no sign is asked.
     edges: [(length in cm, edge, first parameter, last parameter)] as the caller measured them."""
     IN = adsk.fusion.PointContainment.PointInsidePointContainment
-    rows = []
+    kept = []
     for ln, e, p0, p1 in edges:
         other, fs = None, e.faces
         for k in range(fs.count):
@@ -68,6 +68,10 @@ def _thn_sides(body, face_id, n, edges, limit=12):
                 break
         if other is None:
             continue                                    # a seam: the face meets itself there
+        kept.append((round(ln * 10.0, 3), e, p0, p1, other))
+    kept.sort(key=lambda r: -r[0])                      # the longest first; only the rows that are listed get a turn:
+    rows = []                                           # a toothed outline has thousands of edges, and a turn is a point test
+    for ln, e, p0, p1, other in kept[:limit]:
         turn = None
         ok, mid = e.evaluator.getPointAtParameter((p0 + p1) / 2.0)
         if ok:
@@ -80,9 +84,8 @@ def _thn_sides(body, face_id, n, edges, limit=12):
                     probe_at = v_add(gate_mm(mid), v_scale(v_unit(v_sub(n, n2)), 0.02))
                     if body.pointContainment(gate_point(probe_at)) == IN:
                         turn = -turn                    # material on that side: the neighbour rises from this face
-        rows.append([round(ln * 10.0, 3), turn, other.tempId])
-    rows.sort(key=lambda r: -r[0])
-    return rows[:limit]
+        rows.append([ln, turn, other.tempId])
+    return rows
 
 
 def probe(job):

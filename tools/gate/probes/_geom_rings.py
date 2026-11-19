@@ -441,6 +441,41 @@ def cover_offsets(touch, look, step=0.1):
     return out
 
 
+def face_first(points, inside, direction, offsets):
+    """Where a body begins in front of each sample point of a face: [index into `offsets` of the first offset at which
+    the point, pushed out of the face along `direction`, is inside the body; None when it is at none of them].
+    One entry per point of `points` (annulus_points), in their order. This is the costly half of face_cover(): one
+    call of `inside` per point and offset until the first hit."""
+    first = []
+    for p, _, _ in points:
+        hit = None
+        for i, o in enumerate(offsets):
+            if inside(v_add(p, v_scale(direction, o))):
+                hit = i; break
+        first.append(hit)
+    return first
+
+
+def face_first_cut(first, n):
+    """face_first() as it would have come out with the first n offsets only: a hit further out is no hit."""
+    return [i if (i is not None and i < n) else None for i in first]
+
+
+def face_cover_of(points, first, offsets, touch):
+    """The cover of a face from its face_first() list: what face_cover() returns."""
+    n_ang = 1 + max(k for _, k, _ in points)
+    seen = [offsets[i] for i in first if i is not None]
+    if not seen:
+        return None
+    flags = [False] * n_ang
+    for (p, k, _), i in zip(points, first):
+        if i is not None and offsets[i] <= touch + 0.02 + 1e-9:
+            flags[k] = True
+    close = sum(1 for o in seen if o <= touch + 0.02 + 1e-9)
+    return {'share': round(close / float(len(points)), 3), 'points': arc_runs(flags)[1] if close else 0,
+            'gap': round(max(0.0, min(seen) - 0.02), 3), 'near': round(len(seen) / float(len(points)), 3), 'flags': flags}
+
+
 def face_cover(points, inside, direction, offsets, touch):
     """How one body covers a flat ring face.
 
@@ -453,25 +488,16 @@ def face_cover(points, inside, direction, offsets, touch):
     Returns None when the body is nowhere within the last offset, else
     {"share": share of the sample points with the body within `touch`, "points": separate contact runs round the circle
      (arc_runs over the angles), "gap": mm from the face to the body at its nearest sample (0.0 = it touches),
-     "near": share of the sample points with the body within the last offset, "flags": [bool per angle] within `touch`}."""
-    n_ang = 1 + max(k for _, k, _ in points)
-    first = []
-    for p, k, _ in points:
-        hit = None
-        for o in offsets:
-            if inside(v_add(p, v_scale(direction, o))):
-                hit = o; break
-        first.append(hit)
-    seen = [o for o in first if o is not None]
-    if not seen:
-        return None
-    flags = [False] * n_ang
-    for (p, k, _), o in zip(points, first):
-        if o is not None and o <= touch + 0.02 + 1e-9:
-            flags[k] = True
-    close = sum(1 for o in seen if o <= touch + 0.02 + 1e-9)
-    return {'share': round(close / float(len(points)), 3), 'points': arc_runs(flags)[1] if close else 0,
-            'gap': round(max(0.0, min(seen) - 0.02), 3), 'near': round(len(seen) / float(len(points)), 3), 'flags': flags}
+     "near": share of the sample points with the body within the last offset, "flags": [bool per angle] within `touch`}.
+    face_first() asks the body, face_cover_of() counts: a caller that needs the same points twice asks once."""
+    return face_cover_of(points, face_first(points, inside, direction, offsets), offsets, touch)
+
+
+def slab_box(points, direction, offsets):
+    """The bounding box of every place face_first() looks at: the sample points pushed out by the first and by the
+    last offset. A body whose own box does not reach this box is at none of them."""
+    ends = [v_add(p, v_scale(direction, o)) for p, _, _ in points for o in (offsets[0], offsets[-1])]
+    return box_of(ends)
 
 
 def landing_band(points, hit, r_in, r_out):
@@ -638,6 +664,29 @@ def radial_edge(inside, centre, axis, s, direction, r_air, r_mat, tol=0.01):
     return (a + b) / 2.0
 
 
+def _rings_seat_frame(axis, r_nom, outer, window, n_ang):
+    """(window as used, the n_ang directions round the axis, radius expected in air, radius expected in material) of a
+    seat_scan()."""
+    window = min(window, r_nom / 2.0)
+    u, v = axis_frame(axis)
+    dirs = [v_add(v_scale(u, math.cos(2 * math.pi * k / n_ang)), v_scale(v, math.sin(2 * math.pi * k / n_ang))) for k in range(n_ang)]
+    r_air, r_mat = (r_nom - window, r_nom + window) if outer else (r_nom + window, r_nom - window)
+    return window, dirs, r_air, r_mat
+
+
+def seat_possible(bmin, bmax, centre, axis, r_nom, outer=True, window=1.0, n_ang=8):
+    """Can a body with this bounding box be a seat for seat_scan() at all? A seat needs a wall in three quarters of the
+    directions at mid width, and a wall needs the point at the radius expected in material to be inside the body, so
+    inside its box. False = seat_scan() returns None for every body with that box, and no point need be asked."""
+    _, dirs, _, r_mat = _rings_seat_frame(axis, r_nom, outer, window, n_ang)
+    held = 0
+    for d in dirs:
+        p = v_add(centre, v_scale(d, r_mat))
+        if all(bmin[i] <= p[i] <= bmax[i] for i in range(3)):
+            held += 1
+    return held >= 0.75 * n_ang
+
+
 def seat_scan(inside, centre, axis, r_nom, width, outer=True, window=1.0, look_in=3.0, n_ang=8, entry_len=None, entry_step=1.0):
     """Does a body hold a ring radially, and can the ring get to its seat.
 
@@ -654,10 +703,7 @@ def seat_scan(inside, centre, axis, r_nom, width, outer=True, window=1.0, look_i
      "entry_d": the narrowest (outer) or widest (inner) diameter of this body on the more open side,
      "entry_side": "+" | "-", "entry_open": bool (nothing of this body stands in the way on that side: entry_d is then
      the edge of the window, not a measured wall), "entry_other": the same diameter on the other side}."""
-    window = min(window, r_nom / 2.0)
-    u, v = axis_frame(axis)
-    dirs = [v_add(v_scale(u, math.cos(2 * math.pi * k / n_ang)), v_scale(v, math.sin(2 * math.pi * k / n_ang))) for k in range(n_ang)]
-    r_air, r_mat = (r_nom - window, r_nom + window) if outer else (r_nom + window, r_nom - window)
+    window, dirs, r_air, r_mat = _rings_seat_frame(axis, r_nom, outer, window, n_ang)
     mid = [radial_edge(inside, centre, axis, 0.0, d, r_air, r_mat) for d in dirs]
     if sum(1 for r in mid if r is not None) < 0.75 * n_ang:
         return None

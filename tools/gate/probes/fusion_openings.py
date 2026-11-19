@@ -97,18 +97,39 @@ def _opn_above(rec):
     return ' / '.join(str(n) for n in (rec.get('above') or []))
 
 
-def _opn_path(point, axis, r, reach, world, skip, coax_names):
-    """PATH of the contract: one straight cylinder against every body of `world` but those in `skip` (ids)."""
+class _OpnLate(Exception):
+    """The time of the call is used up inside a path. state = {"k": the index in `world` of the next body, "hits": the
+    hits of the bodies before it}; probe() adds the name of the path and keeps it in the cursor."""
+
+    def __init__(self, state):
+        Exception.__init__(self, 'out of time inside a path')
+        self.state = state
+
+
+def _opn_path(point, axis, r, reach, world, skip, coax_names, part=None, clock=None, seen=None):
+    """PATH of the contract: one straight cylinder against every body of `world` but those in `skip` (ids).
+    One body is one step: a cut of a temporary cylinder with a copy of the body, and some point tests.
+    clock  callable() -> True when the time of the call is used up. It is asked before every body whose box the path
+           meets; on True the path stops there and raises _OpnLate with what it has.
+    part   the state of such a stop ({"k", "hits"}), handed in by the call that goes on: the bodies before "k" are not
+           cut again. The hits of a path made over several calls are the hits of one call.
+    seen   a set that gets the index of every body the path looked at (cut, sampled or read as a mesh): probe() keeps
+           the state of those bodies in the cursor of a feature in progress."""
     TB = adsk.fusion.TemporaryBRepManager.get()
     rr = max(0.05, r - 0.05)
     start = v_add(point, v_scale(axis, 0.05))
     length = max(0.1, reach - 0.05)
     end = v_add(start, v_scale(axis, length))
     section = math.pi * rr * rr
-    hits = []
-    for rec in world:
+    hits = [dict(h) for h in part['hits']] if part else []
+    for k in range(int(part['k']) if part else 0, len(world)):
+        rec = world[k]
         if id(rec) in skip or not box_overlaps_path(rec['box'][0], rec['box'][1], start, axis, rr, length):
             continue
+        if clock is not None and clock():
+            raise _OpnLate({'k': k, 'hits': hits})
+        if seen is not None:
+            seen.add(k)
         if rec['mesh']:
             nodes, tris = _opn_mesh(rec)
             if nodes:
@@ -404,7 +425,16 @@ def probe(job):
           then miss screws, and "no screw in this hole" must not be read from it.
       These three are written by the first call of a unit only (lists are joined over its calls).
     The cursor is {"i": index of the next feature in: holes, slots and windows, screw heads; "screws": the screw heads
-    the first call found, each with its number, its bodies and where its head is}. The screws are looked for by the
+    the first call found, each with its number, its bodies and where its head is}. When the time of a call runs out
+    inside a feature it also has "paths" (the finished paths of feature i, by name: "mouth.own", "mouth.iron",
+    "exit.own", "exit.iron", "within", "own", "tool"), "path" (the path in progress: its name, the index of the next
+    body and the hits so far), "world" (gate_rows_key() of the bodies the walk listed: place, name and box of each)
+    and "asked" (gate_states() of every body one of its paths looked at). A later call whose bodies are not those (one
+    moved, grew, was hidden, added or removed, or changed inside its box) measures the feature again from its start,
+    with a note; the third such call in a row ends the unit in an error. One body against one path is the largest step between two looks at the clock (one
+    cut, at most some hundred point tests); a call cuts at least one body, so it always moves on. A feature is written
+    into the facts when all its paths are done, never in halves. job["args"]["path_limit"] = n: at most n bodies cut
+    per call (tests, slow machines). The screws are looked for by the
     first call only: that look is cut by the clock, so a later call could find another list, and then the index would
     point at another head and "s<n>" would name another screw. A later call measures exactly the heads of the cursor.
     (A plain number as cursor, from an older plan, is read as the index, and the screws are looked for again.)"""
@@ -445,54 +475,100 @@ def probe(job):
     items += [('screw', h) for h in heads]
     start = int((cur.get('i') if isinstance(cur, dict) else cur) or 0)
     facts = {'openings': [], 'closed': [], 'reach': reach, 'iron_reach': iron_reach, 'cap_max': cap_max, 'n_features': len(items)}
-    if screws is not None and start == 0:               # lists are joined over the calls of one unit: these are written once
+    if screws is not None and start == 0 and not (isinstance(cur, dict) and isinstance(cur.get('screws'), list)):
+        # lists are joined over the calls of one unit: these are written once, by the call that looked for the screws
         facts['screws'] = [{'n': s['n'], 'ref': s['name'], 'size': s['size'], 'head': s['head'], 'by': s['by'], 'seated': s['seated'],
                             'holes': s['holes'], 'under': s['under']} for s in screws]
         facts['not_screws'] = not_screws
         facts['screws_cut'] = cut
+    # the feature an earlier call began: its finished paths, and the path it stopped in
+    begun = {'paths': {}, 'path': None}
+    here, touched, again = gate_rows_key(world), set(), 0
+    if isinstance(cur, dict) and (cur.get('paths') or cur.get('path')):
+        # that feature was measured against the bodies as they were then: the same places, names and boxes (the walk
+        # list), and the same state of every body one of its paths looked at. Else it starts again: never two states joined
+        if cur.get('world') == here and gate_states_same(cur.get('asked'), world):
+            begun = {'paths': dict(cur.get('paths') or {}), 'path': cur.get('path')}
+            touched = set(int(t) for t in cur['asked'])
+        else:
+            again = gate_again(cur.get('again'), 'feature %d' % (start + 1), GATE_MOVED)
+            note = 'the bodies round the part changed between two calls of this unit: feature %d is measured again from its start' % (start + 1)
+            if note not in _GATE_NOTES:
+                _GATE_NOTES.append(note)
+    limit = (job.get('args') or {}).get('path_limit')
+    work = {'cut': 0}
+
+    def clock():                                                        # asked before every body a path meets
+        if work['cut'] >= (int(limit) if limit is not None else 1) and (limit is not None or gate_time_up(job, 3.0)):
+            return True
+        work['cut'] += 1
+        return False
+
+    def path(key, *a):
+        if key in begun['paths']:
+            return begun['paths'][key]
+        part = begun['path'] if (isinstance(begun['path'], dict) and begun['path'].get('key') == key) else None
+        try:
+            got = _opn_path(*a, part=part, clock=clock, seen=touched)
+        except _OpnLate as e:
+            e.state['key'] = key
+            raise
+        begun['paths'][key], begun['path'] = got, None
+        return got
     i = start
     while i < len(items):
-        if i > start and gate_time_up(job, 3.0):
+        if i > start and (gate_time_up(job, 3.0) or (limit is not None and work['cut'] >= int(limit))):
             return {'facts': facts, 'done': False, 'cursor': {'i': i, 'screws': heads}, 'sig': sig}
         kind, it = items[i]
-        if kind == 'hole':
-            segs = it.get('segments') or [{}]
-            role = (it.get('class') or {}).get('role')
-            pocket = it['anchor'].get('kind') == 'insert_pocket' or role == 'insert_pocket'
-            of = 'insert_pocket' if pocket else ('counterbore' if role in ('counterbore', 'countersink') else 'hole')
-            names = [c.get('name') for c in it.get('coaxial') or []]
-            P, A = doc_pt(it['anchor'])
-            r = max(float(segs[0].get('d') or 0.0), float(segs[0].get('d2') or 0.0)) / 2.0
-            paths = {'own': _opn_path(P, A, r, reach, world, (), names)}
-            if pocket:
-                paths['iron'] = _opn_path(P, A, iron_r, iron_reach, world, (), names)
-            facts['openings'].append({'feature': it.get('id'), 'of': of, 'anchor': it['anchor'], 'end': 'mouth', 'paths': paths})
-            if it.get('through') and it.get('exit'):
-                P, A = doc_pt(it['exit'])
-                r = float(segs[-1].get('d2') or segs[-1].get('d') or 0.0) / 2.0
-                paths = {'own': _opn_path(P, A, r, reach, world, (), names)}
-                if pocket:                                              # a post with an insert at each end; a straight pocket set from either end
-                    paths['iron'] = _opn_path(P, A, iron_r, iron_reach, world, (), names)
-                facts['openings'].append({'feature': it.get('id'), 'of': of, 'anchor': it['exit'], 'end': 'exit', 'paths': paths})
-            row = _opn_closed(it, holes, m, world, cap_max, screws_pat)
-            if row:
-                facts['closed'].append(row)
-        elif kind == 'opening':
-            P, A = doc_pt(it['anchor'])
-            size = [float(x) for x in (it.get('size') or [0.0])]
-            deep = it.get('wall') if it.get('through') else it.get('depth')
-            deep = min(3.0, float(deep)) if isinstance(deep, (int, float)) and not isinstance(deep, bool) and deep > 0.2 else 1.0
-            within = _opn_path(P, v_scale(A, -1.0), min(size) / 2.0, deep, world, (), [])      # what lies in the opening itself, behind its mouth
-            facts['openings'].append({'feature': it.get('id'), 'of': it.get('shape') or 'window', 'anchor': it['anchor'], 'end': 'mouth',
-                                      'section': 'inscribed circle', 'paths': {'own': _opn_path(P, A, min(size) / 2.0, reach, world, (), [])},
-                                      'inside': _opn_within(within)})
-        else:
-            top, axis, seat, head_r = tuple(it['top']), tuple(it['axis']), tuple(it['seat']), float(it['head_r'])
-            skip = set(id(r) for r in world if r['path'] == it['path'] and r['body_name'] in it['bodies'])       # the screw itself
-            anchor = {'kind': 'screw', 'axis': [round(c, 4) for c in v_unit(mat_vector(inv, axis))],
-                      'point': [round(c, 2) for c in mat_point(inv, seat)]}
-            facts['openings'].append({'feature': 's%d' % it['n'], 'of': 'screw_head', 'anchor': anchor, 'end': 'mouth', 'ref': it['name'],
-                                      'paths': {'own': _opn_path(top, axis, head_r, reach, world, skip, []),
-                                                'tool': _opn_path(top, axis, head_r + clear / 2.0, reach, world, skip, [])}})
+        rows, closed = [], []                                           # written into the facts when the whole feature is done
+        try:
+            if kind == 'hole':
+                segs = it.get('segments') or [{}]
+                role = (it.get('class') or {}).get('role')
+                pocket = it['anchor'].get('kind') == 'insert_pocket' or role == 'insert_pocket'
+                of = 'insert_pocket' if pocket else ('counterbore' if role in ('counterbore', 'countersink') else 'hole')
+                names = [c.get('name') for c in it.get('coaxial') or []]
+                P, A = doc_pt(it['anchor'])
+                r = max(float(segs[0].get('d') or 0.0), float(segs[0].get('d2') or 0.0)) / 2.0
+                paths = {'own': path('mouth.own', P, A, r, reach, world, (), names)}
+                if pocket:
+                    paths['iron'] = path('mouth.iron', P, A, iron_r, iron_reach, world, (), names)
+                rows.append({'feature': it.get('id'), 'of': of, 'anchor': it['anchor'], 'end': 'mouth', 'paths': paths})
+                if it.get('through') and it.get('exit'):
+                    P, A = doc_pt(it['exit'])
+                    r = float(segs[-1].get('d2') or segs[-1].get('d') or 0.0) / 2.0
+                    paths = {'own': path('exit.own', P, A, r, reach, world, (), names)}
+                    if pocket:                                          # a post with an insert at each end; a straight pocket set from either end
+                        paths['iron'] = path('exit.iron', P, A, iron_r, iron_reach, world, (), names)
+                    rows.append({'feature': it.get('id'), 'of': of, 'anchor': it['exit'], 'end': 'exit', 'paths': paths})
+                row = _opn_closed(it, holes, m, world, cap_max, screws_pat)
+                if row:
+                    closed.append(row)
+            elif kind == 'opening':
+                P, A = doc_pt(it['anchor'])
+                size = [float(x) for x in (it.get('size') or [0.0])]
+                deep = it.get('wall') if it.get('through') else it.get('depth')
+                deep = min(3.0, float(deep)) if isinstance(deep, (int, float)) and not isinstance(deep, bool) and deep > 0.2 else 1.0
+                within = path('within', P, v_scale(A, -1.0), min(size) / 2.0, deep, world, (), [])      # what lies in the opening itself, behind its mouth
+                rows.append({'feature': it.get('id'), 'of': it.get('shape') or 'window', 'anchor': it['anchor'], 'end': 'mouth',
+                             'section': 'inscribed circle', 'paths': {'own': path('own', P, A, min(size) / 2.0, reach, world, (), [])},
+                             'inside': _opn_within(within)})
+            else:
+                top, axis, seat, head_r = tuple(it['top']), tuple(it['axis']), tuple(it['seat']), float(it['head_r'])
+                skip = set(id(r) for r in world if r['path'] == it['path'] and r['body_name'] in it['bodies'])       # the screw itself
+                anchor = {'kind': 'screw', 'axis': [round(c, 4) for c in v_unit(mat_vector(inv, axis))],
+                          'point': [round(c, 2) for c in mat_point(inv, seat)]}
+                rows.append({'feature': 's%d' % it['n'], 'of': 'screw_head', 'anchor': anchor, 'end': 'mouth', 'ref': it['name'],
+                             'paths': {'own': path('own', top, axis, head_r, reach, world, skip, []),
+                                       'tool': path('tool', top, axis, head_r + clear / 2.0, reach, world, skip, [])}})
+        except _OpnLate as e:                                           # out of time inside this feature: what is done goes with the cursor
+            state = {'i': i, 'screws': heads, 'paths': begun['paths'], 'path': e.state, 'world': here, 'asked': gate_states(world, touched)}
+            if i == start and again:
+                state['again'] = again
+            return {'facts': facts, 'done': False, 'sig': sig, 'cursor': state}
+        facts['openings'] += rows
+        facts['closed'] += closed
+        begun['paths'], begun['path'] = {}, None
+        touched.clear()
         i += 1
     return {'facts': facts, 'done': True, 'cursor': None, 'sig': sig}

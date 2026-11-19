@@ -148,7 +148,7 @@ class Fake(Dir):
         fusion.set_facts('fusion_census', 'demo/bracket', {'holes': [], 'openings': [], 'counts': {}})
         res, env = self.call(fusion)
         self.assertEqual(res, fake_fusion.OK)
-        self.assertEqual(sorted(env), ['cursor', 'doc', 'doc_version', 'done', 'elapsed_s', 'error', 'facts', 'job', 'open_documents', 'part', 'probe', 'sig'])
+        self.assertEqual(sorted(env), ['asked', 'cursor', 'doc', 'doc_version', 'done', 'elapsed_s', 'error', 'facts', 'job', 'notes', 'open_documents', 'part', 'probe', 'sig'])
         self.assertEqual((env['job'], env['doc'], env['doc_version'], env['part'], env['sig'], env['probe'], env['done'], env['error']),
                          ('u-0001', 'Demo Assembly', 12, 'demo/bracket', SIG, 'fusion_census', True, None))
         self.assertEqual(env['open_documents'], ['Demo Assembly']); self.assertEqual(fusion.calls_of('fusion_census', 'demo/bracket')[0]['id'], 'u-0001')
@@ -240,6 +240,29 @@ class Geom(unittest.TestCase):
         self.assertNotEqual(_geom.brep_signature_of(11500.0, 2900.0, (8, 12, 8), box, 3, _geom.faces_sum(faces)), whole)   # the count is in it too
         self.assertNotEqual(_geom.face_digest(94.25, (10, 10, 5)), _geom.face_digest(94.25, (10, 10, 5), 1))   # a surface type, when given, counts
         self.assertLess(_geom.faces_sum(faces), _geom.SIG_MOD)
+
+    def test_a_tape_of_answers_is_plain_json_and_knows_its_questions(self):
+        import random
+        rnd = random.Random(5)
+        for n in (0, 1, 3, 4, 5, 63, 64, 65, 1000):
+            answers = [rnd.random() < 0.3 for _ in range(n)]
+            saved = _geom.tape_pack(answers, 12345)
+            self.assertEqual(json.loads(json.dumps(saved)), saved)
+            self.assertEqual((saved['n'], len(saved['hex']) <= n // 4 + 1), (n, True))
+            self.assertEqual(_geom.tape_unpack(saved), (answers, 12345))
+        self.assertEqual(_geom.tape_pack([False, False, True]), {'n': 3, 'hex': '1', 'sum': 0})          # leading "no" answers are kept by the count
+        for bad in (None, 5, {}, {'n': 2, 'hex': 'zz', 'sum': 0}, {'n': 2, 'hex': 'f', 'sum': 0}, {'n': -1, 'hex': '', 'sum': 0}, {'n': 2, 'hex': '1'},
+                    {'n': True, 'hex': '1', 'sum': 0}, {'n': 1, 'hex': 1, 'sum': 0}):
+            with self.assertRaises(ValueError): _geom.tape_unpack(bad)
+        a = _geom.tape_sum(_geom.tape_sum(0, (1.0, 2.0, 3.0), 4), (5.0, 6.0, 7.0), 4)
+        self.assertEqual(a, _geom.tape_sum(_geom.tape_sum(0, (1.0, 2.0, 3.0), 4), (5.0, 6.0, 7.0), 4))
+        self.assertEqual(a, _geom.tape_sum(_geom.tape_sum(0, (1.0000001, 2.0, 3.0), 4), (5.0, 6.0, 7.0), 4))                   # to 0.001 mm
+        others = [_geom.tape_sum(_geom.tape_sum(0, (5.0, 6.0, 7.0), 4), (1.0, 2.0, 3.0), 4),                                  # another order
+                  _geom.tape_sum(_geom.tape_sum(0, (1.002, 2.0, 3.0), 4), (5.0, 6.0, 7.0), 4),                                # a point that moved
+                  _geom.tape_sum(_geom.tape_sum(0, (1.0, 2.0, 3.0), 5), (5.0, 6.0, 7.0), 4),                                  # another body
+                  _geom.tape_sum(0, (1.0, 2.0, 3.0), 4), _geom.tape_sum(a, (0.0, 0.0, 0.0), 0)]                               # one fewer, one more
+        self.assertEqual(len(set(others + [a])), 6)
+        self.assertTrue(all(0 <= x < _geom.TAPE_MOD for x in others))
 
     def test_census_and_ring_helpers_are_declared(self):
         from probes import _geom_rings
@@ -366,6 +389,86 @@ class Prelude(Dir):
         self.assertIsNone(env['error']); self.assertLess(env['facts']['left'], 12.5); self.assertGreater(env['facts']['left'], 10.0)     # 8 s of the budget went in the queue
         env, _ = self.run_script([FakeDoc('Demo Assembly', 2)], 'def probe(job):\n    return {"facts": {"left": gate_left(job)}}\n', deadline_s=20, sent=time.time() + 500)
         self.assertGreater(env['facts']['left'], 19.0)                                           # a send time from the future is not believed
+
+    def test_the_envelope_says_which_call_wrote_it_and_carries_a_timing_block_beside_the_facts(self):
+        probe = 'def probe(job):\n    return {"facts": {"a": 1}, "cursor": {"i": 2}, "done": False, "timing": {"calls": 1, "faces": {"s": 0.5, "pc": 40}}}\n'
+        env, _ = self.run_script([FakeDoc('Demo Assembly', 2)], probe, cursor={'i': 1, 'part': {}}, sig='ab' * 32, sent=12345.5)
+        self.assertEqual(env['asked'], {'run': 'r1', 'sent': 12345.5, 'sig': 'ab' * 32, 'cursor_key': gate_fusion_rpc.cursor_key({'i': 1, 'part': {}})})
+        self.assertEqual(env['cursor'], {'i': 2}); self.assertEqual(env['timing'], {'calls': 1, 'faces': {'s': 0.5, 'pc': 40}})
+        self.assertEqual(env['facts'], {'a': 1})                                                   # the timing is never a fact
+        env, _ = self.run_script([FakeDoc('Demo Assembly', 2)], 'def probe(job):\n    return {"facts": {}, "timing": "fast"}\n')
+        self.assertNotIn('timing', env); self.assertEqual(env['asked']['cursor_key'], gate_fusion_rpc.cursor_key(None))
+
+    def test_a_probe_that_works_in_place_on_its_cursor_does_not_change_which_call_the_file_names(self):
+        """The digest of the cursor is taken before the probe runs. A probe that writes into the cursor it was sent (the
+        state of a feature in progress) must not turn its result file into the answer of another call."""
+        sent = {'i': 1, 'part': {'f': {'0|+': []}}, 'timing': {'calls': 3}}
+        probe = ('def probe(job):\n    cur = job["cursor"]\n    cur["part"]["f"]["1|-"] = [1]\n    cur["part"]["tape"] = {"n": 5}\n    cur["i"] = 9\n'
+                 '    return {"facts": {}, "cursor": cur, "done": False}\n')
+        env, _ = self.run_script([FakeDoc('Demo Assembly', 2)], probe, cursor=json.loads(json.dumps(sent)), sig='ab' * 32, sent=12345.5)
+        self.assertEqual(env['cursor']['i'], 9)                                                    # the probe did change it
+        self.assertEqual(env['asked']['cursor_key'], gate_fusion_rpc.cursor_key(sent))
+        self.assertNotEqual(env['asked']['cursor_key'], gate_fusion_rpc.cursor_key(env['cursor']))
+        raising = 'def probe(job):\n    job["cursor"]["i"] = 9\n    raise RuntimeError("boom")\n'
+        env, _ = self.run_script([FakeDoc('Demo Assembly', 2)], raising, cursor=json.loads(json.dumps(sent)))
+        self.assertIn('boom', env['error']); self.assertEqual(env['cursor'], sent)                # an error hands back the cursor as it came
+
+    TAPE_PROBE = '''
+class Body:
+    asked = 0
+    def pointContainment(self, p):
+        Body.asked += 1
+        return "IN" if (p.x * 10.0) % 2.0 < 1.0 else "OUT"
+
+def step(tape, body, n, shift=0.0):
+    return [tape.ask(body, (float(k) + shift, 0.0, 0.0)) for k in range(n)]
+
+def probe(job):
+    args = job.get("args") or {}
+    body, tape = Body(), GateTape(job, reserve=3.0, every=4, least=8)
+    out = {"stopped": False, "replay": None}
+    try:
+        tape.begin(job.get("cursor"))
+        out["answers"] = step(tape, body, args.get("n", 20), args.get("shift", 0.0))
+        tape.end()
+    except GateStop:
+        out["stopped"] = True
+    except GateReplay as e:
+        out["replay"] = str(e)
+    out.update(asked=Body.asked, fresh=tape.fresh, replayed=tape.replayed, timing={k: v[1] for k, v in tape.timing.items()})
+    return {"facts": out, "done": not out["stopped"], "cursor": tape.saved() if out["stopped"] else None}
+'''
+
+    def tape(self, **kw):
+        mods = fake_adsk([FakeDoc('Demo Assembly', 2)])
+        mods['adsk.fusion'].PointContainment = types.SimpleNamespace(PointInsidePointContainment='IN')
+        real = globals()['fake_adsk']
+        globals()['fake_adsk'] = lambda documents: mods
+        try:
+            return self.run_script([], self.TAPE_PROBE, **kw)[0]
+        finally:
+            globals()['fake_adsk'] = real
+
+    def test_a_tape_stops_a_step_when_the_time_is_up_and_the_next_call_goes_on_without_asking_twice(self):
+        whole = self.tape(args={'n': 20})['facts']
+        self.assertEqual((whole['stopped'], whole['asked'], whole['fresh'], whole['replayed'], whole['timing']), (False, 20, 20, 0, {'work': 20}))
+        self.assertEqual(whole['answers'], [k % 2 == 0 for k in range(20)])
+        # no time at all: the first 8 questions are asked all the same, so every call moves on
+        first = self.tape(args={'n': 20}, deadline_s=0.001)
+        self.assertEqual((first['done'], first['facts']['asked'], first['cursor']['n']), (False, 8, 8))
+        second = self.tape(args={'n': 20}, deadline_s=0.001, cursor=first['cursor'])
+        self.assertEqual((second['facts']['asked'], second['facts']['replayed'], second['cursor']['n']), (8, 8, 16))     # 8 from the tape, 8 from Fusion
+        third = self.tape(args={'n': 20}, deadline_s=0.001, cursor=second['cursor'])
+        self.assertEqual((third['done'], third['facts']['asked'], third['facts']['replayed'], third['facts']['answers']), (True, 4, 16, whole['answers']))
+        # with time the clock is read and nothing stops; a limit of the job stops whatever the clock says
+        self.assertEqual(self.tape(args={'n': 20, 'tape_limit': 3})['cursor']['n'], 3)
+        # a step that asks other questions than its tape answers is told so, and one that asks fewer too
+        moved = self.tape(args={'n': 20, 'shift': 0.5}, cursor=first['cursor'])['facts']
+        self.assertIn('not the ones its tape answers', moved['replay'])
+        fewer = self.tape(args={'n': 5}, cursor=first['cursor'])['facts']
+        self.assertIn('asked 5 questions and its tape answers 8', fewer['replay'])
+        broken = self.tape(args={'n': 20}, cursor={'n': 2, 'hex': 'ff', 'sum': 0})
+        self.assertIn('ValueError', broken['error'])
 
     def test_part_lookup_and_signature(self):
         def face(kind, area_cm2, c): return types.SimpleNamespace(geometry=types.SimpleNamespace(surfaceType=kind), area=area_cm2, centroid=Pt(*c))

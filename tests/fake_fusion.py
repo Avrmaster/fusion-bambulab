@@ -23,6 +23,13 @@ Added for the tests that drive gate.py as a whole:
   - `fusion.read_only` notes, per call, whether the unit would have been sent read-only (gate_fusion_rpc.read_only_for);
   - `fusion.set_export(part, stl_bytes)`: the answer of the fusion_export unit, which writes the STL to JOB["args"]["stl"];
   - `fusion.clear(probe, part)` forgets the canned answers of one unit (the model changed between two runs);
+  - `fusion.set_late(probe, part, facts, elapsed_s=65.0)`: the unit works longer than the host waits. The call times
+    out, the ping after it gets no answer (Fusion is busy), and nothing is written until the test calls
+    `fusion.finish()`: then the envelope is written as the real unit writes it, and the ping answers again. A call
+    that arrives while a unit is still working is counted in `fusion.stacked` (the host must never send one).
+    With broken=True the connection ends with an error instead of a timeout, and the unit works on all the same;
+  - `fusion.listening`: what gate_fusion_rpc.http_listening is replaced with: does anything accept a connection
+    (False only while `fusion.down`: Fusion is not running);
   - `demo_rules()` / `DEMO_JUDGES`: a small registry and its judges, independent of the shipped ones;
   - `DemoProject`: a gated project in a temporary folder wired to all of the above."""
 import contextlib, io, json, os, shutil, sys, tempfile
@@ -46,6 +53,9 @@ class FakeFusion:
         self.alive_after_timeout = True
         self.now = 0.0               # seconds the fake has used; see clock()
         self.read_only = []          # per call: would this unit have been sent read-only
+        self.late = {}               # (probe, part) -> list of answers that come after the host stopped waiting
+        self.working = None          # (job, answer) of the unit Fusion is still busy with
+        self.stacked = 0             # calls that were sent while a unit was still working
 
     # ---- what a test sets up ----
     def set_facts(self, probe, part, facts, done=True, cursor=None, sig=None, elapsed_s=0.1):
@@ -62,6 +72,33 @@ class FakeFusion:
         self.hang.add((probe, part))
         self.alive_after_timeout = alive_after
 
+    def set_late(self, probe, part, facts, done=True, cursor=None, sig=None, elapsed_s=65.0, error=None, broken=False):
+        """Queue one answer that comes late: the call times out and Fusion stays busy (no ping) until finish().
+        broken=True: the call does not time out, the connection ends with an error while the unit works on."""
+        self.late.setdefault((probe, part), []).append({'facts': facts, 'done': done, 'cursor': cursor, 'sig': sig, 'elapsed_s': elapsed_s, 'error': error,
+                                                        'broken': broken})
+
+    def finish(self, write=True):
+        """The unit Fusion was busy with ends now. write=False: it ends without a result file (it was killed)."""
+        job, a = self.working
+        self.working = None
+        if write:
+            env = self._envelope(job)
+            env.update(facts=a['facts'], done=a['done'], cursor=a['cursor'], elapsed_s=a['elapsed_s'], error=a['error'],
+                       sig=a['sig'] if a['sig'] is not None else job['sig'])
+            self._write(job, env)
+
+    def _envelope(self, job):
+        return {'job': job['id'], 'doc': job['doc'], 'doc_version': self.documents.get(job['doc']), 'part': job['part'],
+                'sig': None, 'probe': job['probe'], 'facts': {}, 'done': False, 'cursor': job['cursor'], 'elapsed_s': 0.0,
+                'error': None, 'open_documents': sorted(self.documents), 'notes': [],
+                'asked': {'run': job['run'], 'sent': job.get('sent'), 'sig': job['sig'], 'cursor_key': gate_fusion_rpc.cursor_key(job['cursor'])}}
+
+    def _write(self, job, env):
+        os.makedirs(os.path.dirname(job['out']), exist_ok=True)
+        with open(job['out'], 'w', encoding='utf-8') as f:
+            json.dump(env, f)
+
     def set_export(self, part, stl_bytes, written=True, why_not=None, sig=None, **facts):
         """Queue the answer of the fusion_export unit of one part. When `written`, the call writes `stl_bytes` to the path
         the job names in JOB["args"]["stl"], as the real probe writes the quarantine STL. `facts` overrides single facts."""
@@ -72,6 +109,7 @@ class FakeFusion:
         """Forget the canned answers and the timeout of one unit."""
         self.answers.pop((probe, part), None)
         self.hang.discard((probe, part))
+        self.late.pop((probe, part), None)
 
     def clock(self):
         """Seconds the fake has used so far: what gate_plan._clock returns in a DemoProject."""
@@ -85,12 +123,20 @@ class FakeFusion:
         self.calls.append(job)
         self.read_only.append(gate_fusion_rpc.read_only_for(script))
         key = (job['probe'], job['part'])
+        if self.working is not None:                 # Fusion is busy: this call waits behind the unit that still works
+            self.stacked += 1
+            self.now += timeout_s
+            return dict(OK, ok=False, error='timeout', timeout=True)
+        if self.late.get(key):
+            self.working = (job, self.late[key].pop(0))
+            if self.working[1].get('broken'):
+                return dict(OK, ok=False, error='RemoteDisconnected: Remote end closed connection without response')
+            self.now += timeout_s
+            return dict(OK, ok=False, error='timeout', timeout=True)
         if key in self.hang:
             self.now += timeout_s
             return dict(OK, ok=False, error='timeout', timeout=True)
-        env = {'job': job['id'], 'doc': job['doc'], 'doc_version': self.documents.get(job['doc']), 'part': job['part'],
-               'sig': None, 'probe': job['probe'], 'facts': {}, 'done': False, 'cursor': job['cursor'], 'elapsed_s': 0.0,
-               'error': None, 'open_documents': sorted(self.documents)}
+        env = self._envelope(job)
         if job['doc'] not in self.documents:
             env['error'] = 'KeyError: document %r is not open (open: %s)' % (job['doc'], ', '.join(sorted(self.documents)))
         elif key not in self.answers:
@@ -103,9 +149,7 @@ class FakeFusion:
             if a.get('export'):
                 env['facts'] = self._export(job, a['export'], a['facts'])
         self.now += env['elapsed_s'] or 0.0
-        os.makedirs(os.path.dirname(job['out']), exist_ok=True)
-        with open(job['out'], 'w', encoding='utf-8') as f:
-            json.dump(env, f)
+        self._write(job, env)
         return dict(OK)
 
     def _export(self, job, export, overrides):
@@ -124,10 +168,13 @@ class FakeFusion:
 
     def ping(self, url, timeout_s=5):
         self.pings += 1
-        alive = not self.down and self.alive_after_timeout
+        alive = not self.down and self.alive_after_timeout and self.working is None
         if not alive:
             self.now += timeout_s
         return alive
+
+    def listening(self, url, timeout_s=5):
+        return not self.down
 
     # ---- what a test asks afterwards ----
     def calls_of(self, probe, part=None):
@@ -321,7 +368,8 @@ class DemoProject:
         code, out, err = demo.gate('run', '--wall', '600')
 
     It replaces, until the test ends: gate_registry.load_default (the demo registry), the judges of the same names in
-    gate_judges.JUDGES, gate_fusion_rpc.http_transport / http_ping (the fake) and gate_plan._clock (the fake's clock)."""
+    gate_judges.JUDGES, gate_fusion_rpc.http_transport / http_ping / http_listening (the fake) and gate_plan._clock
+    (the fake's clock)."""
     DOC, KEY = 'Demo Assembly', 'demo'
 
     def __init__(self, test, part_questions=('process.concept_geometry',), documents=None, budget_s=20, layout=None):
@@ -345,6 +393,7 @@ class DemoProject:
                    mock.patch.object(gate_registry, 'load_default', lambda: gate_registry.load(rules_dir, judges=set(gate_judges.JUDGES), complete=False)),
                    mock.patch.object(gate_fusion_rpc, 'http_transport', self.fusion.transport),
                    mock.patch.object(gate_fusion_rpc, 'http_ping', self.fusion.ping),
+                   mock.patch.object(gate_fusion_rpc, 'http_listening', self.fusion.listening),
                    mock.patch.object(gate_plan, '_clock', self.fusion.clock)]
         for p in patches:
             p.start()

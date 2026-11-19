@@ -274,6 +274,14 @@ def doctor_lines(root, pinger=None):
             if d.get('name') and not d.get('motion_groups'):
                 _line(out, 'warn', 'documents', 'document %s declares no "motion_groups": clearance.min_gap_moving checks nothing in it '
                                                 '(declare which components move together, or [] stays a decision the report repeats)' % d.get('key'))
+        try:                                            # units of the last run that worked longer than their budget: a defect of a probe
+            import gate_plan
+            for text in gate_plan.over_lines(gate_plan.scan_over_budget(root) + gate_plan.over_budget(gate_plan.load_plan(root))):
+                _line(out, 'warn', 'units', text[len('OVER BUDGET  '):])
+            if gate_plan.waiting_line(root):
+                _line(out, 'warn', 'units', gate_plan.waiting_line(root))
+        except Exception as e:
+            _line(out, 'warn', 'units', 'the plan of the last run could not be read (%s)' % e)
         try:                                            # what the last scan said once per document: linked documents, equal bodies, parts in no motion group
             import gate_plan
             census = gate_common.load_census(root)

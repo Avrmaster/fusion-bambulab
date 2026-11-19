@@ -48,18 +48,26 @@ _SCR_STACK_SPAN = 60.0          # mm: that body is followed no farther than this
 _SCR_STACK_LINES = 3            # lines per circle, on the first three circles that meet the body
 
 
+_SCR_TAPE = None                # the GateTape of this call (_fusion.py): probe() sets it, every point test goes through it
+
+
 class _ScrLate(Exception):
-    """The time of the call ran out inside a screw that is not the first of the call: probe() answers "not done" with
-    the cursor on that screw, so it is measured whole by the next call and no half-measured row is stored."""
+    """The time of the call ran out inside a screw that is not the first of the call, in a caller that asks without a
+    tape: the screw is measured whole by the next call and no half-measured row is stored. probe() asks through a
+    GateTape: there the tape stops the screw, wherever it is, and the next call goes on with it."""
 
 
-def _scr_inside(rec):
+def _scr_inside(rec, tag=0):
+    """callable(point mm) -> is the point inside the body of this record. A point outside the body's bounding box is
+    answered without a call; the others are asked through the tape of the call when probe() has set one."""
     body, lo, hi = rec['body'], rec['box'][0], rec['box'][1]
     IN = adsk.fusion.PointContainment.PointInsidePointContainment
 
     def inside(p):
         if p[0] < lo[0] or p[0] > hi[0] or p[1] < lo[1] or p[1] > hi[1] or p[2] < lo[2] or p[2] > hi[2]:
             return False
+        if _SCR_TAPE is not None:
+            return _SCR_TAPE.ask(body, p, tag)
         return body.pointContainment(gate_point(p)) == IN
     return inside
 
@@ -307,7 +315,8 @@ def _scr_gaps(gaps, solid, land, A, job, may_stop=False):
     by the second), up to _SCR_STACK_LINES on each; the best line is the one with both numbers and the smallest larger
     number. [0.0, 0.0] = the two parts clamp the body between them along the screw.
     "late": True on a row that was not measured because the time of the call was used up ("along" is then
-    [None, None]); with may_stop the unit stops instead (_ScrLate) and the screw is measured by the next call.
+    [None, None]); with may_stop the caller stops instead (_ScrLate). Both only without a tape: probe() asks through a
+    GateTape, which stops the screw between two point tests and lets the next call go on, so a unit writes no "late".
     Cost: a box test per body, then point tests for the bodies whose box meets the slab; no distance call."""
     R = float((job.get('params') or {}).get('screws.bridge_search_r', 8.0))
     n_r = max(1, int(math.ceil(R / _SCR_GAP_STEP - 1e-9)))
@@ -344,7 +353,7 @@ def _scr_gaps(gaps, solid, land, A, job, may_stop=False):
                     if arc[i] not in picks:
                         picks.append(arc[i])
                 for p in picks:
-                    if gate_time_up(job, 1.5):
+                    if _SCR_TAPE is None and gate_time_up(job, 1.5):     # with a tape the tape stops the screw, and the next call goes on
                         if may_stop:
                             raise _ScrLate()
                         row['late'] = True
@@ -625,7 +634,7 @@ def _scr_holes(job, world, m, screws, known, pats):
 def probe(job):
     """job  uses "doc", "component_id", "occurrence", "body", "params" ("screws.ref_pattern", "washers.ref_pattern",
          "washers.landing_gap_max", "screws.bridge_search_r"), "tables" ("screws", "washers", "inserts"), "features" ({"holes", "openings"} of the census),
-         "not_printed", "cursor" (index of the next screw), "deadline_s"
+         "not_printed", "cursor" (see the end), "deadline_s", "args" ({"tape_limit": n}: stop after n point tests in one call)
 
     A screw belongs to this unit when its head sits on this part or its thread ends in this part.
 
@@ -670,9 +679,9 @@ def probe(job):
       under the landing), the two bodies either side, and the bought solid bodies that stand in the slab of the gap
       within screws.bridge_search_r of the axis, each with the air between it and the part on either side on a line
       parallel to the screw (_scr_gaps, _scr_stack). A bearing ring the two parts clamp between them reads
-      "along": [0.0, 0.0]: screws.shell_bears does not take that gap for air. [] = no gap. "late": True marks a
-      body that was not measured because the time of the call was used up (only on the first screw of a call; any
-      later screw is left to the next call whole).
+      "along": [0.0, 0.0]: screws.shell_bears does not take that gap for air. [] = no gap. "late": True marked a
+      body that was not measured because the time of a call was used up; a unit does not write it any more (a screw
+      that runs out of time goes on in the next call), a judge still reads it in facts stored before.
       "tip_at": {"name", "kind", "part"} or None, only on a screw with "engagement" 0.0 and "into" None: the body the
       end of the thread stands in (_scr_tip_at).
       A screw ref without a readable shape is listed with "role": "thread", "engagement": None and "why".
@@ -695,7 +704,15 @@ def probe(job):
       "approx": True.
       facts also hold "n_screws" and "n_washers" (the refs near the part, of which the lists hold those that belong to
       it) and "unreadable_washers": washer refs near the part whose body has no ring shape, so nothing was measured.
-    The cursor is the index of the next ref in: screws, then washers."""
+    The cursor is the index of the next ref in: screws, then washers; or {"i": that index, "tape": the answers of the
+    point tests of ref i so far, "world": gate_rows_key() of the bodies round the part, "asked": gate_states() of the
+    ref's own bodies and of the bodies that gave those answers} when the time of a call ran out inside a screw or a washer. A later call whose
+    bodies are not those (one moved, grew, was hidden, or changed inside its box) measures that ref again from its
+    start, with a note; the third such call in a row ends the unit in an error. One screw is thousands of
+    point tests against the part and every body within 12 mm, which bodies with thousands of faces do not answer within
+    one call: every point test goes through a GateTape of _fusion.py, the clock is read every 16 tests, and the next
+    call goes on with the same ref. Its facts are the facts of one call. "unreadable_washers", "not_screws", "rejected"
+    and "fastener_holes" are written by the first call of a unit only."""
     design = gate_design(job)
     occ, comp, body = gate_body(design, job)
     sig = gate_signature(body)
@@ -705,9 +722,9 @@ def probe(job):
     params, tables = job.get('params') or {}, job.get('tables') or {}
     touch = float(params.get('washers.landing_gap_max', 0.05))
     world = gate_world(design, job, part_box, 45.0, '' if occ is None else occ.fullPathName, body.name)
-    for r in world:
+    for k, r in enumerate(world):
         if not r['mesh']:
-            r['_inside'] = _scr_inside(r)
+            r['_inside'] = _scr_inside(r, k)
     own = [r for r in world if r['own']]
     if not own:
         raise KeyError('the body of %r was not found among the bodies of the document' % (job.get('part'),))
@@ -759,25 +776,61 @@ def probe(job):
         for r in g['recs']:
             r['_fast'] = True                                            # a recognised fastener carries no clamp load across a gap
     items = [('screw', g) for g in screws] + [('washer', g) for g in washers]
-    start = int(job.get('cursor') or 0)
+    cur = job.get('cursor')
+    first_call = cur is None                                             # lists are joined over the calls of one unit: some are written once
+    saved = cur.get('tape') if isinstance(cur, dict) else None           # the ref an earlier call began
+    start = int((cur.get('i') if isinstance(cur, dict) else cur) or 0)
+    again = 0                                                            # calls in a row that had to start ref `start` again
+    here = gate_rows_key(world)
+    if saved is not None and (cur.get('world') != here or not gate_states_same(cur.get('asked'), world)):
+        # the bodies are not the ones the answers of that tape were given by: the ref from its start, never two states joined
+        saved = None
+        name = str(items[start][1].get('name')) if start < len(items) else 'ref %d' % (start + 1)
+        again = gate_again(cur.get('again'), name, GATE_MOVED)
+        note = 'the bodies round the part changed between two calls of this unit: %s is measured again from its start' % name
+        if note not in _GATE_NOTES:
+            _GATE_NOTES.append(note)
     facts = {'screws': [], 'washers': [], 'passing': [], 'n_screws': len(screws), 'n_washers': len(washers),
-             'unreadable_washers': unreadable if start == 0 else [], 'not_screws': not_screws if start == 0 else [],
-             'rejected': rejected if start == 0 else [],
-             'fastener_holes': _scr_holes(job, world, gate_matrix(occ), screws, taken | set(id(r) for t in threads for r in t['recs']), pats) if start == 0 else []}
+             'unreadable_washers': unreadable if first_call else [], 'not_screws': not_screws if first_call else [],
+             'rejected': rejected if first_call else [],
+             'fastener_holes': _scr_holes(job, world, gate_matrix(occ), screws, taken | set(id(r) for t in threads for r in t['recs']), pats) if first_call else []}
+    global _SCR_TAPE
+    tape = _SCR_TAPE = GateTape(job, reserve=3.0)
     i = start
     while i < len(items):
-        if i > start and gate_time_up(job, 3.0):
+        if i > start and (gate_time_up(job, 3.0) or tape.out_of_time()):
             return {'facts': facts, 'done': False, 'cursor': i, 'sig': sig}
         kind, g = items[i]
-        if kind == 'screw':
+
+        def one():
+            if kind == 'screw':
+                return _scr_screw(g, job, world, own[0], inv, washers, threads, table)
+            return _scr_washer(g, job, world, own[0], inv, screws, threads, touch)
+        mine = saved if i == start else None
+        try:
             try:
-                row = _scr_screw(g, job, world, own[0], inv, washers, threads, table, may_stop=i > start)
-            except _ScrLate:                                             # out of time inside this screw: the next call measures it whole
-                return {'facts': facts, 'done': False, 'cursor': i, 'sig': sig}
+                tape.begin(mine)
+                row = one()
+                tape.end()
+            except (GateReplay, ValueError) as e:                        # not the questions the tape answers: this ref from its start
+                if mine is None:
+                    raise
+                again = gate_again(cur.get('again'), str(g.get('name')))
+                note = '%s was measured again from its start: %s' % (g.get('name'), str(e)[:120])
+                if note not in _GATE_NOTES:
+                    _GATE_NOTES.append(note)
+                tape.begin(None)
+                row = one()
+                tape.end()
+        except GateStop:                                                 # out of time inside this ref: its answers go with the cursor
+            mine = [k for k, r in enumerate(world) if any(r is x for x in g['recs'])]      # the ref itself: its shape is read again by every call
+            state = {'i': i, 'tape': tape.saved(), 'world': here, 'asked': gate_states(world, set(tape.tags) | set(mine))}
+            if i == start and again:
+                state['again'] = again
+            return {'facts': facts, 'done': False, 'cursor': state, 'sig': sig}
+        if kind == 'screw':
             facts['passing' if row.get('passing') else 'screws'].append({k: v for k, v in row.items() if k != 'passing'})
-        else:
-            row = _scr_washer(g, job, world, own[0], inv, screws, threads, touch)
-            if row:
-                facts['washers'].append(row)
+        elif row:
+            facts['washers'].append(row)
         i += 1
     return {'facts': facts, 'done': True, 'cursor': None, 'sig': sig}

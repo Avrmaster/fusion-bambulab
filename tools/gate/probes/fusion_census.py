@@ -29,7 +29,12 @@ _CEN_LIMITS = {'hole_d_max': 30.0, 'floor_max': 20.0, 'opening_min_depth': 1.0, 
                'neighbour_faces': 8000}
 
 
+_CEN_TAPE = None                # the GateTape of the openings of one planar face (_fusion.py); None: ask Fusion directly
+
+
 def _cen_in(body, p):
+    if _CEN_TAPE is not None:
+        return _CEN_TAPE.ask(body, p)
     return body.pointContainment(gate_point(p)) == adsk.fusion.PointContainment.PointInsidePointContainment
 
 
@@ -323,10 +328,15 @@ def probe(job):
       "counts" also has "cylinders", "partial_arcs", "outer", "closed", "ring_grooves", "bores", "boss_feet",
       "shallow_recesses", "edges_not_sampled".
     The cursor is an object {"sig", "face", "cyl", "stack", "oface", "n_open", "counts"}; each call returns only the NEW
-    holes, bores and openings and the running counts. A part whose signature is not job["sig"] any more is not
+    holes, bores and openings and the running counts. The clock is read every 4 cylinder faces, before the walk over
+    the neighbours, before every stack, and every 32 faces of the openings. One planar face can hold many openings,
+    each walked down in up to 200 steps of five point tests: there the point tests go through a GateTape of _fusion.py,
+    and a face that runs out of time is in the cursor as "tape" (its answers so far), with "oface" still on that face.
+    A part whose signature is not job["sig"] any more is not
     measured: {"stale": true}, "done" false, the new "sig". With no job["sig"], a body that changed between two calls
     raises.
-    job["args"]: any key of "limits", and {"limit": n}: at most n faces, stacks or planar faces per call."""
+    job["args"]: any key of "limits", {"limit": n}: at most n faces, stacks or planar faces per call, and
+    {"tape_limit": n}: stop after n point tests of the openings in one call (tests, slow machines)."""
     design = gate_design(job)
     occ, comp, body = gate_body(design, job)
     sig = gate_signature(body)
@@ -344,7 +354,7 @@ def probe(job):
     n = faces.count
     holes, bores, openings, skipped, partial = [], [], [], [], []
 
-    def result(face, stack, oface, n_open, done):
+    def result(face, stack, oface, n_open, done, tape=None):
         counts['openings'] = n_open
         counts.setdefault('holes', 0)
         counts.setdefault('unknown', 0)
@@ -353,12 +363,14 @@ def probe(job):
         if skipped:
             facts['coaxial_skipped'] = skipped
         state = None if done else {'sig': sig, 'face': face, 'cyl': cyl, 'stack': stack, 'oface': oface, 'n_open': n_open, 'counts': counts}
+        if state is not None and tape is not None:
+            state['tape'] = tape                         # the planar face "oface" was begun: its point tests so far
         return {'facts': facts, 'done': done, 'cursor': state, 'sig': sig}
 
     limit = args.get('limit')                           # at most this many faces, stacks or planar faces per call (tests, slow machines)
     i = i0 = int(cur.get('face') or 0)                  # 1. the cylindrical and conical faces
     while i < n:
-        if i > i0 and (((i - i0) % 16 == 0 and gate_time_up(job, 2.5)) or (limit is not None and i - i0 >= int(limit))):
+        if i > i0 and (((i - i0) % 4 == 0 and gate_time_up(job, 2.5)) or (limit is not None and i - i0 >= int(limit))):
             return result(i, 0, 0, 0, False)
         c = _cen_cylinder(faces.item(i), body, counts, partial, lim['hole_d_max'])
         if c:
@@ -368,6 +380,8 @@ def probe(job):
     j = j0 = int(cur.get('stack') or 0)
     n_open = int(cur.get('n_open') or 0)
     if j < len(stacks):
+        if i > i0 and gate_time_up(job, 5.0):           # the walk over the faces of the neighbours is one piece: not at the end of a call
+            return result(n, j, 0, n_open, False)
         nb, skipped = _cen_neighbours(design, occ, body, job, lim['neighbour_faces'])
         tables = job.get('tables') or {}
         while j < len(stacks):
@@ -381,11 +395,41 @@ def probe(job):
             j += 1
     box = gate_bbox(body)                               # 3. the openings that are not round
     k = k0 = int(cur.get('oface') or 0)
-    while k < n:
-        if k > k0 and (((k - k0) % 32 == 0 and gate_time_up(job, 2.5)) or (limit is not None and k - k0 >= int(limit))):
-            return result(n, len(stacks), k, n_open, False)
-        for op in _cen_openings(body, faces.item(k), box, lim, counts):
-            n_open += 1
-            openings.append(dict(op, id='o%d' % n_open))
-        k += 1
-    return result(n, len(stacks), n, n_open, True)
+    global _CEN_TAPE
+    tape = _CEN_TAPE = GateTape(job, reserve=2.5)
+    saved = cur.get('tape')                             # the planar face an earlier call began
+    again = 0                                           # calls in a row that had to start that face again
+    try:
+        while k < n:
+            if k > k0 and (((k - k0) % 32 == 0 and gate_time_up(job, 2.5)) or tape.out_of_time() or (limit is not None and k - k0 >= int(limit))):
+                return result(n, len(stacks), k, n_open, False)
+            before = dict(counts)                       # a face that is cut by the clock has counted nothing
+            mine = saved if k == k0 else None
+            try:
+                try:
+                    tape.begin(mine)
+                    found = _cen_openings(body, faces.item(k), box, lim, counts)
+                    tape.end()
+                except (GateReplay, ValueError):        # not the questions the tape answers: this face from its start
+                    if mine is None:
+                        raise
+                    again = gate_again(cur.get('again'), 'the openings of face %d' % k)
+                    counts.clear()
+                    counts.update(before)
+                    tape.begin(None)
+                    found = _cen_openings(body, faces.item(k), box, lim, counts)
+                    tape.end()
+            except GateStop:
+                counts.clear()
+                counts.update(before)
+                out = result(n, len(stacks), k, n_open, False, tape.saved())
+                if k == k0 and again:
+                    out['cursor']['again'] = again
+                return out
+            for op in found:
+                n_open += 1
+                openings.append(dict(op, id='o%d' % n_open))
+            k += 1
+        return result(n, len(stacks), n, n_open, True)
+    finally:
+        _CEN_TAPE = None

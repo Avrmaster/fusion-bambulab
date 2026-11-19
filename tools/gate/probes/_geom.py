@@ -1090,3 +1090,51 @@ def opening_shape(points, normal, arcs=0, edges=None):
     slot = short > 0 and (long_ >= 3.0 * short or (arcs and long_ >= 1.3 * short))
     return {'point': tuple(_geo_r4(c) for c in centre), 'size': [round(long_, 2), round(short, 2)], 'round': bool(is_round),
             'shape': 'slot' if slot else 'window'}
+
+
+# ---- the tape of a measurement that needs more than one call -------------------------------------------------------------------
+
+TAPE_MOD = (1 << 61) - 1
+
+
+def cursor_digest(cursor):
+    """16 hex characters for a cursor (any JSON value). The host takes it of the cursor it sends, the unit of the cursor
+    as it arrived, BEFORE its probe runs (a probe may work in place on the cursor): a result file is the answer of a
+    call only when the two are equal. One definition for both sides."""
+    return hashlib.sha256(json.dumps(cursor, sort_keys=True).encode('utf-8')).hexdigest()[:16]
+
+
+def state_digest(rows):
+    """16 hex characters for any JSON value that describes bodies (lists of names, boxes, state texts)."""
+    return hashlib.sha256(json.dumps(rows, sort_keys=True).encode('utf-8')).hexdigest()[:16]
+
+
+def tape_pack(answers, check=0):
+    """A list of yes / no answers as plain JSON for a cursor: {"n": how many, "hex": the answers as one hexadecimal number
+    (the first answer is the highest bit; "" for none), "sum": `check`, the tape_sum() over the questions they answer}."""
+    n = len(answers)
+    bits = 0
+    for a in answers:
+        bits = (bits << 1) | (1 if a else 0)
+    return {'n': n, 'hex': ('%x' % bits) if n else '', 'sum': int(check)}
+
+
+def tape_unpack(saved):
+    """(answers as a list of bool, the stored sum) of a tape_pack() value. ValueError when it is not one: a cursor that
+    was damaged must not be read as answers."""
+    if not isinstance(saved, dict) or isinstance(saved.get('n'), bool) or not isinstance(saved.get('n'), int) or saved['n'] < 0 \
+            or not isinstance(saved.get('hex'), str) or isinstance(saved.get('sum'), bool) or not isinstance(saved.get('sum'), int):
+        raise ValueError('not a tape: %r' % (saved,))
+    n = saved['n']
+    bits = int(saved['hex'], 16) if saved['hex'] else 0
+    if bits >> n:
+        raise ValueError('a tape of %d answers holds more than %d bits' % (n, n))
+    return [bool((bits >> (n - 1 - i)) & 1) for i in range(n)], saved['sum']
+
+
+def tape_sum(check, point, tag=0):
+    """The running check of the questions of a tape: `check` with one more question, "is `point` (mm, to 0.001) inside
+    the body `tag`", worked in. Two runs that ask the same questions in the same order end with the same number; a
+    point that moved, one more or one fewer question, or another order gives another one."""
+    q = (int(round(point[0] * 1000.0)) * 73856093 + int(round(point[1] * 1000.0)) * 19349663 + int(round(point[2] * 1000.0)) * 83492791 + int(tag) * 2654435761 + 1)
+    return (int(check) * 1000003 + q) % TAPE_MOD

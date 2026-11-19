@@ -24,7 +24,18 @@ What this file adds to the plan beyond the keys above (all optional for a reader
     plan      "request" (what the command line asked for: a later call with the same request continues the plan),
               "unreachable" (document keys that were not open), "changed_under_run" (part ids whose body changed
               between the scan and a unit)
-    unit      "failures" (calls in a row that ended in an error or made no progress; MAX_ATTEMPTS of them end the unit)
+    unit      "failures" (calls in a row that ended in an error or made no progress; MAX_ATTEMPTS of them end the unit),
+              "timeouts" (calls in a row that got no answer in time and left no result; MAX_TIMEOUTS of them end the
+              unit as "over budget, not run", and the run goes on with the next unit),
+              "flight" ({"sent", "cursor", "counted"}: the call of this unit that was sent and whose answer was not
+              processed yet. Written before the call goes out, removed when its answer was processed: the unit finds
+              the result file of that call whatever happened to gate/run/pending.json in between),
+              "over" ([{"call", "elapsed_s", "budget_s", "over_s", "late"}]: every call of the unit that worked longer
+              than its budget; "late": its answer came after the host had stopped waiting and was read from the
+              result file by the next call; and [{"call", "budget_s", "no_answer": true, "waited_s", "why"}]: a call
+              that got no answer in time and left no result), "over_budget": "not run" (the unit was given up)
+A unit that runs over its budget is a defect of its probe: over_budget() lists them, the report of the run, `gate.py
+scan`, `gate.py status` and `gate.py doctor` print one line each, and the facts file of the unit has the line as a note.
 Files of a run besides plan.json: units/<id>.json (the envelope of the unit's last call) and units/<id>.partial.json
 (the merged facts of a unit that needs more calls). gate/run/scan.json names the plan `scan` continues.
 
@@ -38,6 +49,9 @@ from gate_common import (GateError, EXIT_PASS, EXIT_BLOCK, EXIT_ATTEST, EXIT_MOR
 PROBE_ORDER = ('fusion_census', 'fusion_inserts', 'fusion_openings', 'fusion_screws', 'fusion_bearings', 'fusion_gap', 'fusion_thin', 'fusion_near')
 STATES = ('todo', 'partial', 'done', 'error', 'skipped')
 MAX_ATTEMPTS = 2
+MAX_TIMEOUTS = 2                # calls in a row with no answer in time and no result: the unit is given up, the run goes on
+OVER_BUDGET = 'over budget, not run'            # how the error of such a unit begins (the judges say it in their NOT_RUN row)
+NEVER_RAN = 'the host has stopped waiting'      # in the error of a unit that started too late to measure (probes/_fusion.py run())
 NEEDS_CENSUS = ('fusion_inserts', 'fusion_openings', 'fusion_screws', 'fusion_bearings')    # probes that read JOB["features"]
 WALL_GRACE_S = 0.5              # a unit still starts when this little of its budget is missing from the wall time
 LOCK_MAX_AGE_S = 600
@@ -258,6 +272,106 @@ def _skip_doc(plan, doc_key, why=NOT_OPEN):
             u['state'], u['error'] = 'skipped', why
 
 
+def _note_over(u, env):
+    """Keep a line in the plan when this call worked longer than the unit's budget. Returns the row or None."""
+    worked, budget = env.get('elapsed_s'), u.get('budget_s')
+    if not isinstance(worked, (int, float)) or isinstance(worked, bool) or not isinstance(budget, (int, float)) or worked <= budget:
+        return None
+    row = {'call': u.get('attempts', 0), 'elapsed_s': round(float(worked), 2), 'budget_s': budget, 'over_s': round(float(worked) - budget, 2),
+           'late': bool(env.get('late'))}
+    u['over'] = (u.get('over') or [])[-19:] + [row]
+    return row
+
+
+def _note_silent(u, why=None):
+    """Keep a line in the plan for a call that got no answer within its time and left no result that could be used:
+    it is said in the report even when the next call of the unit answers. Returns the row."""
+    row = {'call': u.get('attempts', 0), 'budget_s': u.get('budget_s'), 'no_answer': True, 'late': False,
+           'waited_s': (u.get('budget_s') or 0) + gate_fusion_rpc.HTTP_EXTRA_S, 'why': why or gate_fusion_rpc.NO_FILE}
+    u['over'] = (u.get('over') or [])[-19:] + [row]
+    return row
+
+
+def _left(why):
+    """'left no result', with the reason when there was a file that could not be used."""
+    return 'left no result' if not why or why == gate_fusion_rpc.NO_FILE else 'left no result that can be used (%s)' % why
+
+
+def over_note(row):
+    """The note of one over-budget call, as the facts file of its unit holds it."""
+    if row.get('no_answer'):
+        return ('over budget: call %s of this unit got no answer within %g s (its budget is %g s) and %s'
+                % (row.get('call'), row.get('waited_s') or 0, row.get('budget_s') or 0, _left(row.get('why'))))
+    return ('over budget: call %s of this unit worked %g s, its budget is %g s (%g s over)%s'
+            % (row.get('call'), row.get('elapsed_s'), row.get('budget_s'), row.get('over_s'),
+               '; the answer came after the host had stopped waiting and was read from the result file by the next call' if row.get('late') else ''))
+
+
+def over_budget(plan):
+    """The units of a plan that ran over their budget, one row per call that did, and one per unit that was given up:
+    [{"unit", "probe", "part" (the document key for a scan unit), "elapsed_s", "budget_s", "over_s", "late", "call"}],
+    [{"unit", "probe", "part", "call", "budget_s", "no_answer": True, "waited_s", "why", "late": False}] for a call
+    that got no answer and left no result, and [{"unit", "probe", "part", "budget_s", "not_run": True, "timeouts"}].
+    [] for no plan."""
+    rows = []
+    for u in (plan or {}).get('units') or []:
+        who = {'unit': u.get('id'), 'probe': u.get('probe'), 'part': u.get('part') or u.get('doc')}
+        for o in u.get('over') or []:
+            if isinstance(o, dict):
+                rows.append(dict(who, **o))
+        if u.get('over_budget') == 'not run':
+            rows.append(dict(who, budget_s=u.get('budget_s'), not_run=True, timeouts=u.get('timeouts')))
+    return rows
+
+
+def over_lines(rows):
+    """One line of text per row of over_budget()."""
+    out = []
+    for r in rows:
+        head = 'OVER BUDGET  %s %s on %s' % (r.get('unit'), r.get('probe'), r.get('part'))
+        if r.get('not_run'):
+            out.append('%s: NOT RUN. %s calls in a row got no answer within its time (budget %g s) and left no result; its rules are NOT_RUN. '
+                       'A defect of the probe: report it' % (head, r.get('timeouts'), r.get('budget_s') or 0))
+        elif r.get('no_answer'):
+            out.append('%s: call %s got no answer within %g s (budget %g s) and %s. A defect of the probe: report it'
+                       % (head, r.get('call'), r.get('waited_s') or 0, r.get('budget_s') or 0, _left(r.get('why'))))
+        else:
+            out.append('%s: call %s worked %g s of %g s (%g s over)%s. A defect of the probe: report it'
+                       % (head, r.get('call'), r.get('elapsed_s'), r.get('budget_s'), r.get('over_s'),
+                          ', its answer was read late from the result file' if r.get('late') else ''))
+    return out
+
+
+def unit_error_lines(plan):
+    """One line per unit of a plan that ended in an error of its probe, with the first line of that error (a unit that
+    was given up over its budget has its OVER BUDGET line instead)."""
+    return ['UNIT ERROR  %s %s on %s: %s' % (u.get('id'), u.get('probe'), u.get('part') or u.get('doc'), _first_line(u.get('error')))
+            for u in (plan or {}).get('units') or [] if u.get('state') == 'error' and u.get('error') and u.get('over_budget') != 'not run']
+
+
+def scan_over_budget(root):
+    """over_budget() of the scan plan gate/run/scan.json names: the scan units are in no run plan, and a scan over its
+    budget is a defect of fusion_scan like any other."""
+    run = (read_json(gate_path(root, 'run', 'scan.json'), None) or {}).get('run')
+    plan = load_plan(root, run) if run else None
+    return over_budget(plan) if plan and plan.get('command') == 'scan' else []
+
+
+def waiting_line(root):
+    """One line about the call that was sent and has not answered yet (gate/run/pending.json), or None."""
+    w = gate_fusion_rpc.waiting_call(path=gate_path(root, 'run', gate_fusion_rpc.PENDING))
+    if w is None:
+        return None
+    return ('unit %s (%s on %s) was sent and its answer was not read yet (budget %g s): the next `gate.py run` reads its result file when there is one, '
+            'and sends nothing while Fusion is still busy with it' % (w.get('id'), w.get('probe'), w.get('part') or w.get('doc'), w.get('deadline_s') or 0))
+
+
+def _with_notes(u, env):
+    """The envelope with one note per over-budget call of the unit (the facts file keeps the last envelope only)."""
+    notes = [n for n in (env.get('notes') if isinstance(env.get('notes'), list) else []) if not str(n).startswith('over budget: ')]
+    return dict(env, notes=notes + [over_note(o) for o in u.get('over') or [] if isinstance(o, dict)])
+
+
 def _loop(root, plan, wall_s, transport, pinger, job_for, on_done, on_fail):
     """Run the unfinished units of a plan in order. See run_units() for the rules. Returns True when units are left."""
     url = gate_fusion_rpc.endpoint(load_layout(root))
@@ -265,6 +379,9 @@ def _loop(root, plan, wall_s, transport, pinger, job_for, on_done, on_fail):
     acquire_lock(root)
     try:
         for u in plan['units']:
+            def in_flight(job, u=u):                                # the call is about to go out: the unit notes which one
+                u['flight'] = {'sent': job['sent'], 'cursor': gate_fusion_rpc.cursor_key(job['cursor'])}
+                save_plan(root, plan)
             while not _finished(u):
                 if u['doc'] in plan.get('unreachable', []):
                     _skip_doc(plan, u['doc'])
@@ -273,15 +390,67 @@ def _loop(root, plan, wall_s, transport, pinger, job_for, on_done, on_fail):
                     save_plan(root, plan)
                     return True                                     # less than its budget is left: do not start it
                 job = job_for(u)
+                read_late = False                                   # the answer of this turn was read from a result file, nothing was sent
                 try:
-                    env = gate_fusion_rpc.run_unit(job, url, transport, pinger)
+                    # a call that was sent earlier and never answered: its result file is the answer (nothing is sent),
+                    # or Fusion is still busy with it (FusionDown: nothing is sent), or it is over and left nothing
+                    flight = u.get('flight')
+                    state, env, why = gate_fusion_rpc.settle(job, url, pinger, flight)
+                    if state in ('late', 'lost'):
+                        u.pop('flight', None)
+                        counted = not isinstance(flight, dict) or flight.get('counted')
+                        if not counted:                             # the run ended while that call was out: it was never counted
+                            u['attempts'] += 1
+                    if state == 'late':
+                        read_late = True
+                    elif state == 'lost' and why and NEVER_RAN in why:
+                        # the unit waited behind something else in Fusion and started after the host had stopped
+                        # waiting: it measured nothing and says so. That is no call the unit ran over: not counted
+                        if counted:
+                            u['timeouts'] = max(0, u.get('timeouts', 0) - 1)
+                    elif state == 'lost' and env is not None:       # it did answer, late, with an error: that error is its answer
+                        read_late = True
+                    elif state == 'lost':                           # over, and nothing that can be used: said, also when the next call answers
+                        if not counted:
+                            u['timeouts'] = u.get('timeouts', 0) + 1
+                        u['lost'] = why
+                        _note_silent(u, why)
+                    if not read_late:
+                        if u.get('timeouts', 0) >= MAX_TIMEOUTS:    # twice in a row no answer and no result: given up, never silently
+                            u['state'], u['over_budget'] = 'error', 'not run'
+                            u['error'] = ('%s: %d calls in a row got no answer within %g s and %s (budget %g s). A defect of the probe %s: report it'
+                                          % (OVER_BUDGET, u['timeouts'], u['budget_s'] + gate_fusion_rpc.HTTP_EXTRA_S, _left(u.get('lost')), u['budget_s'], u['probe']))
+                            on_fail(u, _with_notes(u, gate_fusion_rpc._made_envelope(job, u['error'])))
+                            save_plan(root, plan)
+                            continue
+                        try:
+                            env = gate_fusion_rpc.run_unit(job, url, transport, pinger, before_send=in_flight, settled=True)
+                        except gate_fusion_rpc.FusionDown as e:
+                            if e.timed_out:                         # this call was sent and got no answer: the unit keeps its note of it
+                                u['attempts'] += 1
+                                u['timeouts'] = u.get('timeouts', 0) + 1
+                                if isinstance(u.get('flight'), dict):
+                                    u['flight']['counted'] = True
+                            else:
+                                u.pop('flight', None)               # nothing reached Fusion
+                            raise
+                        u.pop('flight', None)
+                        u['attempts'] += 1
                 except gate_fusion_rpc.FusionDown as e:
-                    u['attempts'] += 1
                     u['error'] = _first_line(e)
                     save_plan(root, plan)                           # the plan is saved first; nothing else is sent
                     raise
-                u['attempts'] += 1
                 _beat(root)
+                _note_over(u, env)
+                if env.get('timeout'):                              # no answer in time, Fusion answers again, and no result file
+                    u['timeouts'] = u.get('timeouts', 0) + 1
+                    u['error'] = 'timeout'
+                    u['lost'] = None
+                    _note_silent(u)
+                    save_plan(root, plan)
+                    continue
+                u['timeouts'] = 0
+                u.pop('lost', None)
                 if env.get('error'):
                     if _not_open(env, job):
                         _skip_doc(plan, u['doc'])
@@ -290,7 +459,7 @@ def _loop(root, plan, wall_s, transport, pinger, job_for, on_done, on_fail):
                         u['failures'] = u.get('failures', 0) + 1
                         if u['failures'] >= MAX_ATTEMPTS:
                             u['state'] = 'error'
-                            on_fail(u, env)
+                            on_fail(u, _with_notes(u, env))
                     save_plan(root, plan)
                     continue
                 if u.get('part') and u.get('sig') and env.get('sig') and env['sig'] != u['sig']:
@@ -319,10 +488,10 @@ def _loop(root, plan, wall_s, transport, pinger, job_for, on_done, on_fail):
                     if u['failures'] >= MAX_ATTEMPTS:
                         u['state'], u['error'] = 'error', ('no progress: the signature of the body did not move on (%s of %s faces)' % (signing.get('faces_done'), signing.get('faces'))
                                                            if isinstance(signing, dict) else 'no progress: the probe returned the same cursor and no facts')
-                        on_fail(u, dict(env, error=u['error']))
+                        on_fail(u, _with_notes(u, dict(env, error=u['error'])))
                 else:
                     u['state'], u['cursor'], u['error'], u['failures'] = 'done', None, None, 0
-                    on_done(u, dict(env, facts=merged, done=True, cursor=None))
+                    on_done(u, _with_notes(u, dict(env, facts=merged, done=True, cursor=None)))
                     if os.path.exists(_partial_path(root, u)):
                         os.remove(_partial_path(root, u))
                 save_plan(root, plan)
@@ -338,6 +507,13 @@ def _probe_facts(data, probe):
     if not isinstance(entry, dict) or entry.get('error') or not entry.get('done', True) or not isinstance(entry.get('facts'), dict):
         return None
     return entry['facts']
+
+
+def given_up(root, part, sig):
+    """The probes of this part whose unit was given up over its budget at this signature (their stored entry holds an
+    error that begins with OVER_BUDGET), sorted. Such a part was not judged in full: an audit does not inherit it."""
+    probes = (load_facts(root, part, sig).get('probes') or {}) if sig else {}
+    return sorted(k for k, e in probes.items() if isinstance(e, dict) and str(e.get('error') or '').startswith(OVER_BUDGET))
 
 
 def _features(root, part, sig):
@@ -358,6 +534,16 @@ def run_units(root, reg, resolved, plan, wall_s=20.0, transport=None, pinger=Non
 
     For each unit: build the job (gate_fusion_rpc.new_job with params = gate_params.values(resolved), the tables, the
     census features of the part once fusion_census is done), run it (gate_fusion_rpc.run_unit), then
+      - before anything is sent: a call that was sent earlier and never answered (gate_fusion_rpc.settle, with the
+        unit's own note of that call, "flight"). Its result file, when it is the answer of this very call (same run,
+        unit, signature and cursor), is taken as the answer, marked late, whatever other gate command ran in between;
+        a result file that holds an error is that call's answer too: the error is counted with its own text;
+        while Fusion is still busy with a call, FusionDown is raised and nothing is sent;
+      - no answer in time and no result, MAX_TIMEOUTS calls in a row: the unit is "error" with a text that begins
+        with OVER_BUDGET, its rules are NOT_RUN with that text, and the run goes on with the next unit. A unit is
+        given up only after its result file was looked for;
+      - a call that worked longer than the unit's budget, and a call that got no answer and left no result: one row
+        in the unit's "over" (over_budget() lists them), also when a later call of the unit answers;
       - envelope "error": the unit is "error" after MAX_ATTEMPTS, its text is kept in the plan;
       - envelope "sig" differs from the plan's: the part changed under the run; its units are "skipped" and the part is
         reported as changed (scan again);
@@ -569,7 +755,8 @@ def scan(root, doc_key=None, wall_s=20.0, transport=None, pinger=None):
     Also returned: "errors" {doc key: why its scan failed}, "clashes" (bodies left out because two give one part id,
     and STL files that two parts name), "progress" (n, m) of the scan units, "run", "stl_moved" [{"part", "from",
     "to", "left": the old file is still in the folder and no part names it}] for every part whose STL path changed
-    with this scan, and "stl_unmatched" [(doc key, map key, file)] for every key of "stl_names" that names no part.
+    with this scan, "stl_unmatched" [(doc key, map key, file)] for every key of "stl_names" that names no part, and
+    "over_budget" (over_budget() of the scan plan: calls of a scan unit that worked longer than their budget).
     A document is merged into the census only when its scan is complete: half a list would mark the rest as gone.
     A finished scan also returns "notes": the lines of scan_notes() for the documents it read (linked documents, equal
     bodies that are probably bought, parts in no motion group), each said once per document."""
@@ -615,9 +802,9 @@ def scan(root, doc_key=None, wall_s=20.0, transport=None, pinger=None):
                 census['docs'].setdefault(u['doc'], {'name': by_key[u['doc']].get('name')})['open'] = False
             elif not _finished(u):
                 result['next'].append(u['doc'])
-        result.update(done=not more, progress=progress(plan), run=plan['run'])
+        result.update(done=not more, progress=progress(plan), run=plan['run'], over_budget=over_budget(plan))
     else:
-        result.update(progress=(0, 0), run=None)
+        result.update(progress=(0, 0), run=None, over_budget=[])
     for path, pids in sorted(gate_common.shared_stls(census, layout).items()):      # two parts, one file: whatever the reason
         result['clashes'].append('%s: the parts %s name this one file as their STL, an export of one overwrites the other: give one of them another file '
                                  '("stl_names", "stl_dir" or the generator\'s "stl" in gate/layout.json), then scan again' % (path, ' and '.join(pids)))
@@ -758,6 +945,8 @@ def _print_scan(res, hint_faces=None):
     for doc_key, k, f in (res.get('stl_unmatched') or [])[:SCAN_LINES]:
         print('STL NAME %s: the key %r of "stl_names" names no part of this scan (a key is a part name exactly as the census shows it, or its part slug): '
               '%s is the STL of no part' % (doc_key, k, f))
+    for line in over_lines(res.get('over_budget') or []):   # a scan unit over its budget is a defect of the probe like any other: never silent
+        print(line)
     if not res['done']:
         print('scan: not finished, %d of %d document(s) read. The counts come with the last call' % tuple(res.get('progress') or (0, 0)))
         return
@@ -922,6 +1111,9 @@ def judge_part(root, reg, resolved, part, sig=None, stage='design', intent=None,
         ctx = {'part': part, 'rule': rule['id'], 'tables': reg['tables'], 'target': target, 'census': census_facts,
                'prev': None if probe == 'fusion_scan' else _prev_facts(root, part, entry, sig, probe),
                'intent': list(intent) if intent is not None else None, 'print': frame}
+        stored = (data.get('probes') or {}).get(probe)
+        if facts is None and isinstance(stored, dict) and str(stored.get('error') or '').startswith(OVER_BUDGET):
+            ctx['no_facts'] = _first_line(stored['error'])       # the unit was given up: the NOT_RUN row says so
         findings = gate_judges.run_judge(rule, facts, params, ctx)
         gate_common.save_judged(root, part, sig, rule['id'], _judge_hash(name), params, findings)
         out[rule['id']] = findings
@@ -1127,8 +1319,10 @@ def _judge_all(root, reg, resolved, parts, census, intent, target, unreachable_d
     """Judge every part that can be judged and return the verdicts of all of them, in order. A part of `pending` still
     has units to run: it is judged when they are done, until then its verdict comes from what was stored before.
     audit_run: the id of an audit run; each part it judges is noted in the baseline of inherited parts
-    (gate_report.baseline_add: written once per part). The verdicts are the ones of a run: the standing questions of an
-    inherited part wait (part_verdict with defer_inherited)."""
+    (gate_report.baseline_add: written once per part). A part one of whose units was given up over its budget
+    (given_up) is NOT noted: nothing judged the rules of that unit, so the audit has not looked at the part, it stays
+    an ordinary part, and its NOT_RUN rows count (exit 1). The verdicts are the ones of a run: the standing questions
+    of an inherited part wait (part_verdict with defer_inherited)."""
     import gate_report
     verdicts = []
     for p in parts:
@@ -1137,7 +1331,7 @@ def _judge_all(root, reg, resolved, parts, census, intent, target, unreachable_d
         stages = ('design',)
         if reachable and entry.get('sig') and p not in pending:
             judge_part(root, reg, resolved, p, stage='design', intent=intent, target=target)
-            if audit_run:
+            if audit_run and not given_up(root, p, entry['sig']):
                 gate_report.baseline_add(root, audit_run, p, entry['sig'])
             if with_export and target is not None and any(k in (load_facts(root, p, entry['sig']).get('probes') or {}) for k in ('stl_mesh', 'stl_walls')):
                 judge_part(root, reg, resolved, p, stage='export', intent=intent, target=target)
@@ -1170,7 +1364,13 @@ def _finish(root, reg, resolved, run, args, parts, verdicts, plan, intent, unrea
         items = gate_report.write_proposal(root, report)
     print(gate_report.summary_line(report))
     if args.audit and not more:                   # while units are left, a part that was not judged yet is not in the baseline yet
-        later = [v['part'] for v in verdicts if v.get('inherited_part') is False and not v.get('proposed_part') and v['verdict'] != 'unreachable']
+        census = load_census(root)
+        gone_over = [v['part'] for v in verdicts if v.get('inherited_part') is False and given_up(root, v['part'], (census['parts'].get(v['part']) or {}).get('sig'))]
+        if gone_over:
+            print('  not inherited (a unit was given up over its budget, so nothing judged its rules): %s. The audit has not looked at these parts in full: '
+                  'their NOT_RUN rows count, and they stay "changed" until a run measures them' % gate_report._some(gone_over))
+        later = [v['part'] for v in verdicts if v.get('inherited_part') is False and not v.get('proposed_part') and v['verdict'] != 'unreachable'
+                 and v['part'] not in gone_over]
         if later:
             print('  not inherited (changed after the audit, or stamped): %s. Judged as in an ordinary run; nothing of them goes to the triage list'
                   % gate_report._some(later))
@@ -1187,6 +1387,10 @@ def _finish(root, reg, resolved, run, args, parts, verdicts, plan, intent, unrea
             print(line)
     for line in lines:
         print('  UNREACHABLE  %s (its parts keep their stamps; nothing new was checked)' % line)
+    for line in over_lines(report.get('over_budget') or []):     # a unit over its budget is a defect of a probe: never silent
+        print('  ' + line)
+    for line in unit_error_lines(plan):                          # why a unit gave no facts: the NOT_RUN row only says that it did not
+        print('  ' + line)
     if note:
         print(note)
     if not verdicts and not more:

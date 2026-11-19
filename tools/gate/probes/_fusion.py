@@ -22,7 +22,13 @@ and run() wraps it into the envelope
     {"job", "doc", "doc_version", "part", "sig", "probe", "facts", "done", "cursor", "elapsed_s", "error",
      "open_documents": [names of every open document], "seen": {"doc", "body", "occurrence"} as they arrived in Fusion
      (the host compares them with what it sent: a name damaged on the way must not read as "document not open"),
-     "notes": [texts: what was resolved another way than asked, for example an occurrence found by its component id]}.
+     "notes": [texts: what was resolved another way than asked, for example an occurrence found by its component id],
+     "asked": {"run", "sent", "sig", "cursor_key"} of the job as it arrived: which call of which run wrote this file
+     ("cursor_key" = cursor_digest of _geom.py over the cursor, taken BEFORE the probe runs: a probe may work in place
+     on its cursor). The host adopts a result file it finds after a call that got no answer in time only when this is
+     the call it sent,
+     "timing": only when the probe returned one: where the time of the unit went (seconds and pointContainment calls
+     per stage, summed over the calls of the unit). Not a fact: no judge reads it}.
 An exception inside the probe becomes "error" (text, with the end of the traceback); the file is still written.
 A document that is not open is such an error; "open_documents" is filled all the same.
 One answer is made here and not by the probe: when the signature of a large body needs more time than the call has left
@@ -32,7 +38,21 @@ the cursor the call came with. The host calls the unit again and the signature g
 Rules every probe keeps (skills/fusion-modeling): the document is taken BY NAME with gate_document(), never the active
 one; nothing is opened, activated, saved or closed; no timeline edit, no body is deleted; temporary geometry only through
 adsk.fusion.TemporaryBRepManager; the API works in cm, facts are in mm; between features the probe asks gate_time_up()
-and returns {"done": False, "cursor": ...} when the budget is used up."""
+and returns {"done": False, "cursor": ...} when the budget is used up.
+
+One feature can cost more than a call has (a ring face sampled against a body with thousands of faces). A probe whose
+feature is a pure function of "is this point inside that body" asks through a GateTape: the tape looks at the clock
+between the questions, stops the feature with GateStop when the time is used up, and its answers go into the cursor
+as plain JSON. The next call runs the feature again from its start; the questions that were answered are read from
+the tape (no Fusion call), the rest are asked. So the facts of a feature measured over several calls are the facts
+of one call, and no single step between two looks at the clock is longer than a few pointContainment calls.
+
+A feature measured over several calls must be measured on ONE state of the model. The signature in the job holds that
+for the part of the unit. For the bodies round it the cursor of such a feature carries what it was measured against:
+the place, name and box of every body it could meet (gate_world_key, gate_rows_key) and the state of every body that
+answered a point test (gate_states: revision id, face count, volume, area). The next call compares both before it
+reads the tape; when one differs the feature is measured again from its start, with a note, and the third such call
+in a row ends the unit in an error (gate_again): answers of two states of the model are never joined."""
 import adsk.core, adsk.fusion, json, os, re, sys, time, traceback
 
 _GATE_STARTED = time.time()
@@ -107,6 +127,186 @@ def gate_left(job):
 def gate_time_up(job, reserve=1.5):
     """True when less than `reserve` seconds are left: stop and return a cursor."""
     return gate_left(job) < reserve
+
+
+class GateStop(Exception):
+    """The time of this call is used up inside one step of a probe. The tape holds the answers so far (GateTape.saved)."""
+
+
+class GateReplay(Exception):
+    """A step that goes on from a tape did not ask the questions the tape answers: the model, the job or the probe is
+    not what it was when the tape was written. The probe measures that step again from its start, with an empty tape."""
+
+
+class GateTape:
+    """The answers of BRepBody.pointContainment for ONE step of a probe, kept so that the step can stop when the time
+    of the call is used up and go on in the next call.
+
+    A step must be a deterministic function of its inputs and of the answers: run again, it asks the same questions in
+    the same order. begin(saved) starts a step, with the tape of the cursor or None. ask(body, point) answers the next
+    question: from the tape while it lasts, then from Fusion. Before a question for Fusion the clock is read (every
+    `every` questions of this call, and only when the call has moved the unit on: a step was finished in it or
+    `least` questions were answered, so a call always moves on): when less than `reserve` seconds are left, GateStop
+    is raised and saved() is what the cursor must carry. end() closes a finished step. A step that asks another
+    question than the tape holds an answer for (tape_sum of _geom.py over the points) raises GateReplay.
+    `tags` holds the tags of every body the step in progress has asked, from the tape or from Fusion (gate_states).
+
+    job["args"]["tape_limit"] = n: stop after n questions for Fusion in one call, whatever the clock says (tests, slow
+    machines). `timing` gets, per stage name (set_stage), [seconds, questions] of the questions Fusion answered, and
+    `bodies` the same per body tag, so a unit can say where its time went."""
+
+    def __init__(self, job, reserve=3.0, every=16, least=48, timing=None):
+        self.job, self.reserve, self.every, self.least = job, float(reserve), int(every), int(least)
+        limit = (job.get('args') or {}).get('tape_limit')
+        self.limit = None if limit is None else max(1, int(limit))
+        self.timing = timing if timing is not None else {}
+        self.bodies = {}
+        self.stage = 'work'
+        self.fresh = 0                              # questions Fusion answered in this call, over all steps
+        self.replayed = 0
+        self.steps = 0                              # steps this call closed with end()
+        self.tags = set()
+        self.IN = adsk.fusion.PointContainment.PointInsidePointContainment
+        self.begin(None)
+
+    def set_stage(self, name):
+        self.stage = name
+
+    def begin(self, saved):
+        """Start a step. saved: the value of saved() that an earlier call put into the cursor, or None. ValueError
+        when it is no tape."""
+        self.log, self.want = tape_unpack(saved) if saved else ([], None)
+        self.pos, self.sum = 0, 0
+        self.tags = set()
+
+    def worked(self):
+        """Has this call moved the unit on: a step was finished in it, or `least` questions were answered by Fusion?"""
+        return self.steps > 0 or self.fresh >= self.least
+
+    def out_of_time(self):
+        """Is the time of this call used up for a new question (the same test ask() makes)? Never before the call has
+        moved the unit on."""
+        if self.limit is not None:
+            return self.fresh >= self.limit
+        return self.worked() and gate_time_up(self.job, self.reserve)
+
+    def no_time_for(self, seconds):
+        """Must a piece of work that cannot look at the clock (a walk over the faces of a large body) wait for the
+        next call? True when this call has moved the unit on and less than `seconds` are left: the piece then opens
+        the next call, with all of its time. With "tape_limit" in the job: True as soon as the call has asked Fusion
+        one question or finished one step."""
+        if self.limit is not None:
+            return self.fresh > 0 or self.steps > 0
+        return self.worked() and gate_left(self.job) < float(seconds)
+
+    def ask(self, body, p, tag=0):
+        """Is the point p (mm) inside the body? tag: a small whole number that tells the bodies of one step apart."""
+        check = tape_sum(self.sum, p, tag)
+        self.tags.add(tag)
+        if self.pos < len(self.log):
+            answer = self.log[self.pos]
+            self.pos, self.sum, self.replayed = self.pos + 1, check, self.replayed + 1
+            if self.pos == len(self.log) and self.want is not None and self.sum != self.want:
+                raise GateReplay('the questions of this step are not the ones its tape answers')
+            return answer
+        if self.limit is not None:
+            if self.fresh >= self.limit:
+                raise GateStop()
+        elif self.worked() and self.fresh % self.every == 0 and gate_time_up(self.job, self.reserve):
+            raise GateStop()
+        t0 = time.time()
+        answer = body.pointContainment(gate_point(p)) == self.IN
+        dt = time.time() - t0
+        row = self.timing.setdefault(self.stage, [0.0, 0])
+        row[0] += dt
+        row[1] += 1
+        row = self.bodies.setdefault(tag, [0.0, 0])
+        row[0] += dt
+        row[1] += 1
+        self.log.append(answer)
+        self.pos, self.sum, self.fresh = self.pos + 1, check, self.fresh + 1
+        return answer
+
+    def end(self):
+        """Close a finished step. GateReplay when the step asked fewer questions than its tape answers."""
+        if self.pos < len(self.log):
+            raise GateReplay('this step asked %d questions and its tape answers %d' % (self.pos, len(self.log)))
+        self.steps += 1
+        self.begin(None)
+
+    def saved(self):
+        """The tape of the step in progress as plain JSON for the cursor (tape_pack of _geom.py)."""
+        return tape_pack(self.log[:self.pos], self.sum)
+
+
+def gate_again(count, what, how='did not ask the same questions'):
+    """Count one more call in which a step was measured again from its start: it did not ask the questions its tape
+    answers, or (how = "met other bodies than the call before") the bodies round it were not the ones its cursor was
+    written for. Returns the new count for the cursor. The third such call in a row for one step raises: a step that
+    is started again by every call would never end. Then the unit ends in an error and its rules are NOT_RUN: nothing
+    of it is used."""
+    n = (int(count) if isinstance(count, int) and not isinstance(count, bool) else 0) + 1
+    if n >= 3:
+        raise RuntimeError('%s %s in three calls in a row: the model changes between the calls, or a value '
+                           'read from Fusion is not stable. Nothing of this unit is used' % (what, how))
+    return n
+
+
+GATE_MOVED = 'met other bodies than the call before'        # the `how` of gate_again() for a feature whose bodies changed
+
+
+def gate_body_state(body, mesh=False):
+    """A text that names one state of a body another part's feature is measured against: _gate_sig_key() of its native
+    body (revision id, face count, volume, area), or the counts and sizes alone when Fusion gives no revision id; for
+    a mesh body the number of its nodes. None when nothing of it can be read: such a body never compares equal, so a
+    feature that asked it is measured again rather than joined over two calls."""
+    try:
+        if mesh:
+            dm = body.displayMesh
+            n = getattr(dm, 'nodeCount', None)          # the count alone when the mesh gives it: the coordinates are a large array
+            return 'mesh|%d' % (int(n) if isinstance(n, int) and not isinstance(n, bool) else len(dm.nodeCoordinatesAsDouble) // 3)
+        native = getattr(body, 'nativeObject', None) or body
+        key = _gate_sig_key(native)
+        if key is None:
+            key = 'no revision id|%d|%.6f|%.6f' % (native.faces.count, native.volume, native.area)
+        return key
+    except Exception:
+        return None
+
+
+def gate_states(world, tags):
+    """{"<index>": gate_body_state()} of the records of `world` (a list of {"body", "mesh"}) the tags name: what a
+    cursor keeps of the bodies that answered a point test of the feature in progress. Tags that are no index of the
+    list are left out."""
+    out = {}
+    for t in sorted(k for k in set(tags) if isinstance(k, int) and not isinstance(k, bool) and 0 <= k < len(world)):
+        out[str(t)] = gate_body_state(world[t]['body'], bool(world[t].get('mesh')))
+    return out
+
+
+def gate_states_same(saved, world):
+    """Are the bodies a cursor names in the state it names (gate_states)? False for anything that is no such value, for
+    an index the list does not have, and for a body whose state cannot be read."""
+    if not isinstance(saved, dict):
+        return False
+    for t, was in saved.items():
+        try:
+            k = int(t)
+        except (TypeError, ValueError):
+            return False
+        if was is None or not 0 <= k < len(world) or gate_body_state(world[k]['body'], bool(world[k].get('mesh'))) != was:
+            return False
+    return True
+
+
+def gate_rows_key(world, indices=None):
+    """16 hex characters for the place of bodies in a list of gate_world(): index, path, body name, mesh or solid, shown
+    or hidden, and the box to 0.001 mm, of every record (or of those `indices` name, with the indices themselves).
+    Boxes are read by the walk anyway, so this costs no call. A body that moved, grew, was hidden, added or removed
+    changes it; a change inside an unchanged box does not (gate_states sees that for the bodies that were asked)."""
+    ks = range(len(world)) if indices is None else sorted(set(indices))
+    return state_digest([[k, world[k]['path'], world[k]['body_name'], bool(world[k]['mesh']), bool(world[k]['visible']),
+                          [round(c, 3) for c in world[k]['box'][0]], [round(c, 3) for c in world[k]['box'][1]]] for k in ks])
 
 
 def gate_mm(p):
@@ -451,9 +651,11 @@ def run(_context=''):
     """The entry point (called by the wrapper of build_script). Runs probe(JOB) and writes the envelope to JOB["out"].
     A call that starts after the host has stopped waiting for it (later than the budget + 10 s after it was sent) does
     no work: it writes an error envelope."""
+    came = json.loads(json.dumps(JOB.get('cursor')))    # the cursor as it arrived: a probe may work in place on JOB["cursor"]
     env = {'job': JOB.get('id'), 'doc': JOB.get('doc'), 'doc_version': None, 'part': JOB.get('part'), 'sig': None,
-           'probe': JOB.get('probe'), 'facts': {}, 'done': False, 'cursor': JOB.get('cursor'), 'elapsed_s': 0.0, 'error': None,
-           'open_documents': [], 'seen': {'doc': JOB.get('doc'), 'body': JOB.get('body'), 'occurrence': JOB.get('occurrence')}, 'notes': []}
+           'probe': JOB.get('probe'), 'facts': {}, 'done': False, 'cursor': came, 'elapsed_s': 0.0, 'error': None,
+           'open_documents': [], 'seen': {'doc': JOB.get('doc'), 'body': JOB.get('body'), 'occurrence': JOB.get('occurrence')}, 'notes': [],
+           'asked': {'run': JOB.get('run'), 'sent': JOB.get('sent'), 'sig': JOB.get('sig'), 'cursor_key': cursor_digest(came)}}
     try:
         env['open_documents'] = sorted(_gate_doc_name(d) for d in adsk.core.Application.get().documents)
         late = _GATE_STARTED - _gate_t0()
@@ -465,8 +667,10 @@ def run(_context=''):
         env['done'] = bool(out.get('done', True))
         env['cursor'] = out.get('cursor')
         env['sig'] = out.get('sig')
+        if isinstance(out.get('timing'), dict):         # where the time went: beside the facts, never in them
+            env['timing'] = out['timing']
     except GateNotYet as e:                             # a large body: its signature needs one more call; nothing was measured yet
-        env['facts'], env['done'], env['cursor'] = {'signing': e.args[0] if e.args else {}}, False, JOB.get('cursor')
+        env['facts'], env['done'], env['cursor'] = {'signing': e.args[0] if e.args else {}}, False, came
     except Exception as e:
         env['error'] = '%s: %s\n%s' % (type(e).__name__, e, traceback.format_exc()[-1500:])
     env['notes'] = list(_GATE_NOTES)

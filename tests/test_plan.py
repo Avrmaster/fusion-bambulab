@@ -232,7 +232,8 @@ class Trouble(Planned):
         self.fusion.set_timeout('fusion_thin', BRACKET, alive_after=True)
         res = self.run_units(self.plan(), wall_s=600)
         unit = gate_plan.load_plan(self.root)['units'][3]
-        self.assertEqual((unit['state'], unit['attempts'], unit['error']), ('error', 2, 'timeout'))
+        self.assertEqual((unit['state'], unit['attempts'], unit['timeouts'], unit['over_budget']), ('error', 2, 2, 'not run'))
+        self.assertTrue(unit['error'].startswith('over budget, not run: 2 calls in a row got no answer within 30 s and left no result'), unit['error'])
         self.assertEqual((len(self.fusion.calls_of('fusion_thin')), self.fusion.pings, res['more']), (2, 2, False))
         self.assertAlmostEqual(self.fusion.now, 0.3 + 2 * 30)                                # each timeout cost budget + 10 s
 

@@ -22,7 +22,14 @@ The pure parts (levels, summary, relief room, mesh test) are in _geom.py."""
 _INS_RAY = {'n': 48, 'step': 0.1, 'max': 8.0, 'coarse_step': 0.5, 'refine': 0.005}
 
 
-def _ins_in(body, p):
+_INS_TAPE = None                # the GateTape of this call (_fusion.py): probe() sets it, every point test goes through it
+
+
+def _ins_in(body, p, tag=0):
+    """Is the point inside the body? tag: 0 for the part itself, 1 + its place in env["solids"] for a neighbour (the tape
+    of the call keeps which bodies a pocket asked)."""
+    if _INS_TAPE is not None:
+        return _INS_TAPE.ask(body, p, tag)
     return body.pointContainment(gate_point(p)) == adsk.fusion.PointContainment.PointInsidePointContainment
 
 
@@ -64,14 +71,15 @@ def _ins_walk(body, centre, dirs, r0, start, fine_to, ray):
 
 def _ins_env(design, occ, body, job, margin):
     """What can stand beside this part: {"m": part -> document matrix, "solids": [(name, kind, part, hidden, body in the
-    document frame, lo, hi)], "meshes": [(name, hidden, document -> mesh matrix, mesh_grid)]} of every other body whose
-    box comes within `margin` mm of the part's box."""
+    document frame, lo, hi)], "meshes": [(name, hidden, document -> mesh matrix, mesh_grid)], "mesh_rows": [[name,
+    hidden, number of node coordinates, box]] of the same meshes} of every other body whose box comes within `margin`
+    mm of the part's box."""
     root = design.rootComponent
     own = occ.fullPathName if occ is not None else None
     m_own = gate_matrix(occ)
     lo, hi = gate_bbox(body)
     plo, phi = box_transform(m_own, lo, hi)
-    solids, meshes = [], []
+    solids, meshes, mesh_rows = [], [], []
     for o in [None] + list(root.allOccurrences):
         comp = o.component if o is not None else root
         path = o.fullPathName if o is not None else None
@@ -110,7 +118,20 @@ def _ins_env(design, occ, body, job, margin):
                 if boxes_near(dlo, dhi, plo, phi, margin):
                     name = comp.name if len(bodies) + n_mesh == 1 else '%s / %s' % (comp.name, mb.name)
                     meshes.append((name, not (shown and bool(mb.isLightBulbOn)), mat_inverse(m), mesh_grid(c, idx, 5.0, 10.0)))
-    return {'m': m_own, 'solids': solids, 'meshes': meshes}
+                    mesh_rows.append([name, not (shown and bool(mb.isLightBulbOn)), len(c), [round(x, 3) for x in dlo], [round(x, 3) for x in dhi]])
+    return {'m': m_own, 'solids': solids, 'meshes': meshes, 'mesh_rows': mesh_rows}
+
+
+def _ins_env_key(env):
+    """16 hex characters for what stands beside the part: every solid of the env with its place in the list, name, kind,
+    hidden or shown, and box to 0.001 mm, and every mesh with its name, size and box."""
+    return state_digest([[[n, s[0], s[1], bool(s[3]), [round(c, 3) for c in s[5]], [round(c, 3) for c in s[6]]] for n, s in enumerate(env['solids'])],
+                         env.get('mesh_rows') or []])
+
+
+def _ins_recs(env, body):
+    """The bodies behind the tags of _ins_in(), as gate_states() of _fusion.py reads them: the part, then the solids of the env."""
+    return [{'body': body, 'mesh': False}] + [{'body': s[4], 'mesh': False} for s in (env['solids'] if env else [])]
 
 
 def _ins_beyond(env, body, box, centre, d, r_exit, r_need, skip, part):
@@ -134,9 +155,9 @@ def _ins_beyond(env, body, box, centre, d, r_exit, r_need, skip, part):
             return dict(own, width=round(t - r_exit, 2))
         pd = mat_point(env['m'], p)
         hit = None
-        for name, kind, pid, hidden, b, lo, hi in env['solids']:
-            if name not in skip and box_has(lo, hi, pd) and _ins_in(b, pd):
-                hit = ({'name': name, 'kind': kind, 'part': pid, 'hidden': hidden}, lambda q, b=b: _ins_in(b, q))
+        for n, (name, kind, pid, hidden, b, lo, hi) in enumerate(env['solids']):
+            if name not in skip and box_has(lo, hi, pd) and _ins_in(b, pd, n + 1):
+                hit = ({'name': name, 'kind': kind, 'part': pid, 'hidden': hidden}, lambda q, b=b, n=n: _ins_in(b, q, n + 1))
                 break
         if hit is None:
             for name, hidden, inv, grid in env['meshes']:
@@ -286,10 +307,20 @@ def probe(job):
       "end": "mouth" | "exit". A through hole whose census class has "ends": 2 (the table's pocket at each end: a post
       with an insert in both ends) gives two pockets with the same "hole" id: the second one is measured from the far
       mouth ("end": "exit", its anchor is the far mouth with the axis turned round, its segments run from there).
-      The cursor counts pockets, not holes.
+      The cursor counts pockets, not holes: the index of the next pocket, or {"i": that index, "tape": the answers of
+      the point tests of pocket i so far, "env": _ins_env_key() of what stood beside the part (None while no thin
+      wall made the pocket look beyond itself), "asked": gate_states() of the bodies that gave those answers} when
+      the time of a call ran out inside a pocket. A later call whose neighbours are not those (one moved, grew, was
+      hidden, or changed inside its box) measures that pocket again from its start, with a note; the third such call
+      in a row ends the unit in an error. The part itself is held by its signature.
     A part whose signature is not job["sig"] any more is not measured: {"stale": true}, "done" false, the new "sig".
     job["args"]: {"limit": n} at most n pockets in this call; "ray_n", "ray_step", "ray_max", "ray_coarse_step", "ray_refine" override
-    the rays. A call stops before a pocket when less time is left than 1.5 times the slowest pocket so far (at least 3 s)."""
+    the rays; {"tape_limit": n} stop after n point tests in one call (tests, slow machines).
+    A call stops before a pocket when less time is left than 1.5 times the slowest pocket so far (at least 3 s).
+    One pocket is some 12 000 point tests on the part itself (48 rays at five depths, 0.1 mm steps), which a part with
+    thousands of faces does not answer within one call. So every point test goes through a GateTape of _fusion.py: the
+    clock is read every 16 tests, a pocket that runs out of time stops with its answers in the cursor, and the next
+    call goes on with the same pocket. The walls of a pocket measured over several calls are the walls of one call."""
     design = gate_design(job)
     occ, comp, body = gate_body(design, job)
     sig = gate_signature(body)
@@ -318,17 +349,54 @@ def probe(job):
         if (h.get('class') or {}).get('role') == 'insert_pocket':
             todo += pocket_ends(h)
     pockets, slowest = [], 0.0
-    i = i0 = int(job.get('cursor') or 0)
+    cur = job.get('cursor')
+    saved = cur.get('tape') if isinstance(cur, dict) else None          # the pocket an earlier call began
+    i = i0 = int((cur.get('i') if isinstance(cur, dict) else cur) or 0)
     limit = args.get('limit')
+    again = 0                                                           # calls in a row that had to start pocket i0 again
+    if saved is not None and cur.get('env') is not None:
+        # that pocket looked at its neighbours: they must be the ones, and in the state, its answers were given by
+        if _ins_env_key(get_env()) != cur['env'] or not gate_states_same(cur.get('asked'), _ins_recs(get_env(), body)):
+            saved = None
+            name = 'pocket %s' % (todo[i0].get('id') if i0 < len(todo) else i0 + 1)
+            again = gate_again(cur.get('again'), name, GATE_MOVED)
+            note = 'the bodies round the part changed between two calls of this unit: %s is measured again from its start' % name
+            if note not in _GATE_NOTES:
+                _GATE_NOTES.append(note)
+    global _INS_TAPE
+    tape = _INS_TAPE = GateTape(job, reserve=2.5)
     while i < len(todo):
-        if i > i0 and (gate_left(job) < max(3.0, 1.5 * slowest) or (limit is not None and i - i0 >= int(limit))):
+        if i > i0 and (gate_left(job) < max(3.0, 1.5 * slowest) or tape.out_of_time() or (limit is not None and i - i0 >= int(limit))):
             break
         t0 = time.time()
         h = todo[i]
         row = kinds.get((h.get('class') or {}).get('kind'))
         if row is None:
             raise ValueError('pocket %s: no insert kind %r in the table of this job' % (h.get('id'), (h.get('class') or {}).get('kind')))
-        pockets.append(_ins_pocket(get_env, body, box, h, row, tol_d, thin_wall, thin_relief, ray, job.get('part')))
+        mine = saved if i == i0 else None
+        try:
+            try:
+                tape.begin(mine)
+                pocket = _ins_pocket(get_env, body, box, h, row, tol_d, thin_wall, thin_relief, ray, job.get('part'))
+                tape.end()
+            except (GateReplay, ValueError) as e:                       # not the questions the tape answers: this pocket from its start
+                if mine is None:
+                    raise
+                again = gate_again(cur.get('again'), 'pocket %s' % h.get('id'))
+                note = 'pocket %s was measured again from its start: %s' % (h.get('id'), str(e)[:120])
+                if note not in _GATE_NOTES:
+                    _GATE_NOTES.append(note)
+                tape.begin(None)
+                pocket = _ins_pocket(get_env, body, box, h, row, tol_d, thin_wall, thin_relief, ray, job.get('part'))
+                tape.end()
+        except GateStop:                                                # out of time inside this pocket: its answers go with the cursor
+            env = cache.get('env')                                      # None: this pocket has asked the part alone so far
+            state = {'i': i, 'tape': tape.saved(), 'env': _ins_env_key(env) if env else None,
+                     'asked': gate_states(_ins_recs(env, body), [t for t in tape.tags if t]) if env else {}}
+            if i == i0 and again:
+                state['again'] = again
+            return {'facts': {'pockets': pockets}, 'done': False, 'cursor': state, 'sig': sig}
+        pockets.append(pocket)
         slowest = max(slowest, time.time() - t0)
         i += 1
     done = i >= len(todo)

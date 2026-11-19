@@ -449,11 +449,12 @@ def load_facts(root, part, sig):
 
 def save_probe_facts(root, part, sig, envelope):
     """Store the result of one finished unit under "probes"[<probe name>] of the part's facts file. The stored entry is the
-    envelope without "part", "sig", "probe" (they are the file's own keys) and "open_documents" (the names of the other
-    open documents never go into a file that is committed), with facts["stl"] relative to the root, plus "time".
+    envelope without "part", "sig", "probe" (they are the file's own keys), "open_documents" (the names of the other
+    open documents never go into a file that is committed) and "asked" / "late" (which call wrote the result file:
+    read by the host to adopt a late answer, of no use after it), with facts["stl"] relative to the root, plus "time".
     Returns the path."""
     data = load_facts(root, part, sig)
-    entry = {k: v for k, v in envelope.items() if k not in ('part', 'sig', 'probe', 'open_documents')}
+    entry = {k: v for k, v in envelope.items() if k not in ('part', 'sig', 'probe', 'open_documents', 'asked', 'late')}
     facts = entry.get('facts')
     if isinstance(facts, dict) and isinstance(facts.get('stl'), str) and os.path.isabs(facts['stl']):
         entry['facts'] = dict(facts, stl=rel(root, facts['stl']))

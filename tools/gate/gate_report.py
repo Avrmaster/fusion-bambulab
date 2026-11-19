@@ -19,6 +19,12 @@ A report, gate/reports/<run>.json (latest.json is a copy of the newest; <run>.md
                 "waiting": 0},     standing questions of inherited parts that are not asked yet
      "groups": [{"id": "G-5d0c1a", "part", "rule", "verdict", "state", "cause", "by": [names], "count": 6,
                  "findings": [finding ids]}],     equal rows of one part, see "Groups" below
+     "over_budget": [{"unit", "probe", "part", "call", "elapsed_s", "budget_s", "over_s", "late"} |
+                     {"unit", "probe", "part", "call", "budget_s", "no_answer": true, "waited_s", "why", "late": false} |
+                     {"unit", "probe", "part", "budget_s", "not_run": true, "timeouts"}],
+                    the calls of this run that worked longer than their unit's budget, the calls that got no answer
+                    and left no result, and the units that were given up
+                    (gate_plan.over_budget): a defect of a probe to report, one line each in the report and on screen
      "exit": 1}
 
 Groups. Many rows on a patterned feature are one line for the reader: rows of one part with the same rule, verdict,
@@ -690,7 +696,7 @@ def build(root, reg, resolved, run, command, stage, verdicts, plan=None, audit=F
             'audit': bool(audit), 'intent': list(intent) if intent is not None else None, 'parts': parts, 'findings': findings,
             'questions': questions, 'waivers': waivers, 'deferred': sorted(r['id'] for r in gate_registry.rules(reg, deferred=True)),
             'unreachable': list(unreachable or []), 'params': params, 'totals': totals, 'groups': groups,
-            'exit': gate_plan.exit_code(verdicts, audit=audit)}
+            'over_budget': gate_plan.over_budget(plan), 'exit': gate_plan.exit_code(verdicts, audit=audit)}
 
 
 def summary_line(report):
@@ -868,6 +874,10 @@ def render_md(report):
         out.append('')
     if report.get('unreachable'):
         out += ['## Not reached', ''] + ['- %s: its parts keep their stamps, nothing new was checked' % u for u in report['unreachable']] + ['']
+    if report.get('over_budget'):
+        import gate_plan
+        out += ['## Units over their budget', '', 'A unit must answer within its budget. Each line is a defect of a probe to report, not a finding of a part.', '']
+        out += ['- %s' % line[len('OVER BUDGET  '):] for line in gate_plan.over_lines(report['over_budget'])] + ['']
     if report.get('deferred'):
         out += ['## Registered, not checked yet', '', ', '.join(report['deferred']), '']
     if report.get('params'):
@@ -986,7 +996,10 @@ def status(root, reg=None, hash_budget_s=None):
     "unfinished" ({"run", "done", "total"} of a run that needs more calls, or None), "unreachable" (document keys the
     last scan found closed), "registered" (documents and generators of gate/layout.json), "waiting" (standing questions
     of inherited parts that are not asked yet: they are no open questions), "inherited_parts" (how many parts are
-    inherited: judged by the audit, not changed since, no stamp) and "inherited_ids" (which). "changed" still lists
+    inherited: judged by the audit, not changed since, no stamp), "inherited_ids" (which), "over_budget" (the rows of
+    gate_plan.over_budget() for the last scan and the current run: calls that worked longer than their unit's budget,
+    calls that got no answer and left no result, units given up) and
+    "waiting_call" (a line about the unit that was sent and has not answered yet, or None). "changed" still lists
     them (they have no stamp); the text of the status counts and names them apart. hash_budget_s limits the time spent hashing STLs that
     are not in the cache yet; the ones left over are "unknown" and are not counted as unstamped."""
     import gate_plan
@@ -1022,13 +1035,15 @@ def status(root, reg=None, hash_budget_s=None):
         n, m = gate_plan.progress(plan)
         if n < m:
             unfinished = {'run': plan['run'], 'done': n, 'total': m}
+    over = gate_plan.scan_over_budget(root) + (gate_plan.over_budget(plan) if plan and plan.get('command') == 'run' else [])
     latest = load_latest(root) or {}
     return {'mode': project['mode'], 'parts': len(live), 'changed': changed, 'open': open_, 'questions': questions,
             'unstamped_stls': sorted(p for p, s in states.items() if s in ('none', 'stale')), 'triage_open': sum(1 for i in triage_of(root) if not i.get('decision')),
             'last_run': latest.get('run'), 'last_scan': census.get('scanned'), 'unchecked': unchecked, 'inherited': inherited, 'stale': stale,
             'stl_states': states, 'unfinished': unfinished, 'unreachable': sorted(k for k, d in census['docs'].items() if d.get('open') is False),
             'registered': len(layout.get('documents') or []) + len(layout.get('generators') or []), 'waiting': waiting,
-            'inherited_parts': len(inherited_parts), 'inherited_ids': inherited_parts}
+            'inherited_parts': len(inherited_parts), 'inherited_ids': inherited_parts, 'over_budget': over,
+            'waiting_call': gate_plan.waiting_line(root)}
 
 
 def _some(names, n=4):
@@ -1049,6 +1064,15 @@ def _status_lines(st, rows=None):
         out.append('  nothing scanned yet: `gate.py run --changed` scans the open documents first')
     if st['unfinished']:
         out.append('  run %s is not finished: %d/%d units (`gate.py run` goes on with it)' % (st['unfinished']['run'], st['unfinished']['done'], st['unfinished']['total']))
+    if st.get('waiting_call'):
+        out.append('  ' + st['waiting_call'])
+    if st.get('over_budget'):                       # a defect of a probe, said until the next run: one line each (the digest: the first two)
+        import gate_plan
+        lines = gate_plan.over_lines(st['over_budget'])
+        shown = lines if rows is None else lines[:2]
+        out += ['  ' + line for line in shown]
+        if len(shown) < len(lines):
+            out.append('  ... and %d more units over their budget (`gate.py status`)' % (len(lines) - len(shown)))
     groups = group_rows(st['open'])                 # equal rows of a part are one line; the report holds every row
     limit = RUN_LINES if rows is None else rows
     lines = group_lines(groups, limit)

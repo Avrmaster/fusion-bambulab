@@ -30,19 +30,57 @@ inside that body" through BRepBody.pointContainment, behind a bounding-box test)
             lands. room = ring width + the gaps as drawn - that travel.
   seat      eight directions at nine heights of the ring: where the wall of a neighbour begins (halving search).
 Limits: bodies with the light bulb off and mesh bodies hold nothing (they are named in "hidden_near" / "mesh_near"); a
-clamp that lands on a cone or a curved face is not seen (its travel reads as free); the grid on a big flat face is 6 x 6."""
+clamp that lands on a cone or a curved face is not seen (its travel reads as free); the grid on a big flat face is 6 x 6.
+
+Time. One bearing can cost more than a call has: a D100 ring has 210 sample points per ring face, each looked at at 21
+offsets, against every neighbour whose bounding box holds the point, and a point test on a body with thousands of faces
+takes milliseconds. So the work on ONE bearing is cut into steps, and every step asks through a GateTape of _fusion.py:
+  face step    one neighbour at one side of the bearing: both ring faces of that side (_brg_face_step)
+  seat step    one neighbour as the seat of one ring (_brg_seat_step)
+  travel step  the clamp of one ring: where it lands (_brg_clamp)
+The clock is read between the steps and, inside a step, every 16 point tests. A call that runs out of time returns
+"done": False with a cursor that carries the finished steps of the bearing as plain JSON and the tape of the step in
+progress; the next call reads them and goes on. Bodies are named in the cursor by their index in the list of
+gate_world(). One bearing is measured on ONE state of the model: the state of a bearing in progress carries "k", the
+place, name and box of every body the bearing uses (its own bodies, the bodies beside it, and every body a clamp
+could land on: _brg_used), and "asked", the state of the bearing's own bodies and of every body that answered a
+point test (gate_states of _fusion.py: revision id, face count, volume, area). When one of them differs in the next call, the bearing in
+progress is measured again from its start, with a note; the third such call in a row ends the unit in an error. A
+body that is none of these may change: it restarts nothing. The cursor also carries "key", the list of the bearings
+found: when that list differs in a later call, the index of the cursor points at another bearing and the unit ends in
+an error ("start the unit again").
+One piece of a travel step cannot look at the clock: the walk over the faces of a clamp body, once per bearing and
+ring (the picked faces are kept in the cursor). Before the walk over a body with more than _BRG_WALK_FACES faces
+the step stops when the call has done other work and less than half of its time is left: the walk then opens the
+next call. Its seconds are in the timing block ("travel_walk_s").
+What is not asked at all, because the answer is known without a point test: a neighbour whose bounding box does not
+reach the slab in front of a ring face (slab_box), a neighbour whose box cannot hold the wall of a seat
+(seat_possible), and the cover of the other ring, which samples the points the other ring's own test samples
+(face_first_cut). The part of the unit is looked at first: when it neither seats the bearing nor stands at a ring
+face, the bearing is another part's as soon as one printed neighbour stands at a ring face, and the rest is not
+measured (it would be thrown away: such a bearing is only named in "near_bearings")."""
 
 _BRG_LOOK = 2.0                 # mm beyond a ring face in which a cover is still listed (with its gap)
 _BRG_FAR = 120.0                # mm round the part in which bodies are read at all
+_BRG_RESERVE = 3.0              # s of a call that are kept for writing its answer
+_BRG_WALK_FACES = 500           # a clamp body with more faces: the walk over them does not start late in a call
 
 
-def _brg_inside(rec):
+class _BrgLate(Exception):
+    """The time of the call is used up between two steps of one bearing."""
+
+
+def _brg_inside(rec, tape=None, tag=0):
+    """callable(point mm) -> is the point inside the body of this record. A point outside the body's bounding box is
+    answered without a call; the others are asked through `tape` (GateTape of _fusion.py) when one is given."""
     body, lo, hi = rec['body'], rec['box'][0], rec['box'][1]
     IN = adsk.fusion.PointContainment.PointInsidePointContainment
 
     def inside(p):
         if p[0] < lo[0] or p[0] > hi[0] or p[1] < lo[1] or p[1] > hi[1] or p[2] < lo[2] or p[2] > hi[2]:
             return False
+        if tape is not None:
+            return tape.ask(body, p, tag)
         return body.pointContainment(gate_point(p)) == IN
     return inside
 
@@ -214,78 +252,128 @@ def _brg_merge(entries):
     return out
 
 
-def _brg_faces(g, A, neighbours, touch, land, brg_ids=None):
-    """{"inner": {"+": [cover], "-": [cover]}, "outer": {...}} with the private keys still on the covers.
-    brg_ids: {id of a body record: (d, D) of the bearing it belongs to}. A cover that is itself a bearing has
-    "bearing": True, and "twin": True when its bore and outer diameter are those of this bearing (ring lies on ring)."""
-    brg_ids = brg_ids or {}
-    same = lambda rec: id(rec) in brg_ids and brg_ids[id(rec)] is not None and abs(brg_ids[id(rec)][0] - g['size']['d']) <= 0.1 and abs(brg_ids[id(rec)][1] - g['size']['D']) <= 0.1
-    size, offsets, out = g['size'], cover_offsets(touch, _BRG_LOOK), {}
+def _brg_face_step(g, A, rec, side, touch, land, offsets, brg_ids):
+    """One neighbour at one side of the bearing: [{"ring": "inner" | "outer", "cover": the public keys of a cover,
+    "flags": [bool per angle]}], one row per ring face of that side the body stands in front of (0, 1 or 2 rows).
+    Plain JSON, so a cursor can carry it. brg_ids: {id of a body record: (d, D) of the bearing it belongs to}: a cover
+    that is itself a bearing has "bearing": True, and "twin": True when its bore and outer diameter are those of this
+    bearing (ring lies on ring).
+    Both ring faces of a side are sampled on the same angles, and "does it touch the other ring" asks the points the
+    other ring's own test asks: each point is asked once."""
+    size = g['size']
+    same = id(rec) in brg_ids and brg_ids[id(rec)] is not None and abs(brg_ids[id(rec)][0] - size['d']) <= 0.1 and abs(brg_ids[id(rec)][1] - size['D']) <= 0.1
+    fc = ring_face_centre(size['centre'], A, size['B'], side)
+    dirn = A if side == '+' else v_scale(A, -1.0)
+    ann = [ring_annulus(size['d'], size['D'], ring, land) for ring in ('inner', 'outer')]
+    n_ang = ring_angles(max(ann[0][1], ann[1][1]))                      # a big ring is sampled closer than 24 points
+    pts = {'inner': annulus_points(fc, A, ann[0][0], ann[0][1], n_ang, 2), 'outer': annulus_points(fc, A, ann[1][0], ann[1][1], n_ang, 2)}
+    lo, hi = slab_box(pts['inner'] + pts['outer'], dirn, offsets)
+    if box_gap(rec['box'][0], rec['box'][1], lo, hi) > 0.0:
+        return []                                                       # its box does not reach the slab in front of this side: no point is inside it
+    inside = rec['_inside']
+    first = {}
     for ring in ('inner', 'outer'):
-        out[ring] = {}
-        r_in, r_out = ring_annulus(size['d'], size['D'], ring, land)
-        o_in, o_out = ring_annulus(size['d'], size['D'], 'outer' if ring == 'inner' else 'inner', land)
-        for side in ('+', '-'):
-            fc = ring_face_centre(size['centre'], A, size['B'], side)
-            dirn = A if side == '+' else v_scale(A, -1.0)
-            n_ang = ring_angles(max(r_out, o_out))                      # a big ring is sampled closer than 24 points
-            pts = annulus_points(fc, A, r_in, r_out, n_ang, 2)
-            other = annulus_points(fc, A, o_in, o_out, n_ang, 2)
-            entries = []
-            for rec in neighbours:
-                inside = rec['_inside']
-                cov = face_cover(pts, inside, dirn, offsets, touch)
-                if cov is None:
-                    continue
-                gap = cov['gap']
-                if gap == 0.0:
-                    deep = face_overlap(pts, inside, dirn)
-                    gap = -deep if deep > 0 else 0.0
-                oth = face_cover(other, inside, dirn, offsets[:2], touch)
-                entries.append({'name': rec['name'], 'kind': rec['kind'], 'part': rec['part'], 'bearing': id(rec) in brg_ids, 'twin': same(rec), 'share': cov['share'], 'points': cov['points'],
-                                'gap': round(gap, 3), 'near': cov['near'], 'touches_other_ring': bool(oth and sum(oth['flags']) >= 2),
-                                'other_ring_share': oth['share'] if oth else 0.0, '_rec': rec, '_flags': cov['flags']})
-            out[ring][side] = _brg_merge(entries)
+        first[ring] = face_first(pts[ring], inside, dirn, offsets)
+    out = []
+    for ring, other in (('inner', 'outer'), ('outer', 'inner')):
+        cov = face_cover_of(pts[ring], first[ring], offsets, touch)
+        if cov is None:
+            continue
+        gap = cov['gap']
+        if gap == 0.0:
+            deep = face_overlap(pts[ring], inside, dirn)
+            gap = -deep if deep > 0 else 0.0
+        oth = face_cover_of(pts[other], face_first_cut(first[other], 2), offsets[:2], touch)
+        out.append({'ring': ring, 'flags': cov['flags'],
+                    'cover': {'name': rec['name'], 'kind': rec['kind'], 'part': rec['part'], 'bearing': id(rec) in brg_ids, 'twin': bool(same),
+                              'share': cov['share'], 'points': cov['points'], 'gap': round(gap, 3), 'near': cov['near'],
+                              'touches_other_ring': bool(oth and sum(oth['flags']) >= 2), 'other_ring_share': oth['share'] if oth else 0.0}})
     return out
 
 
-def _brg_seat(g, A, neighbours, ring):
+def _brg_seat_step(g, A, rec, ring):
+    """One neighbour as the radial seat of one ring: seat_scan() of _geom_rings.py, or None. A body whose box cannot
+    hold the wall of a seat is not asked a single point."""
     size = g['size']
     r_nom = (size['D'] if ring == 'outer' else size['d']) / 2.0
-    best = None
-    for rec in neighbours:
-        s = seat_scan(rec['_inside'], size['centre'], A, r_nom, size['B'], outer=(ring == 'outer'))
-        if s is not None and (best is None or abs(s['d'] - 2 * r_nom) < abs(best[0]['d'] - 2 * r_nom)):
-            best = (s, rec)
-    if best is None:
-        return None, None
-    s, rec = best
-    return dict(s, part=rec['part'], name=rec['name'], kind=rec['kind']), rec
+    if not seat_possible(rec['box'][0], rec['box'][1], size['centre'], A, r_nom, outer=(ring == 'outer')):
+        return None
+    return seat_scan(rec['_inside'], size['centre'], A, r_nom, size['B'], outer=(ring == 'outer'))
 
 
-def _brg_travel(clamp_recs, press, g, A, world, look):
+def _brg_gather(g, world, neighbours, part):
+    """(faces, seat, seat_recs) of one bearing from its finished face and seat steps, in the order of gate_world():
+    faces = {"inner": {"+": [cover], "-": [cover]}, "outer": {...}} with the private keys on the covers ("_recs": the
+    body records), seat = {"inner": S or None, "outer": S or None}, seat_recs = the body record behind each seat."""
+    size, faces = g['size'], {}
+    for ring in ('inner', 'outer'):
+        faces[ring] = {}
+        for side in ('+', '-'):
+            entries = []
+            for k in neighbours:
+                for row in part['f'].get('%d|%s' % (k, side)) or []:
+                    if row['ring'] == ring:
+                        entries.append(dict(row['cover'], _rec=world[k], _flags=list(row['flags'])))
+            faces[ring][side] = _brg_merge(entries)
+    seat, seat_recs = {}, {}
+    for ring in ('inner', 'outer'):
+        r_nom = (size['D'] if ring == 'outer' else size['d']) / 2.0
+        best = None
+        for k in neighbours:
+            s = part['s'].get('%s|%d' % (ring, k))
+            if s is not None and (best is None or abs(s['d'] - 2 * r_nom) < abs(best[0]['d'] - 2 * r_nom)):
+                best = (s, world[k])
+        if best is None:
+            seat[ring], seat_recs[ring] = None, None
+        else:
+            seat[ring], seat_recs[ring] = dict(best[0], part=best[1]['part'], name=best[1]['name'], kind=best[1]['kind']), best[1]
+    return faces, seat, seat_recs
+
+
+def _brg_travel(clamp_recs, press, g, A, world, look, pick=None, pick_key='', tape=None, heavy=_BRG_WALK_FACES):
     """How far the clamp can still move along `press` before one of its flat faces lands on another body.
-    Returns (travel mm, name of the stop or None, capped: nothing met within `look`)."""
+    Returns (travel mm, name of the stop or None, capped: nothing met within `look`).
+    pick: a dict that keeps, per clamp body, the indices of its flat faces that look along `press` (the largest 16),
+    under pick_key + the place of the body in `clamp_recs`. A call that goes on with this clamp reads them from there
+    and does not walk the faces of the body again.
+    tape: the GateTape of the call. The walk over the faces of a body with more than `heavy` faces reads no clock: when
+    the call has done other work and less than half of its time is left, GateStop is raised before it and the walk
+    opens the next call. The seconds of every walk go into tape.timing["walk"]."""
     size = g['size']
     own = set(id(r) for r in clamp_recs) | set(id(r) for r in g['recs'])
     u, v = axis_frame(press)
     hits = []
-    for rec in clamp_recs[:12]:
+    pick = pick if pick is not None else {}
+    for n_rec, rec in enumerate(clamp_recs[:12]):
         in_c = rec['_inside']
         stops = [r for r in world if id(r) not in own and not r['mesh'] and r['visible']
                  and box_gap(r['box'][0], r['box'][1], rec['box'][0], rec['box'][1]) <= look + 0.5]
         for r in stops:
             if '_inside' not in r:
                 r['_inside'] = _brg_inside(r)
-        faces = []
-        for f in rec['body'].faces:
-            if gate_geo(f.geometry) != 'Plane':
-                continue
-            ok, n = f.evaluator.getNormalAtPoint(f.pointOnFace)
-            if ok and v_dot(v_unit((n.x, n.y, n.z)), press) > 0.99:
-                faces.append((f.area, f))
-        faces.sort(key=lambda t: -t[0])
-        for _, f in faces[:16]:
+        all_faces = rec['body'].faces
+        key = '%s|%d' % (pick_key, n_rec)
+        if not isinstance(pick.get(key), list):
+            n_faces = all_faces.count
+            if tape is not None and n_faces > heavy and tape.no_time_for(float(tape.job.get('deadline_s') or 20) / 2.0):
+                raise GateStop()                                        # the walk is one piece: it opens the next call
+            t_walk = time.time()
+            flat = []
+            for fi in range(n_faces):
+                f = all_faces.item(fi)
+                if gate_geo(f.geometry) != 'Plane':
+                    continue
+                ok, n = f.evaluator.getNormalAtPoint(f.pointOnFace)
+                if ok and v_dot(v_unit((n.x, n.y, n.z)), press) > 0.99:
+                    flat.append((f.area, fi))
+            flat.sort(key=lambda t: -t[0])
+            pick[key] = [fi for _, fi in flat[:16]]
+            if tape is not None:
+                row = tape.timing.setdefault('walk', [0.0, 0])
+                row[0] += time.time() - t_walk
+                row[1] += n_faces
+        for fi in pick[key]:
+            f = all_faces.item(fi)
             p0 = gate_mm(f.pointOnFace)
             lo, hi = gate_bbox(f)
             cs = box_corners(lo, hi)
@@ -319,42 +407,97 @@ def _brg_travel(clamp_recs, press, g, A, world, look):
     return least_travel(hits, look)
 
 
-def _brg_clamps(g, A, faces, seats, world, washers, look):
-    out = []
-    for ring in ('inner', 'outer'):
-        ends = {}
-        for side in ('+', '-'):
-            near = [c for c in faces[ring][side] if c['gap'] <= _BRG_LOOK]
-            ends[side] = near[0] if near else None
-        if not ends['+'] or not ends['-']:
-            continue
-        ids = {sd: sorted(id(r) for r in ends[sd]['_recs']) for sd in ('+', '-')}
-        if ids['+'] == ids['-']:
-            continue                                                    # one body on both faces: nothing can be drawn tight
-        washer = {sd: gate_search(washers, ends[sd]['name']) for sd in ('+', '-')}
-        seat_rec = seats.get(ring)
-        if washer['+'] != washer['-']:
-            side = '+' if washer['+'] else '-'
-        elif seat_rec is not None and any(r is seat_rec for r in ends['+']['_recs']) != any(r is seat_rec for r in ends['-']['_recs']):
-            side = '-' if any(r is seat_rec for r in ends['+']['_recs']) else '+'
-        else:
-            vol = lambda c: sum((r['box'][1][0] - r['box'][0][0]) * (r['box'][1][1] - r['box'][0][1]) * (r['box'][1][2] - r['box'][0][2]) for r in c['_recs'])
-            side = '+' if vol(ends['+']) <= vol(ends['-']) else '-'
-        clamp, stop = ends[side], ends['-' if side == '+' else '+']
-        press = v_scale(A, -1.0 if side == '+' else 1.0)
-        travel, landed_on, capped = _brg_travel(clamp['_recs'], press, g, A, world, look)
-        out.append({'ring': ring, 'side': side, 'by': 'washer' if washer[side] else clamp['kind'], 'name': clamp['name'],
-                    'part': clamp['part'], 'gap': clamp['gap'], 'stop_gap': stop['gap'], 'stop_part': stop['part'],
-                    'room': clamp_room(g['size']['B'], travel, stop['gap'], clamp['gap']), 'ring_width': round(g['size']['B'], 3),
-                    'travel': round(travel, 2), 'travel_capped': capped, 'lands_on': landed_on, 'against': stop['name']})
-    return out
+def _brg_clamp(ring, g, A, faces, seats, world, washers, look, pick=None, tape=None, heavy=_BRG_WALK_FACES):
+    """The clamp of one ring, or None: a ring covered on both faces by two different bodies (see the top)."""
+    ends = {}
+    for side in ('+', '-'):
+        near = [c for c in faces[ring][side] if c['gap'] <= _BRG_LOOK]
+        ends[side] = near[0] if near else None
+    if not ends['+'] or not ends['-']:
+        return None
+    ids = {sd: sorted(id(r) for r in ends[sd]['_recs']) for sd in ('+', '-')}
+    if ids['+'] == ids['-']:
+        return None                                                     # one body on both faces: nothing can be drawn tight
+    washer = {sd: gate_search(washers, ends[sd]['name']) for sd in ('+', '-')}
+    seat_rec = seats.get(ring)
+    if washer['+'] != washer['-']:
+        side = '+' if washer['+'] else '-'
+    elif seat_rec is not None and any(r is seat_rec for r in ends['+']['_recs']) != any(r is seat_rec for r in ends['-']['_recs']):
+        side = '-' if any(r is seat_rec for r in ends['+']['_recs']) else '+'
+    else:
+        vol = lambda c: sum((r['box'][1][0] - r['box'][0][0]) * (r['box'][1][1] - r['box'][0][1]) * (r['box'][1][2] - r['box'][0][2]) for r in c['_recs'])
+        side = '+' if vol(ends['+']) <= vol(ends['-']) else '-'
+    clamp, stop = ends[side], ends['-' if side == '+' else '+']
+    press = v_scale(A, -1.0 if side == '+' else 1.0)
+    travel, landed_on, capped = _brg_travel(clamp['_recs'], press, g, A, world, look, pick, ring, tape, heavy)
+    return {'ring': ring, 'side': side, 'by': 'washer' if washer[side] else clamp['kind'], 'name': clamp['name'],
+            'part': clamp['part'], 'gap': clamp['gap'], 'stop_gap': stop['gap'], 'stop_part': stop['part'],
+            'room': clamp_room(g['size']['B'], travel, stop['gap'], clamp['gap']), 'ring_width': round(g['size']['B'], 3),
+            'travel': round(travel, 2), 'travel_capped': capped, 'lands_on': landed_on, 'against': stop['name']}
 
 
 def _brg_public(covers):
     return [{k: c[k] for k in c if not k.startswith('_')} for c in covers]
 
 
-def _brg_one(g, job, world, m, inv, table, touch, look, brg_ids=None):
+def _brg_step(part, tape, store, key, stage, fn):
+    """Run one step of a bearing, or read it when an earlier call finished it. `store` is the dict of `part` the
+    results of this kind of step live in, `key` the step's name in it. A step that an earlier call began is run again
+    with its tape (part["at"] names it, part["tape"] holds it). Raises _BrgLate before a step when the time of the call
+    is used up; GateStop comes out of a step that ran out of time (the caller then stores tape.saved() in the part)."""
+    if key in store:
+        return store[key]
+    sid = '%s:%s' % (stage, key)
+    saved = part.pop('tape', None) if part.get('at') == sid else None
+    part.pop('tape', None)
+    if tape.out_of_time():
+        if saved is not None:
+            part['tape'] = saved
+        raise _BrgLate()
+    part['at'] = sid
+    tape.set_stage(stage)
+    try:
+        tape.begin(saved)
+        value = fn()
+        tape.end()
+    except (GateReplay, ValueError) as e:                               # not the questions the tape answers: this step from its start
+        if saved is None:
+            raise
+        part['again'] = gate_again(part.get('again'), 'a step of a bearing (%s)' % sid)
+        note = 'a step of a bearing (%s) was measured again from its start: %s' % (sid, str(e)[:120])
+        if note not in _GATE_NOTES:
+            _GATE_NOTES.append(note)
+        tape.begin(None)
+        value = fn()
+        tape.end()
+    store[key] = value
+    part.pop('at', None)
+    part.pop('again', None)
+    return value
+
+
+def _brg_used(g, world, near, neighbours, look):
+    """The indices in `world` of every body the measurement of this bearing can depend on: its own bodies, the bodies
+    beside it (`near`: covers, seats, and the hidden and mesh bodies it names), and every shown solid within the travel
+    look of a neighbour (where a clamp could land: the stops of _brg_travel are among them)."""
+    used = set(near) | set(k for k, r in enumerate(world) if any(r is x for x in g['recs']))
+    for k, r in enumerate(world):
+        if k in used or r['mesh'] or not r['visible']:
+            continue
+        if any(box_gap(r['box'][0], r['box'][1], world[n]['box'][0], world[n]['box'][1]) <= look + 0.5 for n in neighbours):
+            used.add(k)
+    return sorted(used)
+
+
+def _brg_one(g, job, world, m, inv, table, touch, look, brg_ids, part, tape, again=None):
+    """The facts of one bearing; None when another printed part seats and holds it (it is judged there).
+    part: the plain JSON state of this bearing, {} at its start: {"f": face steps, "s": seat steps, "t": travel steps,
+    "pick": faces picked for the travel, "at" / "tape": the step in progress, "again": calls in a row that had to
+    start that step again (gate_again of _fusion.py), "k": gate_rows_key() of the bodies the bearing uses (_brg_used),
+    "asked": gate_states() of the bodies that answered a point test (probe() adds them after every call)}. Finished
+    steps are read from it, new ones are written into it; the caller keeps it in the cursor. When the bodies are not
+    the ones the state was written for, the state is emptied (the bearing starts again) and again["n"] counts it
+    (gate_again: the third call in a row raises). Raises GateStop or _BrgLate when the time of the call is used up."""
     size = g['size']
     row = (table.get('sizes') or {}).get(g['designation'] or '') or {}
     if size is None:                                                    # a name without usable geometry: listed, never skipped
@@ -364,31 +507,113 @@ def _brg_one(g, job, world, m, inv, table, touch, look, brg_ids=None):
                 'rings': None, 'clamps': [], 'seat': {'inner': None, 'outer': None}, 'why': 'no ring geometry: no coaxial circular edges'}
     axis_part = canonical_axis(mat_vector(inv, size['axis']))
     A = v_unit(mat_vector(m, axis_part))                                # "+" is along the anchor axis
-    near = [r for r in world if not any(r is x for x in g['recs']) and box_gap(r['box'][0], r['box'][1], g['box'][0], g['box'][1]) <= _BRG_LOOK + 0.5]
-    neighbours = [r for r in near if not r['mesh'] and r['visible']]
-    for r in neighbours:
-        if '_inside' not in r:
-            r['_inside'] = _brg_inside(r)
-    faces = _brg_faces(g, A, neighbours, touch, float(table.get('ring_land_share', 0.25)), brg_ids)
-    seat, seat_recs = {}, {}
-    for ring in ('inner', 'outer'):
-        seat[ring], seat_recs[ring] = _brg_seat(g, A, neighbours, ring)
+    near = [k for k, r in enumerate(world) if not any(r is x for x in g['recs']) and box_gap(r['box'][0], r['box'][1], g['box'][0], g['box'][1]) <= _BRG_LOOK + 0.5]
+    neighbours = [k for k in near if not world[k]['mesh'] and world[k]['visible']]
+    for k in neighbours:
+        if '_inside' not in world[k]:
+            world[k]['_inside'] = _brg_inside(world[k], tape, k)
+    t_state = time.time()
+    here = gate_rows_key(world, _brg_used(g, world, near, neighbours, look))
+    same = (not part) or (part.get('k') == here and gate_states_same(part.get('asked') or {}, world))
+    row = tape.timing.setdefault('state', [0.0, 0])
+    row[0], row[1] = row[0] + time.time() - t_state, row[1] + len(part.get('asked') or {})
+    if not same:
+        # other bodies, or bodies in another state, than this bearing was measured against so far: never join two states
+        part.clear()
+        if again is not None:
+            again['n'] = gate_again(again.get('was'), 'bearing %s' % g['name'], GATE_MOVED)
+        note = 'the bodies round the part changed between two calls of this unit: bearing %s is measured again from its start' % g['name']
+        if note not in _GATE_NOTES:
+            _GATE_NOTES.append(note)
+    part['k'] = here
+    heavy = (job.get('args') or {}).get('walk_faces', _BRG_WALK_FACES)
+    land, offsets = float(table.get('ring_land_share', 0.25)), cover_offsets(touch, _BRG_LOOK)
+    F, S, T = part.setdefault('f', {}), part.setdefault('s', {}), part.setdefault('t', {})
+    pick = part.setdefault('pick', {})
+
+    def face(k, side):
+        return _brg_step(part, tape, F, '%d|%s' % (k, side), 'faces', lambda: _brg_face_step(g, A, world[k], side, touch, land, offsets, brg_ids))
+
+    def seat_of(ring, k):
+        return _brg_step(part, tape, S, '%s|%d' % (ring, k), 'seats', lambda: _brg_seat_step(g, A, world[k], ring))
+
+    # the part of this unit first: when it neither seats the bearing nor stands at a ring face, the bearing is another
+    # part's as soon as one printed neighbour stands at a ring face, and nothing else of it is measured
+    own = [k for k in neighbours if world[k]['own']]
+    printed = [k for k in neighbours if world[k]['printed'] and not world[k]['own']]
+    rest = [k for k in neighbours if not world[k]['own'] and not world[k]['printed']]
+    may_hold = False
+    for k in own:
+        for side in ('+', '-'):
+            may_hold = bool(face(k, side)) or may_hold
+        for ring in ('inner', 'outer'):
+            may_hold = (seat_of(ring, k) is not None) or may_hold
+    for k in printed:
+        for side in ('+', '-'):
+            if face(k, side) and not may_hold:
+                return None                                             # another printed part holds it: judged there
+    for k in rest:
+        for side in ('+', '-'):
+            face(k, side)
+    for k in printed + rest:
+        for ring in ('inner', 'outer'):
+            seat_of(ring, k)
+    faces, seat, seat_recs = _brg_gather(g, world, neighbours, part)
     holders = [r for r in seat_recs.values() if r is not None] + [r for ring in faces for side in faces[ring] for c in faces[ring][side] for r in c['_recs']]
     if not any(r['own'] for r in holders) and any(r['printed'] for r in holders):
         return None                                                     # another printed part seats and holds it: judged there
-    clamps = _brg_clamps(g, A, faces, seat_recs, world, (job.get('params') or {}).get('washers.ref_pattern'), look)
+    washers = (job.get('params') or {}).get('washers.ref_pattern')
+    clamps = []
+    for ring in ('inner', 'outer'):
+        c = _brg_step(part, tape, T, ring, 'travel', lambda: _brg_clamp(ring, g, A, faces, seat_recs, world, washers, look, pick, tape, heavy))
+        if c is not None:
+            clamps.append(c)
     return {'ref': g['name'], 'designation': g['designation'], 'by': g['by'], 'd': round(size['d'], 3), 'D': round(size['D'], 3), 'B': round(size['B'], 3),
             'anchor': {'kind': 'bearing', 'axis': list(axis_part), 'point': [round(x, 2) for x in mat_point(inv, size['centre'])]},
             'rings': {ring: {'faces': [{'side': side, 'covered': _brg_public(faces[ring][side])} for side in ('+', '-')]} for ring in ('inner', 'outer')},
             'clamps': clamps, 'seat': seat,
-            'hidden_near': sorted(set(r['name'] for r in near if not r['mesh'] and not r['visible'])),
-            'mesh_near': sorted(set(r['name'] for r in near if r['mesh']))}
+            'hidden_near': sorted(set(world[k]['name'] for k in near if not world[k]['mesh'] and not world[k]['visible'])),
+            'mesh_near': sorted(set(world[k]['name'] for k in near if world[k]['mesh']))}
+
+
+def _brg_key(found):
+    """16 hex characters that name the list of the bearings found: the index of a cursor counts in this list."""
+    return state_digest([g['key'] for g in found])
+
+
+def _brg_timing(before, tape, world, prelude_s):
+    """(the running sums for the cursor, the "timing" block of the envelope) after this call.
+    before: the sums of the calls before this one ({} at the first call)."""
+    stages = {k: list(v) for k, v in (before.get('stages') or {}).items()}
+    for k, (sec, n) in tape.timing.items():
+        row = stages.setdefault(k, [0.0, 0])
+        row[0], row[1] = round(row[0] + sec, 3), row[1] + n
+    bodies = {k: list(v) for k, v in (before.get('bodies') or {}).items()}
+    for tag, (sec, n) in tape.bodies.items():
+        rec = world[tag] if isinstance(tag, int) and 0 <= tag < len(world) else None
+        name = rec['name'] if rec else str(tag)
+        row = bodies.setdefault(name, [0.0, 0, None])
+        row[0], row[1] = round(row[0] + sec, 3), row[1] + n
+        if row[2] is None and rec is not None:
+            try:
+                row[2] = rec['body'].faces.count
+            except Exception:
+                row[2] = None
+    sums = {'calls': int(before.get('calls') or 0) + 1, 'prelude_s': round(float(before.get('prelude_s') or 0.0) + prelude_s, 3),
+            'stages': stages, 'bodies': bodies}
+    slow = sorted(bodies.items(), key=lambda kv: (-kv[1][0], -kv[1][1], kv[0]))[:5]
+    block = {'calls': sums['calls'], 'prelude_s': sums['prelude_s'], 'travel_walk_s': round((stages.get('walk') or [0.0, 0])[0], 2),
+             'state_s': round((stages.get('state') or [0.0, 0])[0], 2),
+             'slowest': [{'name': k, 'faces': v[2], 'pc': v[1], 's': round(v[0], 2)} for k, v in slow]}
+    for k in ('faces', 'seats', 'travel'):
+        block[k] = {'s': round((stages.get(k) or [0.0, 0])[0], 2), 'pc': (stages.get(k) or [0.0, 0])[1]}
+    return sums, block
 
 
 def probe(job):
     """job  uses "doc", "component_id", "occurrence", "body", "params" ("bearings.ref_pattern", "bearings.contact_gap_max"),
-         "tables"["bearings"], "features" ({"holes", "openings"} of the census: the holes with role "bearing_seat" are the seats), "not_printed", "cursor" (index of the next
-         bearing), "deadline_s"
+         "tables"["bearings"], "features" ({"holes", "openings"} of the census: the holes with role "bearing_seat" are the seats), "not_printed", "cursor" (see
+         below), "deadline_s", "args" ({"tape_limit": n}: stop after n point tests in one call, for tests and slow machines)
 
     A bearing is near this unit when its bounding box comes within 1 mm of the part's; it is listed when the part seats
     it or stands at one of its ring faces (within 2 mm), or when no printed part does. Its size is read from its geometry
@@ -431,7 +656,23 @@ def probe(job):
       facts also hold "touch", "look", "travel_look" (mm: how it was measured), "ring_angles" (points per circle of the
       largest ring), "n_bearings" (bearings near the part), "near_bearings" (names of those another printed part seats
       and holds: not listed here), "not_bearings" (names that point at a bearing and were passed over: no table ring by
-      geometry) and "rejected" ([{"name", "why", "d", "D", "B"}]: why, with what was measured)."""
+      geometry) and "rejected" ([{"name", "why", "d", "D", "B"}]: why, with what was measured).
+
+    The cursor is {"i": index of the next bearing, "key": _brg_key() of the bearings found, "part": the finished steps
+    of bearing i, the tape of the step in progress and the bodies it was measured against (see the top; {} between two
+    bearings), "timing": the running sums, "restarts": calls in a row that had to start bearing i again because its
+    bodies changed (only while that is so)}. A cursor whose "key" is not the list of bearings found now ends the unit
+    in an error: the index would point at another bearing. A plain number (a cursor of an older plan) is read as the
+    index. "not_bearings", "rejected" and "seats_without_bearing" are written by the first call of a unit only (lists
+    are joined over its calls).
+    The answer also carries "timing" beside the facts (never in them: no judge reads it), and one line of it in the
+    envelope's notes: {"calls": calls of this unit so far, "prelude_s": seconds before the first step (the walk over the
+    document, the search for bearings), summed over the calls, "faces" / "seats" / "travel": {"s": seconds inside
+    pointContainment, "pc": how many calls of it}, "travel_walk_s": seconds in the walks over the faces of clamp
+    bodies (no point test, no clock), "slowest": the five bodies that took the most seconds, each
+    {"name", "faces": its face count, "pc", "s"}, "state_s": seconds spent reading the state of the bodies a bearing in
+    progress was measured against (revision id, face count, volume, area: at the start and at the end of a call)}."""
+    t_start = time.time()
     design = gate_design(job)
     occ, comp, body = gate_body(design, job)
     sig = gate_signature(body)
@@ -446,11 +687,28 @@ def probe(job):
     world = gate_world(design, job, part_box, _BRG_FAR, '' if occ is None else occ.fullPathName, body.name)
     found, skipped, rejected = _brg_find(world, pattern, part_box, table, gate_ref_patterns(job))
     brg_ids = {id(r): ((g['size']['d'], g['size']['D']) if g['size'] else None) for g in found for r in g['recs']}
-    start = int(job.get('cursor') or 0)
+    cur = job.get('cursor')
+    first_call = cur is None                                            # lists are joined over the calls of one unit: some are written once
+    again = {'was': None, 'n': 0}                                       # calls in a row that started the bearing in progress again
+    if isinstance(cur, dict):
+        start, part, sums = int(cur.get('i') or 0), cur.get('part'), cur.get('timing')
+        part = json.loads(json.dumps(part)) if isinstance(part, dict) else {}       # a copy: the cursor of the job stays as it came
+        sums = sums if isinstance(sums, dict) else {}
+        again['was'] = cur.get('restarts')
+    else:
+        start, part, sums = int(cur or 0), {}, {}
+    here = _brg_key(found)
+    if isinstance(cur, dict) and cur.get('key') != here:                # another list of bearings: the index points at another bearing,
+        # and the lists the first call wrote (not_bearings, rejected, seats without a bearing) are of the old list
+        raise ValueError('the bearings near the part changed between two calls of this unit (%d found now): start the unit again' % len(found))
+    tape = GateTape(job, reserve=_BRG_RESERVE)
+    for k, r in enumerate(world):
+        if not r['mesh']:
+            r['_inside'] = _brg_inside(r, tape, k)
     facts = {'bearings': [], 'near_bearings': [], 'seats_without_bearing': [], 'touch': touch, 'look': _BRG_LOOK, 'travel_look': look, 'n_bearings': len(found),
              'ring_angles': max([24] + [ring_angles(g['size']['D'] / 2.0) for g in found if g['size']]),
-             'not_bearings': skipped if start == 0 else [], 'rejected': rejected if start == 0 else []}
-    if start == 0:
+             'not_bearings': skipped if first_call else [], 'rejected': rejected if first_call else []}
+    if first_call:
         known = set(r['name'] for g in found for r in g['recs'])
         placed = [(mat_point(inv, g['size']['centre']), v_unit(mat_vector(inv, g['size']['axis']))) for g in found if g['size']]
         for h in ((job.get('features') or {}).get('holes') or []):
@@ -466,14 +724,43 @@ def probe(job):
             facts['seats_without_bearing'].append({'hole': h.get('id'), 'anchor': a, 'd': d, 'designation': cls.get('kind'), 'match': cls.get('match'),
                                                    'bodies': sorted(set(str(c.get('name')) for c in h.get('coaxial') or []
                                                                         if isinstance(c, dict) and c.get('kind') in ('bought', 'hardware') and c.get('name') not in known))})
-    i = start
+    prelude_s = time.time() - t_start
+    i, late = start, False
     while i < len(found):
-        if i > start and gate_time_up(job, 6.0):
-            return {'facts': facts, 'done': False, 'cursor': i, 'sig': sig}
-        row = _brg_one(found[i], job, world, m, inv, table, touch, look, brg_ids)
+        if tape.out_of_time():                                          # between two bearings
+            late = True
+            break
+        try:
+            row = _brg_one(found[i], job, world, m, inv, table, touch, look, brg_ids, part, tape, again if i == start else None)
+        except GateStop:                                                # inside a step: its answers so far go with the cursor
+            part['tape'] = tape.saved()
+            late = True
+            break
+        except _BrgLate:                                                # between two steps
+            late = True
+            break
         if row is None:
             facts['near_bearings'].append(found[i]['name'])
         else:
             facts['bearings'].append(row)
+        part = {}
         i += 1
-    return {'facts': facts, 'done': True, 'cursor': None, 'sig': sig}
+    if late and part:                                                   # what this bearing was measured against so far (see the top)
+        t_state = time.time()
+        own = [k for k, r in enumerate(world) if i < len(found) and any(r is x for x in found[i]['recs'])]     # the bearing itself: its size is read again by every call
+        part['asked'] = dict(part.get('asked') or {}, **gate_states(world, set(tape.bodies) | set(own)))
+        row = tape.timing.setdefault('state', [0.0, 0])
+        row[0], row[1] = row[0] + time.time() - t_state, row[1] + len(tape.bodies) + len(own)
+    sums, timing = _brg_timing(sums, tape, world, prelude_s)
+    note = 'timing: %d call(s), %.1f s before the first step; point tests: faces %.1f s / %d, seats %.1f s / %d, travel %.1f s / %d%s' % (
+        timing['calls'], timing['prelude_s'], timing['faces']['s'], timing['faces']['pc'], timing['seats']['s'], timing['seats']['pc'],
+        timing['travel']['s'], timing['travel']['pc'],
+        ('; slowest body %s (%s faces): %.1f s / %d' % (timing['slowest'][0]['name'], timing['slowest'][0]['faces'], timing['slowest'][0]['s'], timing['slowest'][0]['pc']))
+        if timing['slowest'] else '')
+    _GATE_NOTES.append(note)
+    if late:
+        cursor = {'i': i, 'key': here, 'part': part, 'timing': sums}
+        if again['n'] and i == start:
+            cursor['restarts'] = again['n']
+        return {'facts': facts, 'done': False, 'cursor': cursor, 'sig': sig, 'timing': timing}
+    return {'facts': facts, 'done': True, 'cursor': None, 'sig': sig, 'timing': timing}

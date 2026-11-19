@@ -152,11 +152,13 @@ def run_judge(rule, facts, params, ctx):
     ctx     as described at the top; "rule" and "part" must be set
 
     No facts, a judge that is not built, or a judge that raises: one NOT_RUN finding that says so (a check that did not
-    run has not passed). Findings without "fix" get the rule's fix_order. "rule" is forced to the rule's id; "part" is
+    run has not passed). ctx["no_facts"], when set, is why the unit gave no facts (a unit that was given up as over
+    budget): the row says that instead of the general text. Findings without "fix" get the rule's fix_order. "rule" is forced to the rule's id; "part" is
     kept when the judge set one (project and regression judges name the part each finding is about), else ctx's."""
     rid, part, name = rule['id'], ctx['part'], rule['check']['judge']
     if facts is None:
-        return [finding(rid, part, 'NOT_RUN', 'no facts from %s: the unit did not run or ended in an error' % rule['check']['probe'], fix=rule.get('fix_order'))]
+        why = ctx.get('no_facts') if isinstance(ctx.get('no_facts'), str) and ctx['no_facts'].strip() else 'the unit did not run or ended in an error'
+        return [finding(rid, part, 'NOT_RUN', 'no facts from %s: %s' % (rule['check']['probe'], why), fix=rule.get('fix_order'))]
     if name not in JUDGES:
         return [finding(rid, part, 'NOT_RUN', 'judge %s does not exist' % name)]
     try:
