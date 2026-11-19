@@ -1,0 +1,39 @@
+{
+ "judge": "project_settings_changed_by_write",
+ "case": "a write keeps the hole compensation at 0.125 and drops the key from the list of settings that differ from the system preset: the slicer would load the preset value",
+ "facts": {
+  "project": "main",
+  "file": "bambulab/Demo.3mf",
+  "settings_write": {
+   "keys": [
+    "nozzle_diameter",
+    "line_width",
+    "layer_height",
+    "initial_layer_print_height",
+    "xy_hole_compensation",
+    "xy_contour_compensation",
+    "elefant_foot_compensation",
+    "wall_generator"
+   ],
+   "compared": true,
+   "why": null,
+   "changed": [
+    {
+     "key": "xy_hole_compensation",
+     "scope": "global",
+     "before": "listed",
+     "after": "not listed",
+     "asked": false,
+     "by": null,
+     "note": "takes xy_hole_compensation out of \"different_settings_to_system\" and keeps its value 0.125: the slicer takes the value of the system preset for it when it loads the file"
+    }
+   ]
+  }
+ },
+ "expect": [
+  {
+   "verdict": "FAIL",
+   "part": "main:Demo.3mf"
+  }
+ ]
+}

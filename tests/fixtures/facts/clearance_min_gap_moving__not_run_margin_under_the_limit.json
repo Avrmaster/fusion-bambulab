@@ -1,0 +1,13 @@
+{
+ "judge": "clearance_min_gap_moving",
+ "case": "neighbours were listed only within 1.0 mm: an empty list proves nothing about 2.0",
+ "facts": {
+  "own_group": "base",
+  "margin": 1.0,
+  "gaps": []
+ },
+ "params": {"clearance.min_gap_moving": 2.0},
+ "expect": [
+  {"verdict": "NOT_RUN"}
+ ]
+}

@@ -1,0 +1,63 @@
+{
+ "test": "no_screw_feature",
+ "case": "a spacer ring: one hole D20 of no table (wider than screws.any_hole_d_max, the widest hole a screw is expected in), two windows, nothing on an axis",
+ "probes": {
+  "fusion_screws": {
+   "screws": [],
+   "washers": [],
+   "unreadable_washers": [],
+   "not_screws": [],
+   "n_screws": 0,
+   "n_washers": 0,
+   "passing": [],
+   "rejected": [],
+   "fastener_holes": []
+  },
+  "fusion_census": {
+   "holes": [
+    {
+     "id": "h1",
+     "anchor": {
+      "kind": "hole",
+      "axis": [
+       0,
+       0,
+       1
+      ],
+      "point": [
+       0,
+       0,
+       0
+      ]
+     },
+     "segments": [
+      {
+       "d": 20.0,
+       "len": 6.0
+      }
+     ],
+     "through": true,
+     "class": null,
+     "coaxial": []
+    }
+   ],
+   "openings": [
+    {
+     "id": "o1",
+     "shape": "window",
+     "size": [
+      20.0,
+      12.0
+     ],
+     "through": true
+    }
+   ],
+   "partial": [],
+   "bores": [],
+   "counts": {}
+  }
+ },
+ "params": {},
+ "expect": true,
+ "says": "no screw hole, no insert pocket, no slot"
+}

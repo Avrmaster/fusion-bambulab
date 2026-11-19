@@ -1,0 +1,51 @@
+{
+ "judge": "screws_hole_through",
+ "case": "screw rows without \"in_solid\": not measured is not a pass",
+ "facts": {
+  "screws": [
+   {
+    "ref": "ref screw M3x12 cap (1)",
+    "size": "M3",
+    "length": 12.0,
+    "head": "cap",
+    "anchor": {
+     "kind": "screw",
+     "axis": [
+      0,
+      0,
+      1
+     ],
+     "point": [
+      20,
+      20,
+      12.0
+     ]
+    },
+    "role": "head",
+    "under_head": 6.0,
+    "seat": {
+     "kind": "flat",
+     "d": 5.5,
+     "recess": -3.0,
+     "share": 1.0
+    },
+    "engagement": null,
+    "into": null,
+    "tip_room": null,
+    "air_gap": 0.0,
+    "washer": null
+   }
+  ],
+  "washers": []
+ },
+ "params": {
+  "screws.hole_overcut": 1.0,
+  "screws.solid_shank_max": 0.1,
+  "overhang.bridge_step": 0.3
+ },
+ "expect": [
+  {
+   "verdict": "NOT_RUN"
+  }
+ ]
+}

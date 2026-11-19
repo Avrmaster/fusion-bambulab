@@ -1,0 +1,101 @@
+{
+ "judge": "print_z_layers",
+ "case": "a pocket that opens in the bed face is measured from the bed: with a 0.2 first layer a depth of 1.7 is the first layer plus five layers of 0.3",
+ "facts": {
+  "holes": [
+   {
+    "id": "h1",
+    "anchor": {
+     "kind": "hole",
+     "axis": [
+      0,
+      0,
+      -1
+     ],
+     "point": [
+      10.0,
+      0.0,
+      0.0
+     ]
+    },
+    "segments": [
+     {
+      "d": 4.2,
+      "len": 1.7
+     }
+    ],
+    "depth": 1.7,
+    "through": false,
+    "floor": 2.0,
+    "exit": null,
+    "class": null,
+    "coaxial": []
+   },
+   {
+    "id": "h2",
+    "anchor": {
+     "kind": "hole",
+     "axis": [
+      -1,
+      0,
+      0
+     ],
+     "point": [
+      0.0,
+      5.0,
+      3.0
+     ]
+    },
+    "segments": [
+     {
+      "d": 4.2,
+      "len": 1.7
+     }
+    ],
+    "depth": 1.7,
+    "through": false,
+    "floor": 2.0,
+    "exit": null,
+    "class": null,
+    "coaxial": []
+   }
+  ],
+  "openings": [],
+  "counts": {}
+ },
+ "params": {
+  "sensors.magnet_d": 4.0,
+  "sensors.magnet_h": 1.6,
+  "sensors.magnet_pocket_d": 4.2,
+  "sensors.magnet_pocket_depth": 1.7,
+  "target.layer_height": 0.3,
+  "print.z_clearance": 0.1,
+  "print.z_layer_tol": 0.02,
+  "target.initial_layer_print_height": 0.2
+ },
+ "ctx": {
+  "part": "demo/lever",
+  "target": {
+   "nozzle": 0.4,
+   "line_width": 0.45,
+   "material": "PETG",
+   "layer_height": 0.3,
+   "initial_layer_print_height": 0.2,
+   "xy_hole_compensation": 0.125,
+   "xy_contour_compensation": 0.0,
+   "elefant_foot_compensation": 0.15,
+   "wall_generator": "classic"
+  },
+  "print": {
+   "up": [
+    0.0,
+    0.0,
+    1.0
+   ],
+   "bed": 0.0,
+   "source": "bambulab/build_3mf.py: lever on plate \"levers\", orient False",
+   "why": null
+  }
+ },
+ "expect": []
+}

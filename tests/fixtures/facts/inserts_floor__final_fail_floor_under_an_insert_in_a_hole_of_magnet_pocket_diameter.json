@@ -1,0 +1,144 @@
+{
+ "judge": "inserts_floor",
+ "case": "the same hole seen by the floor rule: 0.3 mm of plastic under an insert pocket fails, whatever a magnet pocket of this diameter would be allowed",
+ "facts": {
+  "pockets": [
+   {
+    "hole": "h1",
+    "end": "mouth",
+    "anchor": {
+     "kind": "insert_pocket",
+     "axis": [
+      0,
+      0,
+      1
+     ],
+     "point": [
+      10.0,
+      0.0,
+      9.0
+     ]
+    },
+    "kind": "M3x4x5",
+    "match": "band",
+    "segments": [
+     {
+      "d": 4.2,
+      "len": 4.2
+     }
+    ],
+    "recess": null,
+    "relief": null,
+    "relief_room": [
+     {
+      "d": 7.5,
+      "wall": 0.1
+     }
+    ],
+    "walls": {
+     "lead_in": {
+      "min": 1.2,
+      "dir": [
+       1,
+       0,
+       0
+      ],
+      "free_arc_deg": 90,
+      "blocked_by": []
+     },
+     "insert": {
+      "min": 1.2,
+      "dir": [
+       1,
+       0,
+       0
+      ],
+      "free_arc_deg": 90,
+      "blocked_by": []
+     },
+     "relief": null
+    },
+    "floor": 0.3,
+    "depth": 4.2,
+    "through": false,
+    "ray": {
+     "n": 48,
+     "step": 0.1,
+     "max": 8.0
+    }
+   }
+  ]
+ },
+ "params": {
+  "sensors.magnet_d": 4.0,
+  "sensors.magnet_h": 2.0,
+  "sensors.magnet_pocket_d": 4.2,
+  "sensors.magnet_pocket_depth": 2.1,
+  "sensors.magnet_pocket_d#tag": "M",
+  "sensors.magnet_pocket_depth#tag": "M",
+  "inserts.ref_pattern": "(?i)insert",
+  "screws.ref_pattern": "(?i:screw|bolt)|\\bM\\d+(?:\\.\\d+)?\\s*x\\s*\\d+(?:\\.\\d+)?(?![\\d.]*\\s*x)",
+  "inserts.floor_min": 0.6
+ },
+ "ctx": {
+  "part": "demo/bridge",
+  "census": {
+   "holes": [
+    {
+     "id": "h1",
+     "anchor": {
+      "kind": "hole",
+      "axis": [
+       0,
+       0,
+       1
+      ],
+      "point": [
+       10.0,
+       0.0,
+       9.0
+      ]
+     },
+     "segments": [
+      {
+       "d": 4.2,
+       "len": 4.2
+      }
+     ],
+     "depth": 4.2,
+     "through": false,
+     "floor": 0.3,
+     "exit": null,
+     "class": {
+      "table": "inserts",
+      "kind": "M3x4x5",
+      "role": "insert_pocket",
+      "match": "band"
+     },
+     "coaxial": [
+      {
+       "name": "ref hardware / insert M3x4x5 (1)",
+       "kind": "hardware",
+       "part": null
+      },
+      {
+       "name": "ref hardware / M3x10 cap (1)",
+       "kind": "hardware",
+       "part": null
+      }
+     ]
+    }
+   ],
+   "openings": [],
+   "partial": [],
+   "counts": {}
+  }
+ },
+ "expect": [
+  {
+   "verdict": "FAIL",
+   "measure": 0.3,
+   "limit": 0.6
+  }
+ ]
+}

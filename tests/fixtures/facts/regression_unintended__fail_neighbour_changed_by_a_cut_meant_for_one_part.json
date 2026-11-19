@@ -1,0 +1,18 @@
+{
+ "judge": "regression_unintended",
+ "case": "the run named the base; the tube changed as well",
+ "incident": "a cut meant for one part removed melt reliefs of its neighbours; nobody looked at parts that were not meant to change",
+ "facts": {
+  "changed": [
+   {"part": "demo/base", "sig": "a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1", "prev_sig": "b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2"},
+   {"part": "demo/column_tube", "sig": "c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3", "prev_sig": "d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4"}
+  ]
+ },
+ "ctx": {
+  "part": "demo:",
+  "intent": ["demo/base"]
+ },
+ "expect": [
+  {"verdict": "FAIL", "part": "demo/column_tube"}
+ ]
+}

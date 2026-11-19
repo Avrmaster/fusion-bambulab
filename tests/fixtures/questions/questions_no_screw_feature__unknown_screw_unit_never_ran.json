@@ -1,0 +1,16 @@
+{
+ "test": "no_screw_feature",
+ "case": "the screw unit ended in an error: nothing is known about the screws of this part, so nothing is answered",
+ "probes": {
+  "fusion_census": {
+   "holes": [],
+   "openings": [],
+   "partial": [],
+   "bores": [],
+   "counts": {}
+  }
+ },
+ "params": {},
+ "expect": null,
+ "says": "the screw unit has no facts"
+}

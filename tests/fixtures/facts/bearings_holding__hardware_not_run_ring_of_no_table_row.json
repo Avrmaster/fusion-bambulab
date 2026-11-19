@@ -1,0 +1,114 @@
+{
+ "judge": "bearings_holding",
+ "case": "a 9 x 23 x 7 ring that is held on all four faces and is no row of the bearing table: add the row, nothing fails",
+ "facts": {
+  "bearings": [
+   {
+    "ref": "ref bearing special",
+    "designation": null,
+    "by": null,
+    "d": 9.0,
+    "D": 23.0,
+    "B": 7.0,
+    "anchor": {
+     "kind": "bearing",
+     "axis": [
+      0,
+      0,
+      1
+     ],
+     "point": [
+      0,
+      0,
+      3.5
+     ]
+    },
+    "rings": {
+     "inner": {
+      "faces": [
+       {
+        "side": "+",
+        "covered": [
+         {
+          "name": "Cap",
+          "kind": "printed",
+          "part": "demo/cap",
+          "share": 1.0,
+          "points": 1,
+          "gap": 0.0,
+          "touches_other_ring": false
+         }
+        ]
+       },
+       {
+        "side": "-",
+        "covered": [
+         {
+          "name": "Post",
+          "kind": "printed",
+          "part": "demo/post",
+          "share": 1.0,
+          "points": 1,
+          "gap": 0.0,
+          "touches_other_ring": false
+         }
+        ]
+       }
+      ]
+     },
+     "outer": {
+      "faces": [
+       {
+        "side": "+",
+        "covered": [
+         {
+          "name": "Lid",
+          "kind": "printed",
+          "part": "demo/lid",
+          "share": 1.0,
+          "points": 1,
+          "gap": 0.0,
+          "touches_other_ring": false
+         }
+        ]
+       },
+       {
+        "side": "-",
+        "covered": [
+         {
+          "name": "Post",
+          "kind": "printed",
+          "part": "demo/post",
+          "share": 1.0,
+          "points": 1,
+          "gap": 0.0,
+          "touches_other_ring": false
+         }
+        ]
+       }
+      ]
+     }
+    },
+    "clamps": [],
+    "seat": {
+     "inner": null,
+     "outer": null
+    }
+   }
+  ],
+  "seats_without_bearing": []
+ },
+ "params": {
+  "bearings.cover_share_min": 0.5,
+  "bearings.clamp_points_min": 4,
+  "bearings.contact_gap_max": 0.05
+ },
+ "ctx": {
+  "part": "demo/post"
+ },
+ "expect": [
+  {
+   "verdict": "NOT_RUN"
+  }
+ ]
+}

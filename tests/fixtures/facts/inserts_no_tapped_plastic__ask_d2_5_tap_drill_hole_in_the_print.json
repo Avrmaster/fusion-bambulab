@@ -1,0 +1,83 @@
+{
+ "judge": "inserts_no_tapped_plastic",
+ "case": "a D2.5 hole 6 deep in a printed cam: tap-drill size for M3, a thread cut in the print",
+ "incident": "a hole tapped in a printed part came out oval and the plastic thread stripped",
+ "facts": {
+  "holes": [
+   {
+    "id": "h1",
+    "anchor": {
+     "kind": "hole",
+     "axis": [
+      0,
+      0,
+      1
+     ],
+     "point": [
+      10.0,
+      0.0,
+      8.0
+     ]
+    },
+    "segments": [
+     {
+      "d": 2.5,
+      "len": 6.0
+     }
+    ],
+    "depth": 6.0,
+    "through": false,
+    "floor": 2.0,
+    "exit": null,
+    "class": {
+     "table": "screws",
+     "kind": "M3",
+     "role": "tap_pilot",
+     "match": "exact"
+    },
+    "coaxial": []
+   },
+   {
+    "id": "h2",
+    "anchor": {
+     "kind": "hole",
+     "axis": [
+      0,
+      0,
+      1
+     ],
+     "point": [
+      25.0,
+      0.0,
+      8.0
+     ]
+    },
+    "segments": [
+     {
+      "d": 3.4,
+      "len": 8.0
+     }
+    ],
+    "depth": 8.0,
+    "through": true,
+    "floor": null,
+    "exit": null,
+    "class": {
+     "table": "screws",
+     "kind": "M3",
+     "role": "clearance",
+     "match": "exact"
+    },
+    "coaxial": []
+   }
+  ],
+  "openings": [],
+  "counts": {}
+ },
+ "expect": [
+  {
+   "verdict": "INFO",
+   "ask": "inserts.no_tapped_plastic"
+  }
+ ]
+}

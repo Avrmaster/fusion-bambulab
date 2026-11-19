@@ -1,0 +1,12 @@
+{
+  "_about": "What the gate covers. Add an entry when a document, an STL folder, a .3mf project or a generator script joins the project: an entry widens coverage. Removing one narrows it: ask the owner first. templates: .3mf files that hold settings and no mesh (the empty project a build starts from); such a file is not verified and not reported as unregistered while it holds no mesh. A part is exported to <stl_dir>/<part slug>.stl; a document may give single parts another file with \"stl_names\": {\"<part name exactly as the census shows it, or its part slug>\": \"<file name>.stl\"} (a file name inside its stl_dir; for a project whose STL files and build table already have their own names). It takes effect with the next scan. A mapped file may not be another part's file or a generator's STL.",
+  "documents": [
+    {"key": "{{DOC_KEY}}", "name": "{{FUSION_DOC}}", "stl_dir": "stl", "motion_groups": []}
+  ],
+  "projects": [
+    {"key": "{{PROJ_KEY}}", "file": "bambulab/{{PROJ}}", "stl_dir": "stl", "build_table": "bambulab/build_3mf.py"}
+  ],
+  "generators": [],
+  "templates": ["bambulab/template.3mf"],
+  "fusion": {"endpoint": "http://127.0.0.1:27182/mcp", "budget_s": 20}
+}

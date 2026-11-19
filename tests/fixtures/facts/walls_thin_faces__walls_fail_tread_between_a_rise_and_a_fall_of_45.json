@@ -1,0 +1,56 @@
+{
+ "judge": "walls_thin_faces",
+ "case": "a 0.5 mm face whose long sides turn 45 degrees opposite ways: a step, not a chamfer",
+ "facts": {
+  "width_cap": 2.0,
+  "lumps": 1,
+  "shells": 1,
+  "n_faces": 40,
+  "non_manifold_edges": 0,
+  "seam_edges": 0,
+  "faces": [
+   {
+    "anchor": {
+     "kind": "face",
+     "axis": [
+      0,
+      0,
+      1
+     ],
+     "point": [
+      10.0,
+      10.0,
+      5.0
+     ]
+    },
+    "width": 0.5,
+    "area": 10.0,
+    "shape": "strip",
+    "id": 50,
+    "sides": [
+     [
+      20.0,
+      45.0,
+      1
+     ],
+     [
+      20.0,
+      -45.0,
+      2
+     ]
+    ]
+   }
+  ]
+ },
+ "params": {
+  "walls.min_face_width": 1.2,
+  "walls.strip_turn_max": 60,
+  "overhang.bridge_step": 0.3
+ },
+ "expect": [
+  {
+   "verdict": "FAIL",
+   "measure": 0.5
+  }
+ ]
+}

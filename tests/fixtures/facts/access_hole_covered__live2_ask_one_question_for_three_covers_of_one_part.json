@@ -1,0 +1,254 @@
+{
+ "judge": "access_hole_covered",
+ "case": "three blind screw holes of one part under a printed column, a sensor board and the lid of a bought gearbox: ONE asked row, nearest first; the lid is named with its assembly",
+ "facts": {
+  "openings": [
+   {
+    "feature": "h1",
+    "of": "hole",
+    "anchor": {
+     "kind": "hole",
+     "axis": [
+      0,
+      0,
+      1
+     ],
+     "point": [
+      -15,
+      30,
+      20
+     ]
+    },
+    "end": "mouth",
+    "paths": {
+     "own": {
+      "r": 1.25,
+      "reach": 60.0,
+      "free": 18.5,
+      "hits": [
+       {
+        "name": "Sensor column",
+        "kind": "printed",
+        "part": "demo/sensor_column",
+        "at": 18.5,
+        "share": 1.0,
+        "approx": false,
+        "expected": false
+       },
+       {
+        "name": "ref sensor board / PCB",
+        "kind": "bought",
+        "part": null,
+        "at": 22.0,
+        "share": 1.0,
+        "approx": false,
+        "expected": false
+       }
+      ]
+     }
+    }
+   },
+   {
+    "feature": "h2",
+    "of": "hole",
+    "anchor": {
+     "kind": "hole",
+     "axis": [
+      0,
+      0,
+      1
+     ],
+     "point": [
+      15,
+      30,
+      20
+     ]
+    },
+    "end": "mouth",
+    "paths": {
+     "own": {
+      "r": 1.25,
+      "reach": 60.0,
+      "free": 18.5,
+      "hits": [
+       {
+        "name": "Sensor column",
+        "kind": "printed",
+        "part": "demo/sensor_column",
+        "at": 18.5,
+        "share": 1.0,
+        "approx": false,
+        "expected": false
+       },
+       {
+        "name": "ref sensor board / PCB",
+        "kind": "bought",
+        "part": null,
+        "at": 22.0,
+        "share": 1.0,
+        "approx": false,
+        "expected": false
+       }
+      ]
+     }
+    }
+   },
+   {
+    "feature": "h3",
+    "of": "hole",
+    "anchor": {
+     "kind": "hole",
+     "axis": [
+      0,
+      0,
+      1
+     ],
+     "point": [
+      28,
+      8,
+      20
+     ]
+    },
+    "end": "mouth",
+    "paths": {
+     "own": {
+      "r": 1.25,
+      "reach": 60.0,
+      "free": 39.0,
+      "hits": [
+       {
+        "name": "Lid",
+        "kind": "bought",
+        "part": null,
+        "at": 39.0,
+        "share": 1.0,
+        "approx": false,
+        "expected": false,
+        "in": "Gearbox unit"
+       }
+      ]
+     }
+    }
+   }
+  ],
+  "closed": [],
+  "screws": [],
+  "not_screws": [],
+  "screws_cut": false
+ },
+ "params": {
+  "access.reach": 60.0,
+  "access.min_blocked_share": 0.02,
+  "access.seal_gap": 0.2,
+  "access.cap_max": 2.0,
+  "sensors.magnet_pocket_d": 4.2,
+  "sensors.magnet_pocket_depth": 2.1
+ },
+ "ctx": {
+  "part": "demo/base",
+  "census": {
+   "holes": [
+    {
+     "id": "h1",
+     "anchor": {
+      "kind": "hole",
+      "axis": [
+       0,
+       0,
+       1
+      ],
+      "point": [
+       -15,
+       30,
+       20
+      ]
+     },
+     "segments": [
+      {
+       "d": 2.5,
+       "len": 8.0
+      }
+     ],
+     "depth": 8.0,
+     "through": false,
+     "floor": 5.0,
+     "exit": null,
+     "class": null,
+     "coaxial": []
+    },
+    {
+     "id": "h2",
+     "anchor": {
+      "kind": "hole",
+      "axis": [
+       0,
+       0,
+       1
+      ],
+      "point": [
+       15,
+       30,
+       20
+      ]
+     },
+     "segments": [
+      {
+       "d": 2.5,
+       "len": 8.0
+      }
+     ],
+     "depth": 8.0,
+     "through": false,
+     "floor": 5.0,
+     "exit": null,
+     "class": null,
+     "coaxial": []
+    },
+    {
+     "id": "h3",
+     "anchor": {
+      "kind": "hole",
+      "axis": [
+       0,
+       0,
+       1
+      ],
+      "point": [
+       28,
+       8,
+       20
+      ]
+     },
+     "segments": [
+      {
+       "d": 2.5,
+       "len": 8.0
+      }
+     ],
+     "depth": 8.0,
+     "through": false,
+     "floor": 5.0,
+     "exit": null,
+     "class": null,
+     "coaxial": []
+    }
+   ],
+   "openings": [],
+   "partial": [],
+   "counts": {}
+  }
+ },
+ "expect": [
+  {
+   "verdict": "FAIL",
+   "measure": 18.5,
+   "limit": 60.0,
+   "ask": "assembly.order",
+   "by": [
+    "Sensor column",
+    "ref sensor board",
+    "Gearbox unit / Lid"
+   ]
+  }
+ ]
+}

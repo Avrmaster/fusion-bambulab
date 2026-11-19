@@ -1,0 +1,52 @@
+{
+ "test": "no_screw_feature",
+ "case": "a clamped plate with no hole: two screws pass close by it, and the screw unit refused one body that a hardware name picked",
+ "probes": {
+  "fusion_screws": {
+   "screws": [],
+   "washers": [],
+   "unreadable_washers": [],
+   "not_screws": [],
+   "n_screws": 2,
+   "n_washers": 0,
+   "passing": [
+    {
+     "ref": "ref hardware / M4x30 cap (1)",
+     "size": "M4"
+    },
+    {
+     "ref": "ref hardware / M4x30 cap (2)",
+     "size": "M4"
+    }
+   ],
+   "rejected": [
+    {
+     "name": "ref hardware / stud (1)",
+     "as": "screw",
+     "why": "a plain cylinder with no head"
+    }
+   ],
+   "fastener_holes": []
+  },
+  "fusion_census": {
+   "holes": [],
+   "openings": [
+    {
+     "id": "o1",
+     "shape": "window",
+     "size": [
+      20.0,
+      12.0
+     ],
+     "through": true
+    }
+   ],
+   "partial": [],
+   "bores": [],
+   "counts": {}
+  }
+ },
+ "params": {},
+ "expect": false,
+ "says": "2 screw that passes this part(s) at this part"
+}

@@ -1,0 +1,122 @@
+{
+ "judge": "bearings_clamp_room",
+ "case": "a steel washer clamps the inner rings of a roller pair; the end of the boss it would land on lies only 0.48 mm behind the ring face",
+ "facts": {
+  "bearings": [
+   {
+    "ref": "ref roller pair / bearing 686 (2)",
+    "designation": "686ZZ",
+    "by": "geometry",
+    "d": 6.0,
+    "D": 13.0,
+    "B": 5.0,
+    "anchor": {
+     "kind": "bearing",
+     "axis": [
+      0,
+      0,
+      1
+     ],
+     "point": [
+      0,
+      0,
+      4.5
+     ]
+    },
+    "rings": {
+     "inner": {
+      "faces": [
+       {
+        "side": "+",
+        "covered": [
+         {
+          "name": "ref roller pair / washer M3",
+          "kind": "hardware",
+          "part": null,
+          "share": 0.68,
+          "points": 1,
+          "gap": 0.0,
+          "touches_other_ring": false
+         }
+        ]
+       },
+       {
+        "side": "-",
+        "covered": [
+         {
+          "name": "ref roller pair / bearing 686",
+          "kind": "hardware",
+          "part": null,
+          "share": 1.0,
+          "points": 1,
+          "gap": 0.0,
+          "touches_other_ring": true,
+          "bearing": true,
+          "twin": true
+         }
+        ]
+       }
+      ]
+     },
+     "outer": {
+      "faces": [
+       {
+        "side": "+",
+        "covered": []
+       },
+       {
+        "side": "-",
+        "covered": []
+       }
+      ]
+     }
+    },
+    "clamps": [
+     {
+      "ring": "inner",
+      "side": "+",
+      "by": "washer",
+      "name": "ref roller pair / washer M3",
+      "part": null,
+      "gap": 0.0,
+      "stop_gap": 0.0,
+      "stop_part": null,
+      "room": 4.52,
+      "ring_width": 5.0,
+      "travel": 0.48,
+      "travel_capped": false,
+      "lands_on": "Carriage",
+      "against": "ref roller pair / bearing 686"
+     }
+    ],
+    "seat": {
+     "inner": {
+      "d": 6.07,
+      "part": "demo/carriage",
+      "len": 4.4,
+      "entry_d": 4.0
+     },
+     "outer": null
+    }
+   }
+  ],
+  "seats_without_bearing": []
+ },
+ "params": {
+  "bearings.clamp_room": 1.0,
+  "bearings.contact_gap_max": 0.05
+ },
+ "ctx": {
+  "part": "demo/carriage"
+ },
+ "expect": [
+  {
+   "verdict": "FAIL",
+   "measure": 0.48,
+   "limit": 1.0,
+   "by": [
+    "ref roller pair / washer M3"
+   ]
+  }
+ ]
+}

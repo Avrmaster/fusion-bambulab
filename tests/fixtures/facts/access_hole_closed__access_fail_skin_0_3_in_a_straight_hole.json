@@ -1,0 +1,133 @@
+{
+ "judge": "access_hole_closed",
+ "case": "a 0.3 mm fill skin in the middle of a straight D3.4 hole: both sides have one diameter, so it is no bridge layer",
+ "facts": {
+  "openings": [],
+  "closed": [
+   {
+    "hole": "h5",
+    "anchor": {
+     "kind": "hole",
+     "axis": [
+      0,
+      0,
+      -1
+     ],
+     "point": [
+      30.0,
+      0.0,
+      0.0
+     ]
+    },
+    "cap": 0.3,
+    "behind": {
+     "what": "hole",
+     "name": "h6",
+     "d": 3.4
+    }
+   },
+   {
+    "hole": "h6",
+    "anchor": {
+     "kind": "hole",
+     "axis": [
+      0,
+      0,
+      1
+     ],
+     "point": [
+      30.0,
+      0.0,
+      8.3
+     ]
+    },
+    "cap": 0.3,
+    "behind": {
+     "what": "hole",
+     "name": "h5",
+     "d": 3.4
+    }
+   }
+  ],
+  "cap_max": 2.0
+ },
+ "params": {
+  "access.cap_max": 2.0,
+  "overhang.bridge_step": 0.3,
+  "overhang.max_angle": 45
+ },
+ "expect": [
+  {
+   "verdict": "FAIL",
+   "measure": 0.3,
+   "limit": 2.0,
+   "ask": null
+  }
+ ],
+ "ctx": {
+  "part": "demo/bracket",
+  "census": {
+   "holes": [
+    {
+     "id": "h5",
+     "anchor": {
+      "kind": "hole",
+      "axis": [
+       0,
+       0,
+       -1
+      ],
+      "point": [
+       30.0,
+       0.0,
+       0.0
+      ]
+     },
+     "segments": [
+      {
+       "d": 3.4,
+       "len": 4.0
+      }
+     ],
+     "depth": 4.0,
+     "through": false,
+     "floor": 5.0,
+     "exit": null,
+     "class": null,
+     "coaxial": []
+    },
+    {
+     "id": "h6",
+     "anchor": {
+      "kind": "hole",
+      "axis": [
+       0,
+       0,
+       1
+      ],
+      "point": [
+       30.0,
+       0.0,
+       8.3
+      ]
+     },
+     "segments": [
+      {
+       "d": 3.4,
+       "len": 4.0
+      }
+     ],
+     "depth": 4.0,
+     "through": false,
+     "floor": 5.0,
+     "exit": null,
+     "class": null,
+     "coaxial": []
+    }
+   ],
+   "openings": [],
+   "partial": [],
+   "counts": {}
+  }
+ }
+}

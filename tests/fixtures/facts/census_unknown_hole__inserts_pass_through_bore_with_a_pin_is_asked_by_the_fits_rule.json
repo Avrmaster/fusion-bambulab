@@ -1,0 +1,65 @@
+{
+ "judge": "census_unknown_hole",
+ "case": "a D6 bore through a hub with a bought pin on its axis: the fits rule asks what goes in, so this rule says nothing. One hole, one question",
+ "facts": {
+  "holes": [
+   {
+    "id": "h2",
+    "anchor": {
+     "kind": "hole",
+     "axis": [
+      0,
+      1,
+      0
+     ],
+     "point": [
+      0,
+      5,
+      0
+     ]
+    },
+    "segments": [
+     {
+      "d": 6.0,
+      "len": 15.0
+     }
+    ],
+    "depth": 15.0,
+    "through": true,
+    "floor": null,
+    "exit": {
+     "kind": "hole",
+     "axis": [
+      0,
+      -1,
+      0
+     ],
+     "point": [
+      0.0,
+      -10.0,
+      0.0
+     ]
+    },
+    "class": null,
+    "coaxial": [
+     {
+      "name": "ref pin D6 x 50",
+      "kind": "bought",
+      "part": null
+     }
+    ],
+    "arc": 1.0
+   }
+  ],
+  "openings": [],
+  "counts": {}
+ },
+ "params": {
+  "screws.ref_pattern": "(?i)screw|bolt",
+  "sensors.magnet_pocket_d": 5.2,
+  "sensors.magnet_pocket_depth": 2.1,
+  "sensors.magnet_pocket_d#tag": "D",
+  "sensors.magnet_pocket_depth#tag": "D"
+ },
+ "expect": []
+}

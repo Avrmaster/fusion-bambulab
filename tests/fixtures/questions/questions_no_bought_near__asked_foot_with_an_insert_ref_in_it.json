@@ -1,0 +1,62 @@
+{
+ "test": "no_bought_near",
+ "case": "a foot with one heat-set pocket: the insert ref sits in it, 0.0 mm from the part",
+ "probes": {
+  "fusion_near": {
+   "margin": 10.0,
+   "bodies": [
+    {
+     "kind": "hardware",
+     "gap": 0.0,
+     "path": "",
+     "name": "ref hardware / insert M3x4x5 (foot)"
+    }
+   ]
+  },
+  "fusion_census": {
+   "holes": [
+    {
+     "id": "h1",
+     "anchor": {
+      "kind": "hole",
+      "axis": [
+       0,
+       0,
+       1
+      ],
+      "point": [
+       0,
+       0,
+       0
+      ]
+     },
+     "segments": [
+      {
+       "d": 4.4,
+       "len": 1.5
+      },
+      {
+       "d": 3.6,
+       "len": 4.5
+      }
+     ],
+     "through": false,
+     "class": {
+      "table": "inserts",
+      "kind": "M3x4x5",
+      "role": "insert_pocket",
+      "match": "exact"
+     },
+     "coaxial": []
+    }
+   ],
+   "openings": [],
+   "partial": [],
+   "bores": [],
+   "counts": {}
+  }
+ },
+ "params": {},
+ "expect": false,
+ "says": "bought, hardware or mesh body(ies) within 10 mm"
+}

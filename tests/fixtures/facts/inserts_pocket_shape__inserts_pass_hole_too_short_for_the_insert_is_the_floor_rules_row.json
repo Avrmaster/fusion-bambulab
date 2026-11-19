@@ -1,0 +1,50 @@
+{
+ "judge": "inserts_pocket_shape",
+ "case": "the same D4.2 x 2.1 hole in a project whose magnet pocket parameter says D5.2: it is in the M3 band and too short for any insert. inserts.floor has the one row for it (\"the insert stands proud\"), so this rule says nothing",
+ "facts": {
+  "holes": [
+   {
+    "id": "h1",
+    "anchor": {
+     "kind": "hole",
+     "axis": [
+      0,
+      0,
+      1
+     ],
+     "point": [
+      10.0,
+      0.0,
+      8.0
+     ]
+    },
+    "segments": [
+     {
+      "d": 4.2,
+      "len": 2.1
+     }
+    ],
+    "depth": 2.1,
+    "through": false,
+    "floor": 2.0,
+    "exit": null,
+    "class": {
+     "table": "inserts",
+     "kind": "M3x4x5",
+     "role": "insert_pocket",
+     "match": "band"
+    },
+    "coaxial": []
+   }
+  ],
+  "openings": [],
+  "counts": {}
+ },
+ "expect": [],
+ "params": {
+  "sensors.magnet_d": 5.0,
+  "sensors.magnet_h": 2.0,
+  "sensors.magnet_pocket_d": 5.2,
+  "sensors.magnet_pocket_depth": 2.1
+ }
+}

@@ -1,0 +1,120 @@
+{
+ "judge": "bearings_holding",
+ "case": "a shoulder that stands 0.3 mm off the ring face holds nothing",
+ "facts": {
+  "bearings": [
+   {
+    "ref": "ref bearing 6005",
+    "designation": "6005",
+    "by": "geometry",
+    "d": 25.0,
+    "D": 47.0,
+    "B": 12.0,
+    "anchor": {
+     "kind": "bearing",
+     "axis": [
+      0,
+      0,
+      1
+     ],
+     "point": [
+      0.0,
+      0.0,
+      20.0
+     ]
+    },
+    "rings": {
+     "inner": {
+      "faces": [
+       {
+        "side": "+",
+        "covered": [
+         {
+          "name": "Shaft nut",
+          "kind": "hardware",
+          "part": null,
+          "share": 1.0,
+          "points": 1,
+          "gap": 0.0,
+          "touches_other_ring": false
+         }
+        ]
+       },
+       {
+        "side": "-",
+        "covered": [
+         {
+          "name": "Shaft collar",
+          "kind": "printed",
+          "part": "demo/shaft_collar",
+          "share": 1.0,
+          "points": 1,
+          "gap": 0.0,
+          "touches_other_ring": false
+         }
+        ]
+       }
+      ]
+     },
+     "outer": {
+      "faces": [
+       {
+        "side": "+",
+        "covered": [
+         {
+          "name": "Lid",
+          "kind": "printed",
+          "part": "demo/lid",
+          "share": 1.0,
+          "points": 1,
+          "gap": 0.3,
+          "touches_other_ring": false
+         }
+        ]
+       },
+       {
+        "side": "-",
+        "covered": [
+         {
+          "name": "Housing",
+          "kind": "printed",
+          "part": "demo/housing",
+          "share": 1.0,
+          "points": 1,
+          "gap": 0.0,
+          "touches_other_ring": false
+         }
+        ]
+       }
+      ]
+     }
+    },
+    "clamps": [],
+    "seat": {
+     "inner": null,
+     "outer": {
+      "d": 47.0,
+      "part": "demo/column_tube",
+      "len": 12.0,
+      "entry_d": 47.25
+     }
+    }
+   }
+  ],
+  "seats_without_bearing": []
+ },
+ "params": {
+  "bearings.cover_share_min": 0.5,
+  "bearings.clamp_points_min": 4,
+  "bearings.contact_gap_max": 0.05
+ },
+ "ctx": {
+  "part": "demo/lid"
+ },
+ "expect": [
+  {
+   "verdict": "FAIL",
+   "measure": 0.0
+  }
+ ]
+}

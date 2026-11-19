@@ -1,0 +1,130 @@
+{
+ "judge": "access_hole_covered",
+ "case": "every mouth is free; a hole holds the screw that belongs in it",
+ "facts": {
+  "openings": [
+   {
+    "feature": "h4",
+    "of": "hole",
+    "anchor": {
+     "kind": "hole",
+     "axis": [
+      0,
+      0,
+      1
+     ],
+     "point": [
+      -15.5,
+      -15.5,
+      8.0
+     ]
+    },
+    "end": "mouth",
+    "paths": {
+     "own": {
+      "r": 1.7,
+      "reach": 60.0,
+      "free": 60.0,
+      "hits": [
+       {
+        "name": "ref screw M3x12 cap",
+        "kind": "hardware",
+        "part": null,
+        "at": 0.0,
+        "share": 1.0,
+        "approx": false,
+        "expected": true
+       }
+      ]
+     }
+    }
+   },
+   {
+    "feature": "o1",
+    "of": "slot",
+    "anchor": {
+     "kind": "face",
+     "axis": [
+      0,
+      1,
+      0
+     ],
+     "point": [
+      0.0,
+      42.0,
+      10.0
+     ]
+    },
+    "end": "mouth",
+    "paths": {
+     "own": {
+      "r": 4.0,
+      "reach": 60.0,
+      "free": 60.0,
+      "hits": []
+     }
+    }
+   }
+  ],
+  "closed": []
+ },
+ "params": {
+  "access.reach": 60.0,
+  "access.min_blocked_share": 0.02,
+  "access.seal_gap": 0.2,
+  "access.cap_max": 2.0,
+  "sensors.magnet_pocket_d": 4.2,
+  "sensors.magnet_pocket_depth": 2.1
+ },
+ "expect": [],
+ "ctx": {
+  "part": "demo/bracket",
+  "census": {
+   "holes": [
+    {
+     "id": "h4",
+     "anchor": {
+      "kind": "hole",
+      "axis": [
+       0,
+       0,
+       1
+      ],
+      "point": [
+       -15.5,
+       -15.5,
+       8.0
+      ]
+     },
+     "segments": [
+      {
+       "d": 3.4,
+       "len": 8.0
+      }
+     ],
+     "depth": 8.0,
+     "through": true,
+     "floor": null,
+     "exit": {
+      "kind": "hole",
+      "axis": [
+       0,
+       0,
+       -1
+      ],
+      "point": [
+       -15.5,
+       -15.5,
+       0.0
+      ]
+     },
+     "class": null,
+     "coaxial": []
+    }
+   ],
+   "openings": [],
+   "partial": [],
+   "counts": {}
+  }
+ }
+}

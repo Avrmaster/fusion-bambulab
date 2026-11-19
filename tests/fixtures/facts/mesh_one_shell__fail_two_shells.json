@@ -1,0 +1,23 @@
+{
+ "judge": "mesh_one_shell",
+ "case": "two bodies of one component went into one STL",
+ "incident": "a part exported as two shells printed as two loose pieces",
+ "facts": {
+  "stl": "gate/run/quarantine/demo_knob.stl",
+  "sha256": "5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e",
+  "triangles": 8424,
+  "degenerate": 0,
+  "open_edges": 0,
+  "non_manifold_edges": 0,
+  "shells": 2,
+  "volume": 15320.4,
+  "bbox": [
+   [-20.0, -20.0, 0.0],
+   [20.0, 20.0, 24.0]
+  ],
+  "geom_hash": "abababababababababababababababababababab"
+ },
+ "expect": [
+  {"verdict": "FAIL", "measure": 2, "limit": 1, "unit": "shells"}
+ ]
+}

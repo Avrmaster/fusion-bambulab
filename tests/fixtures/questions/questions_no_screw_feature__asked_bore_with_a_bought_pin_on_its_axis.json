@@ -1,0 +1,61 @@
+{
+ "test": "no_screw_feature",
+ "case": "a wheel on a bought dowel: the bore D14 is of no table and too wide for a screw, and a dowel and a sleeve sit on its axis. Nothing says they are not a screw",
+ "probes": {
+  "fusion_screws": {
+   "screws": [],
+   "washers": [],
+   "unreadable_washers": [],
+   "not_screws": [],
+   "n_screws": 0,
+   "n_washers": 0
+  },
+  "fusion_census": {
+   "holes": [
+    {
+     "id": "h1",
+     "anchor": {
+      "kind": "hole",
+      "axis": [
+       0,
+       0,
+       1
+      ],
+      "point": [
+       0,
+       0,
+       0
+      ]
+     },
+     "segments": [
+      {
+       "d": 14.0,
+       "len": 16.2
+      }
+     ],
+     "through": true,
+     "class": null,
+     "coaxial": [
+      {
+       "kind": "hardware",
+       "name": "ref axle / dowel 8x60",
+       "part": null
+      },
+      {
+       "kind": "bought",
+       "name": "ref axle / sleeve 8-10",
+       "part": null
+      }
+     ]
+    }
+   ],
+   "openings": [],
+   "partial": [],
+   "bores": [],
+   "counts": {}
+  }
+ },
+ "params": {},
+ "expect": false,
+ "says": "bought or hardware body(ies) on the axis of a hole"
+}

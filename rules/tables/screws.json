@@ -1,0 +1,289 @@
+{
+  "table": "screws",
+  "about": "Thread sizes, mm. Clearance hole: ISO 273, medium fit is \"clearance_d\", the fine and coarse fits are listed beside it. Tap pilot: for a thread cut in metal; a thread in the print is a pilot of rules/tables/inserts.json and a named exception. Heads: cap DIN 912 / ISO 4762, button ISO 7380, countersunk DIN 7991 / ISO 10642 (diameter d, height h, hex key across flats). Counterbore diameter: DIN 974-1. Standard numbers are from the standards, not measured, unless a row says so.",
+  "tol": {
+    "d": 0.15
+  },
+  "families": {
+    "cap": {
+      "standard": "DIN 912 / ISO 4762",
+      "drive": "hex socket",
+      "seat": "flat face or counterbore"
+    },
+    "button": {
+      "standard": "ISO 7380",
+      "drive": "hex socket",
+      "seat": "flat face"
+    },
+    "countersunk": {
+      "standard": "DIN 7991 / ISO 10642",
+      "drive": "hex socket",
+      "seat": "90 degree countersink"
+    }
+  },
+  "engagement": {
+    "param": "screws.min_engagement",
+    "about": "The minimum thread engagement per size has one definition: the parameter screws.min_engagement in rules/registry/screws.json, with a value per thread size. This table holds no second number."
+  },
+  "sizes": {
+    "M2": {
+      "thread_d": 2.0,
+      "pitch": 0.4,
+      "clearance_d": 2.4,
+      "clearance_fits": {
+        "fine": 2.2,
+        "medium": 2.4,
+        "coarse": 2.6
+      },
+      "tap_pilot_d": 1.6,
+      "heads": {
+        "cap": {
+          "d": 3.8,
+          "h": 2.0,
+          "counterbore_d": 4.4,
+          "key": 1.5
+        },
+        "button": {
+          "d": 3.5,
+          "h": 1.3,
+          "key": 1.3
+        },
+        "countersunk": {
+          "d": 4.0,
+          "h": 1.2,
+          "angle": 90,
+          "key": 1.3
+        }
+      },
+      "about": "Button and countersunk heads under M3 are not in ISO 7380 / DIN 7991: retail sizes, measure yours."
+    },
+    "M2.5": {
+      "thread_d": 2.5,
+      "pitch": 0.45,
+      "clearance_d": 2.9,
+      "clearance_fits": {
+        "fine": 2.7,
+        "medium": 2.9,
+        "coarse": 3.1
+      },
+      "tap_pilot_d": 2.05,
+      "heads": {
+        "cap": {
+          "d": 4.5,
+          "h": 2.5,
+          "counterbore_d": 5.5,
+          "key": 2.0
+        },
+        "button": {
+          "d": 4.7,
+          "h": 1.5,
+          "key": 1.5
+        },
+        "countersunk": {
+          "d": 5.0,
+          "h": 1.5,
+          "angle": 90,
+          "key": 1.5
+        }
+      },
+      "about": "Button and countersunk heads under M3 are not in ISO 7380 / DIN 7991: retail sizes, measure yours."
+    },
+    "M3": {
+      "thread_d": 3.0,
+      "pitch": 0.5,
+      "clearance_d": 3.4,
+      "clearance_fits": {
+        "fine": 3.2,
+        "medium": 3.4,
+        "coarse": 3.6
+      },
+      "tap_pilot_d": 2.5,
+      "heads": {
+        "cap": {
+          "d": 5.5,
+          "h": 3.0,
+          "counterbore_d": 6.5,
+          "key": 2.5,
+          "counterbore_superseded_d": [
+            6.0,
+            6.2,
+            6.6
+          ],
+          "counterbore_about": "Four diameters were found in one model. 6.5 is the one value; the others are superseded."
+        },
+        "button": {
+          "d": 5.7,
+          "h": 1.65,
+          "key": 2.0
+        },
+        "countersunk": {
+          "d": 6.0,
+          "h": 1.7,
+          "angle": 90,
+          "key": 2.0,
+          "seat_d": 6.3,
+          "seat_about": "a D6.3 x 90 degree countersink for a countersunk M3 head: tagged as measured in one project"
+        }
+      },
+      "clearance_tag": "M",
+      "clearance_about": "D3.4 for M3 is tagged as measured in one project; the material and nozzle of that measurement are not on record"
+    },
+    "M4": {
+      "thread_d": 4.0,
+      "pitch": 0.7,
+      "clearance_d": 4.5,
+      "clearance_fits": {
+        "fine": 4.3,
+        "medium": 4.5,
+        "coarse": 4.8
+      },
+      "tap_pilot_d": 3.3,
+      "heads": {
+        "cap": {
+          "d": 7.0,
+          "h": 4.0,
+          "counterbore_d": 8.0,
+          "key": 3.0
+        },
+        "button": {
+          "d": 7.6,
+          "h": 2.2,
+          "key": 2.5
+        },
+        "countersunk": {
+          "d": 8.0,
+          "h": 2.3,
+          "angle": 90,
+          "key": 2.5
+        }
+      }
+    },
+    "M5": {
+      "thread_d": 5.0,
+      "pitch": 0.8,
+      "clearance_d": 5.5,
+      "clearance_fits": {
+        "fine": 5.3,
+        "medium": 5.5,
+        "coarse": 5.8
+      },
+      "tap_pilot_d": 4.2,
+      "heads": {
+        "cap": {
+          "d": 8.5,
+          "h": 5.0,
+          "counterbore_d": 10.0,
+          "key": 4.0
+        },
+        "button": {
+          "d": 9.5,
+          "h": 2.75,
+          "key": 3.0
+        },
+        "countersunk": {
+          "d": 10.0,
+          "h": 2.8,
+          "angle": 90,
+          "key": 3.0
+        }
+      }
+    },
+    "M6": {
+      "thread_d": 6.0,
+      "pitch": 1.0,
+      "clearance_d": 6.6,
+      "clearance_fits": {
+        "fine": 6.4,
+        "medium": 6.6,
+        "coarse": 7.0
+      },
+      "tap_pilot_d": 5.0,
+      "heads": {
+        "cap": {
+          "d": 10.0,
+          "h": 6.0,
+          "counterbore_d": 11.0,
+          "key": 5.0
+        },
+        "button": {
+          "d": 10.5,
+          "h": 3.3,
+          "key": 4.0
+        },
+        "countersunk": {
+          "d": 12.0,
+          "h": 3.3,
+          "angle": 90,
+          "key": 4.0
+        }
+      }
+    }
+  },
+  "stock_lengths": {
+    "M2": [
+      4,
+      5,
+      6,
+      8,
+      10,
+      12,
+      16,
+      20
+    ],
+    "M2.5": [
+      5,
+      6,
+      8,
+      10,
+      12,
+      16,
+      20,
+      25
+    ],
+    "M3": [
+      6,
+      8,
+      10,
+      12,
+      14,
+      16,
+      20,
+      25
+    ],
+    "M4": [
+      8,
+      10,
+      12,
+      16,
+      20,
+      25,
+      30,
+      35,
+      40
+    ],
+    "M5": [
+      10,
+      12,
+      16,
+      20,
+      25,
+      30,
+      35,
+      40,
+      50
+    ],
+    "M6": [
+      10,
+      12,
+      16,
+      20,
+      25,
+      30,
+      35,
+      40,
+      50,
+      60
+    ]
+  },
+  "stock_about": "Lengths a design may count on, mm. M3 is the list this plugin has always named; the other sizes are the preferred lengths of ISO 4762 in the range small printed parts use. This is a starting list, not anybody's drawer: a project replaces a row with what its owner stocks. Other M3 lists were in use in one project and are superseded as defaults: 8 to 25 with 18 and 22 (the owner's own stock), 6 to 30 (a generator), one 35."
+}

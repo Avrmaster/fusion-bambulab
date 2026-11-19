@@ -1,0 +1,100 @@
+{
+ "judge": "access_screw_path",
+ "case": "a button head in a D6 counterbore: the tool path of head + 1 touches the wall of its own recess right at the head, the section of the head is free",
+ "facts": {
+  "openings": [
+   {
+    "feature": "s1",
+    "of": "screw_head",
+    "anchor": {
+     "kind": "screw",
+     "axis": [
+      0,
+      0,
+      1
+     ],
+     "point": [
+      -12.0,
+      40.0,
+      22.0
+     ]
+    },
+    "end": "mouth",
+    "paths": {
+     "own": {
+      "r": 2.75,
+      "reach": 60.0,
+      "free": 60.0,
+      "hits": []
+     },
+     "tool": {
+      "r": 3.25,
+      "reach": 60.0,
+      "free": 0.05,
+      "hits": [
+       {
+        "name": "Lamp foot",
+        "kind": "self",
+        "part": "demo/bracket",
+        "at": 0.05,
+        "share": 0.17,
+        "approx": false,
+        "expected": false
+       }
+      ]
+     }
+    }
+   },
+   {
+    "feature": "s2",
+    "of": "screw_head",
+    "anchor": {
+     "kind": "screw",
+     "axis": [
+      0,
+      0,
+      1
+     ],
+     "point": [
+      12.0,
+      40.0,
+      22.0
+     ]
+    },
+    "end": "mouth",
+    "paths": {
+     "own": {
+      "r": 2.75,
+      "reach": 60.0,
+      "free": 60.0,
+      "hits": []
+     },
+     "tool": {
+      "r": 3.25,
+      "reach": 60.0,
+      "free": 0.05,
+      "hits": [
+       {
+        "name": "Lamp foot",
+        "kind": "self",
+        "part": "demo/bracket",
+        "at": 0.05,
+        "share": 0.17,
+        "approx": false,
+        "expected": false
+       }
+      ]
+     }
+    }
+   }
+  ],
+  "closed": []
+ },
+ "params": {
+  "access.reach": 60.0,
+  "access.tool_clearance": 1.0,
+  "access.min_blocked_share": 0.02,
+  "access.seal_gap": 0.2
+ },
+ "expect": []
+}

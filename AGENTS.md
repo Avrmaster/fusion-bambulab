@@ -28,6 +28,10 @@ The skills are plain `SKILL.md` folders, but only Claude Code installs the plugi
 | Skills, the source of truth for behaviour | `skills/<name>/SKILL.md`, with `references/` |
 | Bambu tools, vendored to `bambulab/tools/` in a project | `tools/bambu/` |
 | Fusion tools, vendored to `fusion/tools/` in a project | `tools/fusion/` |
+| Rule registry and size tables, vendored to `gate/rules/` in a project | `rules/registry/<category>.json`, `rules/tables/` |
+| Print gate: the one command, judges, probes, stamps, the guard; vendored to `gate/tools/` | `tools/gate/` |
+| Print ledger, vendored to `bambulab/tools/` beside `bambu3mf.py` | `tools/ledger/`, `tools/bambu/meshid.py` |
+| Hooks: a session-start digest of the gate, silent in a project without one | `hooks/hooks.json`, `tools/gate/gate_hook.py` |
 | Scaffolding | `tools/setup_project.py`, `templates/` |
 | Tests and CI | `tests/`, `.github/workflows/ci.yml` |
 
@@ -37,6 +41,8 @@ The skills are plain `SKILL.md` folders, but only Claude Code installs the plugi
 - The tests need neither Fusion nor Bambu Studio. A change to `.3mf` output also needs a real slice with `slice_check.py`, and for settings changes, opening in the GUI. Say so if you could not do that.
 - Fusion scripts run against the user's real document. Keep test scripts read-only and limited to named bodies.
 - Never write a `.3mf` that Bambu Studio has open, and never close a user's Bambu Studio just to run a test.
-- Scope ends at a ready Bambu Studio project. Slicing for print and printer control belong to bambu-printer-mcp: do not add them here.
+- Scope ends at a ready Bambu Studio project. Slicing for print and printer control belong to bambu-printer-mcp: do not add them here. The print ledger widens the scope by one step only: it reads what was written into a `.3mf` and what was printed (the owner's word, and the slicer's local job cache when the owner turns that on). It never starts, stops or changes a print and has no network code.
+- A new design rule goes into the registry, `rules/registry/<category>.json`, not into a skill as prose. A rule of level `block` needs a judge in `tools/gate/gate_judges.py` and a fixture in `tests/fixtures/facts/`. Then run `python3 tools/gate/gate_render.py`: the rule blocks in the skills are generated, and `tests/test_render.py` fails while a block differs from the registry.
+- The hook must stay harmless: exit 0 with no output wherever there is no `gate/project.json`, never exit 2, no Fusion call, well under a second. It runs the plugin's code only, never code from the project folder.
 - Keep project details, personal paths and names out. Rules are general; numbers from one printer are labelled as such.
 - Bump `version` in `plugin.json` for each release, or users get no update. Do not rename `name`.

@@ -1,0 +1,16 @@
+{
+  "table": "pockets",
+  "about": "Round pockets that receive a bought part. Each kind names the fit parameters its size comes from: \"d\" the pocket diameter, \"depth\" the pocket depth, \"part_h\" the height of the bought part. A blind hole whose deepest diameter is the value of \"d\" (within tol.d) and that is not deeper than depth_max_factor times \"depth\" is a pocket of that kind. fits.bought_part_pocket judges the tags of \"d\" and \"depth\"; print.z_layers judges the depth against \"part_h\" in whole layers. A new bought part with a round pocket is one more kind here and its parameters in the registry; both rules list those parameters in \"params\".",
+  "tol": {
+    "d": 0.03
+  },
+  "depth_max_factor": 2.0,
+  "kinds": {
+    "magnet": {
+      "d": "sensors.magnet_pocket_d",
+      "depth": "sensors.magnet_pocket_depth",
+      "part_h": "sensors.magnet_h",
+      "receives": "a disc magnet"
+    }
+  }
+}

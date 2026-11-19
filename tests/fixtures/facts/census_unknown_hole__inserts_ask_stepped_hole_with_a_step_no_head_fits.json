@@ -1,0 +1,72 @@
+{
+ "judge": "census_unknown_hole",
+ "case": "the same stack with a D5.0 middle step: no M3 head goes into D5.0, so the hole fits no row and is asked",
+ "facts": {
+  "holes": [
+   {
+    "id": "h1",
+    "anchor": {
+     "kind": "hole",
+     "axis": [
+      0,
+      1,
+      0
+     ],
+     "point": [
+      20,
+      30,
+      40
+     ]
+    },
+    "segments": [
+     {
+      "d": 7.0,
+      "len": 12.0
+     },
+     {
+      "d": 5.0,
+      "len": 3.5
+     },
+     {
+      "d": 3.4,
+      "len": 1.0
+     }
+    ],
+    "depth": 16.5,
+    "through": true,
+    "floor": null,
+    "exit": {
+     "kind": "hole",
+     "axis": [
+      0,
+      -1,
+      0
+     ],
+     "point": [
+      20.0,
+      13.5,
+      40.0
+     ]
+    },
+    "class": null,
+    "coaxial": [],
+    "arc": 1.0
+   }
+  ],
+  "openings": [],
+  "counts": {}
+ },
+ "params": {
+  "screws.ref_pattern": "(?i)screw|bolt",
+  "sensors.magnet_pocket_d": 5.2,
+  "sensors.magnet_pocket_depth": 2.1,
+  "sensors.magnet_pocket_d#tag": "D",
+  "sensors.magnet_pocket_depth#tag": "D"
+ },
+ "expect": [
+  {
+   "verdict": "INFO",
+   "ask": "census.unknown_hole"
+  }
+ ]
+}

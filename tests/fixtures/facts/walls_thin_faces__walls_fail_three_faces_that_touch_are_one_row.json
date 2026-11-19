@@ -1,0 +1,142 @@
+{
+ "judge": "walls_thin_faces",
+ "case": "two ledges and the low wall between them are one place and one finding; a face whose sides the probe could not read fails by its width",
+ "facts": {
+  "width_cap": 2.0,
+  "lumps": 1,
+  "shells": 1,
+  "n_faces": 40,
+  "non_manifold_edges": 0,
+  "seam_edges": 0,
+  "faces": [
+   {
+    "anchor": {
+     "kind": "face",
+     "axis": [
+      0,
+      0,
+      1
+     ],
+     "point": [
+      40.0,
+      20.0,
+      6.0
+     ]
+    },
+    "width": 0.3,
+    "area": 3.0,
+    "shape": "strip",
+    "id": 70,
+    "sides": [
+     [
+      10.0,
+      -90.0,
+      71
+     ],
+     [
+      10.0,
+      90.0,
+      1
+     ]
+    ]
+   },
+   {
+    "anchor": {
+     "kind": "face",
+     "axis": [
+      0,
+      -1,
+      0
+     ],
+     "point": [
+      40.0,
+      20.15,
+      6.15
+     ]
+    },
+    "width": 0.28,
+    "area": 3.0,
+    "shape": "strip",
+    "id": 71,
+    "sides": [
+     [
+      10.0,
+      -90.0,
+      70
+     ],
+     [
+      10.0,
+      90.0,
+      72
+     ]
+    ]
+   },
+   {
+    "anchor": {
+     "kind": "face",
+     "axis": [
+      0,
+      0,
+      1
+     ],
+     "point": [
+      40.0,
+      20.3,
+      6.3
+     ]
+    },
+    "width": 0.3,
+    "area": 3.0,
+    "shape": "strip",
+    "id": 72,
+    "sides": [
+     [
+      10.0,
+      -90.0,
+      2
+     ],
+     [
+      10.0,
+      90.0,
+      71
+     ]
+    ]
+   },
+   {
+    "anchor": {
+     "kind": "face",
+     "axis": [
+      1,
+      0,
+      0
+     ],
+     "point": [
+      2.0,
+      2.0,
+      2.0
+     ]
+    },
+    "width": 0.4,
+    "area": 1.0,
+    "shape": "strip"
+   }
+  ],
+  "sides_unread": 1
+ },
+ "params": {
+  "walls.min_face_width": 1.2,
+  "walls.strip_turn_max": 60,
+  "overhang.bridge_step": 0.3
+ },
+ "expect": [
+  {
+   "verdict": "FAIL",
+   "measure": 0.28,
+   "limit": 1.2
+  },
+  {
+   "verdict": "FAIL",
+   "measure": 0.4
+  }
+ ]
+}

@@ -1,0 +1,43 @@
+{
+ "test": "no_screw_feature",
+ "case": "a part with a screw hole that breaks out of its side: the census lists it as an open arc D3.4, not as a hole",
+ "probes": {
+  "fusion_screws": {
+   "screws": [],
+   "washers": [],
+   "unreadable_washers": [],
+   "not_screws": [],
+   "n_screws": 0,
+   "n_washers": 0
+  },
+  "fusion_census": {
+   "holes": [],
+   "openings": [],
+   "partial": [
+    {
+     "anchor": {
+      "kind": "hole",
+      "axis": [
+       0,
+       0,
+       1
+      ],
+      "point": [
+       4,
+       0,
+       0
+      ]
+     },
+     "arc": 0.625,
+     "d": 3.4,
+     "len": 8.0
+    }
+   ],
+   "bores": [],
+   "counts": {}
+  }
+ },
+ "params": {},
+ "expect": false,
+ "says": "open arc(s) of a hole a screw could use"
+}

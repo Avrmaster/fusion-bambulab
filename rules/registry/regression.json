@@ -1,0 +1,69 @@
+{
+  "category": "regression",
+  "params": {},
+  "rules": [
+    {
+      "id": "regression.unintended",
+      "title": "Only the parts named in the run changed",
+      "statement": "A part whose geometry changed although the run did not name it (gate.py run --parts) is a finding.",
+      "why": "A cut meant for one part removed melt reliefs of its neighbours; nobody looked at parts that were not meant to change.",
+      "params": [],
+      "check": {
+        "probe": "fusion_scan",
+        "judge": "regression_unintended",
+        "needs": "fusion"
+      },
+      "level": "block",
+      "stage": "design",
+      "fix_order": [
+        "Look at what changed in that part.",
+        "Meant: name the part in the run. Not meant: undo it."
+      ],
+      "attest": null
+    },
+    {
+      "id": "regression.feature_lost",
+      "title": "No feature vanishes unnoticed",
+      "statement": "A hole, pocket or opening that the last checked geometry of a part had and the new one has not is a finding. A hole that is still at its place with the same segments, the same ends (through or blind, the same material under it) and only another class (plain hole or insert pocket: a table row, the tools or a ref on its axis changed) is not lost: one row per part tells how many, and nothing is asked.",
+      "why": "Tie anchors, melt reliefs and screw holes were lost by later joins and fills; they were found in the slicer or after the print.",
+      "params": [],
+      "check": {
+        "probe": "fusion_census",
+        "judge": "regression_feature_lost",
+        "needs": "fusion"
+      },
+      "level": "block",
+      "stage": "design",
+      "fix_order": [
+        "Cut the feature again.",
+        "Removed on purpose: answer the question for that feature."
+      ],
+      "attest": null,
+      "note": "The class of a hole is part of its anchor, so a hole whose class changed is found under the other kind and its segments are compared (every diameter and length within 0.05 mm). The same segments: told once per part, because the class decides which rules judge the hole and which anchor a waiver hangs on. Other segments, a through hole that is blind now, a blind hole that goes through now, or another thickness left under the hole: lost, and asked."
+    },
+    {
+      "id": "regression.intended",
+      "title": "A lost feature was removed on purpose",
+      "statement": "Every feature that vanished from a part is acknowledged one by one.",
+      "why": "The agent that lost a feature is the one asked: the question makes it look at each one.",
+      "params": [],
+      "check": null,
+      "level": "attest",
+      "stage": "design",
+      "fix_order": [],
+      "attest": {
+        "question": "Feature {feature} is gone from this part. Was that meant?",
+        "evidence": [
+          "label",
+          "waiver"
+        ],
+        "per": "finding",
+        "labels": [
+          "removed on purpose: the function is gone",
+          "replaced by another feature at another place",
+          "moved on purpose together with its mating part"
+        ]
+      }
+    }
+  ]
+}

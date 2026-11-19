@@ -216,6 +216,13 @@ def project_base(S, ps, project):
 
 
 # ---------------- writing ----------------
+def _note_settings(name, old, new, proj=None):
+    """Name to the gate's guard the per-object settings this sync means to change on one object: what the merge of the
+    configs and the project gives (a key the configs dropped is named with no value)."""
+    for k in sorted(set(old) | set(new)):
+        if old.get(k) != new.get(k): bambu3mf.note_setting(k, new.get(k), name, 'sync', proj)
+
+
 def set_object_meta(cfg, oid, settings, extruder):
     body = re.search(r'<object id="%s">(.*?)</object>' % oid, cfg, re.S).group(1)
     head = body.split('<part')[0]
@@ -367,6 +374,7 @@ def sync(proj, plate_list, stl_dir='/', settings=None, extra=None, filament=1, t
         for k, v in {**kp, **kpe}.items(): rep['kept'].append('%s: %s = %s in Bambu (config: %s)' % (o['name'], k, v[1], 'not set' if v[0] is None else v[0]))
         for k, v in {**cf, **cfe}.items(): rep['conflicts'].append('%s: %s was %s, config now %s, Bambu %s' % (o['name'], k, *v))
         if fin != o['settings'] or fe['filament'] != o['extruder']:
+            _note_settings(o['name'], o['settings'], fin, proj)
             cfg = set_object_meta(cfg, oid, fin, fe['filament']); o['settings'] = fin; o['extruder'] = fe['filament']
     pbase = project_base(S, P['ps'], project)
     pours = project_values(dict(P['ps'], **project), project)
@@ -519,6 +527,11 @@ def _rebuild(proj, plate_list, stl_dir, settings, extra, filament, title, bed, p
     if (lost or conflicts) and not accept_loss:
         rep['refused'] = 'a rebuild would lose manual edits (listed); fold them into the configs or pass accept_loss'
         return rep
+    # the rebuild writes twice: first the configs alone, then the manual settings again. Between the two a setting made
+    # by hand is gone from the file: name those to the guard, or it takes the first write for a lost setting
+    for key, (oid, _) in old_by_key.items():
+        if key in D['objects']:
+            for k in set(old['objects'][oid]['settings']) | set(D['objects'][key]['settings']): bambu3mf.note_setting(k, None, old['objects'][oid]['name'], 'sync rebuild', proj)
     bambu3mf.build(proj, stl_dir, plate_list, settings, extra, filament, title, bed, project)
     for d in D['objects'].values(): d.pop('_sig', None); d.pop('_angle', None)     # the snapshot describes what was just built
     # put manual settings and kept positions back
@@ -530,6 +543,7 @@ def _rebuild(proj, plate_list, stl_dir, settings, extra, filament, title, bed, p
             ooid = old_by_key[key][0]; o, d = old['objects'][ooid], D['objects'][key]; sb = (S or {}).get('objects', {}).get(key)
             fin, _, _, _ = merge4(sb.get('cfg_settings', sb['settings']) if sb else d['settings'], sb['settings'] if sb else d['settings'], d['settings'], o['settings'])
             fe, _, _, _ = merge4({'filament': sb.get('cfg_extruder', sb['extruder']) if sb else d['extruder']}, {'filament': sb['extruder'] if sb else d['extruder']}, {'filament': d['extruder']}, {'filament': o['extruder']})
+            _note_settings(P['objects'][oid]['name'], P['objects'][oid]['settings'], fin, proj)     # the second write: a note lives for one save
             cfg = set_object_meta(cfg, oid, fin, fe['filament']); P['objects'][oid]['settings'] = fin
         if key in keep_pos:
             t, pname = keep_pos[key]
@@ -538,7 +552,7 @@ def _rebuild(proj, plate_list, stl_dir, settings, extra, filament, title, bed, p
             t = list(t); t[9] += bx - ax; t[10] += by - ay
             # the old mesh may sit off its own centre (a mesh swapped in place keeps the old origin), the rebuilt one is
             # centred: carry the old transform over so that the part keeps its bbox centre and its bed contact, not its
-            # translation (2026-11-17: two parts ended 5 and 7.75 mm inside the bed)
+            # translation (two parts once ended 5 and 7.75 mm inside the bed)
             ooid = old_by_key[key][0]
             def world_box(PP, o_id, tt):
                 W = [apply_tr(tt, v) for v in part_mesh(PP, o_id, main_part(PP['objects'][o_id])[0])[0]]

@@ -1,0 +1,68 @@
+{
+ "judge": "inserts_mouth_reachable",
+ "case": "the census holds an insert pocket and the opening facts hold no row for it (they were collected for another census). The path of the iron was not measured: NOT_RUN, never \"free\"",
+ "facts": {
+  "openings": [],
+  "closed": []
+ },
+ "params": {
+  "inserts.iron_d": 8.0,
+  "inserts.iron_reach": 30.0
+ },
+ "ctx": {
+  "part": "demo/bracket",
+  "census": {
+   "holes": [
+    {
+     "id": "h1",
+     "anchor": {
+      "kind": "hole",
+      "axis": [
+       0,
+       0,
+       1
+      ],
+      "point": [
+       30.0,
+       30.0,
+       40.0
+      ]
+     },
+     "segments": [
+      {
+       "d": 7.5,
+       "len": 0.54
+      },
+      {
+       "d": 4.4,
+       "len": 1.5
+      },
+      {
+       "d": 3.6,
+       "len": 5.0
+      }
+     ],
+     "depth": 7.04,
+     "through": false,
+     "floor": 2.1,
+     "exit": null,
+     "class": {
+      "table": "inserts",
+      "kind": "M3x4x5",
+      "role": "insert_pocket",
+      "match": "exact"
+     },
+     "coaxial": []
+    }
+   ],
+   "openings": [],
+   "partial": [],
+   "counts": {}
+  }
+ },
+ "expect": [
+  {
+   "verdict": "NOT_RUN"
+  }
+ ]
+}

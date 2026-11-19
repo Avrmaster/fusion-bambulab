@@ -1,6 +1,6 @@
 """Read, build and edit Bambu Studio .3mf projects from scripts (stdlib only).
 Run every edit through with_bambu_closed.py: saving in Bambu overwrites the file."""
-import zipfile, re, struct, os, math, shutil, tempfile, json, uuid, sys, subprocess, glob, time
+import zipfile, re, struct, os, math, shutil, tempfile, json, uuid, sys, subprocess, glob, time, importlib.util, inspect
 
 def studio_path():
     """The Bambu Studio executable (BAMBU_STUDIO overrides the search), or None."""
@@ -21,12 +21,186 @@ def load(proj):
     return infos, files
 
 def save(proj, files, order, compress=zipfile.ZIP_DEFLATED):
-    """order: zip infos or names, written in that order."""
+    """order: zip infos or names, written in that order.
+    In a gated project (a gate/project.json above proj) the gate's guard sees the meshes first: in enforce mode it raises
+    gate_guard.GuardRefusal for a new mesh without a valid stamp and nothing is written. The guard also compares the fit
+    settings (hole compensation, layer height, ...: global values and per-object overrides) of `files` with the file on
+    disk: a change this process did not name with note_setting() is refused in enforce mode and is one loud line in
+    observe mode. set_project(), set_settings(), set_filament() and build() name what they are asked to set.
+    A note lives for ONE guarded save: whatever the guard says, the notes are gone afterwards, so a setting named for
+    one write never excuses a change in a later one. A note made for a project file (note_setting(..., project=))
+    counts only at a save of that file.
+    After the write the meshes go to the print ledger (when a bambulab/ledger/ folder is above proj). With neither
+    above proj nothing of this runs."""
+    try: state = _before_save(proj, files)
+    finally:
+        if _roots(proj)[0]: del _SETTING_NOTES[:]          # asked for this save, not for the next one
     fd, tmp = tempfile.mkstemp(suffix='.tmp', dir=os.path.dirname(os.path.abspath(proj))); os.close(fd)   # same folder: the rename is atomic
     with zipfile.ZipFile(tmp, 'w', compress) as zo:
         for i in order: zo.writestr(i, files[i if isinstance(i, str) else i.filename])
     os.chmod(tmp, os.stat(proj).st_mode & 0o777 if os.path.exists(proj) else 0o644)
     os.replace(tmp, proj)
+    if state: record_writes(proj, state['meshes'], state['stamps'], _caller())
+
+# ---- the gate and the print ledger: nothing below runs unless gate/project.json or bambulab/ledger/ lies above the .3mf ----
+
+_HERE = os.path.dirname(os.path.abspath(__file__))
+_NOTES = {}        # object name -> the STLs this process read for it, newest last (note_stl)
+_SETTING_NOTES = []        # the slicer settings this process means to change (note_setting)
+
+class GuardRefusal(Exception):
+    """Raised by save() in a gated project in enforce mode when the gate's guard cannot be loaded at all: what was not
+    checked has not passed. (A refusal of the guard itself is gate_guard.GuardRefusal.)"""
+
+def note_setting(key, value=None, scope='global', tool=None, project=None):
+    """Tell the gate's guard that this process MEANS to change a slicer setting, so that the next save() does not take
+    the change for an accident: key = the setting, value = what it is set to (None = any value, also its removal),
+    scope = 'global' (project_settings.config), an object name (a per-object override) or '*' (anywhere),
+    project = the .3mf the change is for (None = the next guarded save, whatever file it writes).
+    set_project(), set_filament(), set_settings() and build() call this for what they are asked to set; a script that
+    edits a setting by its own means calls it too. A note covers only that key, in that scope, at that value: a fit
+    setting that changes to anything else at a save is still reported. It is used up by the next guarded save.
+    Never raises."""
+    try:
+        if isinstance(value, (list, tuple)): value = [str(x) for x in value]
+        elif value is not None: value = str(value)
+        _SETTING_NOTES.append({'key': str(key), 'value': value, 'scope': scope if scope in ('global', '*') else bambu_name(str(scope)), 'tool': tool,
+                               'project': os.path.realpath(project) if project else None})
+        del _SETTING_NOTES[:-4000]
+    except Exception: pass
+
+def _enforce_by_text(gate):
+    """Does gate/project.json say "mode": "enforce"? Read from its text: this runs when the gate tools cannot be loaded."""
+    try:
+        with open(os.path.join(gate, 'gate', 'project.json'), encoding='utf-8', errors='replace') as f:
+            return re.search(r'"mode"\s*:\s*"enforce"', f.read()) is not None
+    except Exception: return False
+
+def note_stl(name, stl, orient=None, model_stl=None, tool=None):
+    """Remember which STL the mesh of an object is made from, so that the gate's guard can find its stamp and the ledger
+    its model: the path, the orientation the library applied to it (False = as it lies in the file) and, when the STL is
+    itself a turned copy, the model-frame STL it came from. prep_object() and update_meshes() call this; a script that
+    places a mesh by its own means calls it too. The file is hashed (sha256, geometry) only at a save in a gated project,
+    and a note is used only for a mesh of the same triangle count, volume and area. Never raises."""
+    try:
+        notes = _NOTES.setdefault(bambu_name(str(name)), [])
+        notes.append({'stl': os.path.abspath(stl), 'orient': orient, 'model_stl': os.path.abspath(model_stl) if model_stl else None, 'tool': tool})
+        del notes[:-8]
+    except Exception: pass
+
+def _roots(proj):
+    """(folder with gate/project.json, folder with bambulab/ledger/): the nearest ones above proj, or None."""
+    d = os.path.dirname(os.path.abspath(proj)); gate = ledger = None
+    while True:
+        if gate is None and os.path.isfile(os.path.join(d, 'gate', 'project.json')): gate = d
+        if ledger is None and os.path.isdir(os.path.join(d, 'bambulab', 'ledger')): ledger = d
+        up = os.path.dirname(d)
+        if up == d or (gate and ledger): return gate, ledger
+        d = up
+
+def _tool(name, *paths):
+    """A helper module loaded from the first of these files that exists (kept in sys.modules under its plain name), or None."""
+    if name in sys.modules: return sys.modules[name]
+    for p in paths:
+        p = os.path.normpath(p)
+        if not os.path.isfile(p): continue
+        if os.path.dirname(p) not in sys.path: sys.path.append(os.path.dirname(p))     # it imports its own neighbours
+        spec = importlib.util.spec_from_file_location(name, p); mod = importlib.util.module_from_spec(spec); sys.modules[name] = mod
+        try: spec.loader.exec_module(mod)
+        except BaseException: sys.modules.pop(name, None); raise
+        return mod
+    return None
+
+def _caller():
+    """Name of the function that called save(): the "tool" of a ledger line."""
+    try:
+        f = sys._getframe(2); name = f.f_code.co_name
+        return name if name != '<module>' else os.path.basename(f.f_code.co_filename)
+    except Exception: return None
+
+def project_meshes(files):
+    """One entry per printable-part object of the archive `files` (modifiers and support blockers left out), as the gate's
+    guard and the ledger take them: {"object", "plate", "plate_index", "printable", "vertices", "triangles"} from
+    meshid.project_meshes(), plus "stl" (the model-frame STL the mesh was made from in this process, or None when it was
+    only carried), "stl_sha256", "model" (meshid.geom_hash of that STL), "orient" and "placed_from" (the file that was
+    read, when that is a turned copy of "stl")."""
+    meshid = _tool('meshid', os.path.join(_HERE, 'meshid.py')); ids, clouds = {}, {}
+    def of(path):
+        if path not in ids: ids[path] = meshid.stl_ids(path)
+        return ids[path]
+    def copy_of(path, mesh):
+        """Is the placed mesh that STL moved as a rigid body? Proven vertex by vertex (meshid.rigid_copy): triangle count,
+        volume and area agree for a part whose hole moved, and such a mesh must not travel under the stamp of the STL."""
+        if path not in clouds: clouds[path] = meshid.read_stl(path)[0]
+        return meshid.rigid_copy(clouds[path], mesh['vertices'])
+    meshes = meshid.project_meshes(files)
+    for m in meshes:
+        m.update(stl=None, stl_sha256=None, model=None, orient=None, placed_from=None); shape = None
+        for n in reversed(_NOTES.get(m['object'], [])):
+            try:
+                shape = shape or meshid.shape_id(m['vertices'], m['triangles'])
+                if not meshid.same_shape(of(n['stl'])['shape_id'], shape, 1e-4, box=False): continue      # not the mesh that note is about
+                if not copy_of(n['stl'], m): continue                                                     # same numbers, another geometry
+                src = n['stl']
+                if n['model_stl'] and n['model_stl'] != n['stl']:
+                    if meshid.same_shape(of(n['model_stl'])['shape_id'], shape, 1e-4, box=False) and copy_of(n['model_stl'], m): src = n['model_stl']
+                    else: print('gate: %s was placed from %s, which is NOT a turned copy of the model STL named for it (%s): the mesh is tied to the file it '
+                                'was read from, not to that STL' % (m['object'], os.path.basename(n['stl']), os.path.basename(n['model_stl'])))
+                m.update(stl=src, stl_sha256=of(src)['sha256'], model=of(src)['geom_hash'], orient=n['orient'], placed_from=n['stl'] if src != n['stl'] else None)
+                break
+            except Exception: continue                  # the STL is gone or unreadable: no note
+    return meshes
+
+def _before_save(proj, files):
+    """Ask the gate's guard about the meshes of the archive that is about to be written. None when proj is neither in a
+    gated project nor above a ledger; else {"meshes", "stamps"} for record_writes(). Only a GuardRefusal gets out of
+    here (the guard's own, or the one of this file when the guard cannot be loaded in enforce mode): any other trouble
+    is one printed line and the save goes on."""
+    gate, ledger = _roots(proj)
+    if not gate and not ledger: return None
+    meshes, result = None, {}
+    try: meshes = project_meshes(files)
+    except Exception as e: print('gate: the meshes of %s could not be read (%s: %s)' % (os.path.basename(proj), type(e).__name__, e))
+    if gate:
+        guard = None
+        try: guard = _tool('gate_guard', os.path.join(gate, 'gate', 'tools', 'gate_guard.py'), os.path.join(_HERE, '..', 'gate', 'gate_guard.py'))
+        except BaseException as e:                      # the guard cannot be loaded: a broken or half-copied gate/tools
+            if isinstance(e, KeyboardInterrupt): raise
+            why = 'gate/tools/gate_guard.py cannot be loaded (%s: %s)' % (type(e).__name__, e)
+        else: why = 'gate/project.json is there but gate_guard.py is not (gate/tools)'
+        if guard is None:
+            if _enforce_by_text(gate):
+                raise GuardRefusal('gate: %s and gate/project.json says "mode": "enforce": nothing was written. What was not checked has not '
+                                   'passed; repair the gate tools (setup_project.py --update-tools)' % why)
+            print('gate: %s: this save is not checked' % why)
+            return {'meshes': meshes, 'stamps': None}
+        try:
+            here = os.path.realpath(proj)
+            asked = [n for n in _SETTING_NOTES if n.get('project') in (None, here)]
+            try: knows = 'files' in inspect.signature(guard.check).parameters
+            except (TypeError, ValueError): knows = False
+            if knows: result = guard.check(proj, meshes, gate, files=files, asked=asked) or {}
+            else:
+                print('gate: gate/tools/gate_guard.py is older than this bambu3mf.py: the fit settings of this save are NOT compared (setup_project.py --update-tools)')
+                result = guard.check(proj, meshes, gate) or {}
+        except Exception as e:
+            if type(e).__name__ == 'GuardRefusal': raise
+            print('gate guard: %s: %s (the save goes on)' % (type(e).__name__, e))
+    return {'meshes': meshes, 'stamps': result.get('stamps') if isinstance(result, dict) else None}
+
+def record_writes(proj, meshes, stamps=None, tool=None):
+    """The one place a .3mf writer tells the print ledger what it wrote: ledger.record_writes(proj, meshes, stamps, tool)
+    appends one `write` event per object whose mesh changed to bambulab/ledger/events.jsonl. save() calls it after every
+    write; a script that writes a .3mf by other means calls it with project_meshes(files). Does nothing when no
+    bambulab/ledger/ folder lies above proj. Never raises."""
+    try:
+        if meshes is None or not _roots(proj)[1]: return []
+        ledger = _tool('ledger', os.path.join(_HERE, 'ledger.py'), os.path.join(_HERE, '..', 'ledger', 'ledger.py'))
+        if ledger is None: return []
+        return ledger.record_writes(proj, meshes, stamps=stamps, tool=tool) or []
+    except NotImplementedError: return []
+    except Exception as e:
+        print('ledger: the write was not recorded (%s: %s)' % (type(e).__name__, e)); return []
 
 def backup(proj, keep=10):
     """Copy proj into .backups/ next to it, timestamped, keeping the newest `keep`. Call it before a build overwrites hand work."""
@@ -39,8 +213,9 @@ def backup(proj, keep=10):
 def read_stl(p):
     """Binary STL -> (vertices, triangles). Weld on exact float32 values: rounding would merge distinct vertices.
     Coordinates under 1e-9 mm count as 0: on the seam of a revolved face one side comes out as y = 0 and the other as
-    r * sin(2 pi) = 1e-15, two vertices on one spot, and the seam stayed open in Bambu ("30 open edges", 2026-11-18)."""
-    d = open(p, 'rb').read(); n = struct.unpack('<I', d[80:84])[0]; vid = {}; V = []; F = []
+    r * sin(2 pi) = 1e-15, two vertices on one spot, and the seam stayed open in Bambu ("30 open edges")."""
+    with open(p, 'rb') as f: d = f.read()
+    n = struct.unpack('<I', d[80:84])[0]; vid = {}; V = []; F = []
     for i in range(n):
         o = 84 + i * 50 + 12; t = []
         for k in range(3):
@@ -101,20 +276,38 @@ def set_settings(proj, prefix, kvs, plate_prefix='', exact=False):
         for k, v in kvs:
             if re.search(r'key="%s" value="[^"]*"' % re.escape(k), nh): nh = re.sub(r'key="%s" value="[^"]*"' % re.escape(k), 'key="%s" value="%s"' % (k, v), nh)
             else: nh = nh.replace('<metadata key="extruder"', '<metadata key="%s" value="%s"/>\n    <metadata key="extruder"' % (k, v), 1)
+            note_setting(k, v, name, 'set_settings', proj)
         cfg = cfg.replace('<object id="%s">' % oid + body, '<object id="%s">' % oid + nh + body[len(head):]); hit.append(name)
     if hit:
         files['Metadata/model_settings.config'] = cfg.encode(); save(proj, files, infos, zipfile.ZIP_STORED)
     return hit
 
-def update_meshes(proj, stl_dir, plate_prefix=''):
+LAST_UPDATE = {}     # what the last update_meshes() saw: {"changed", "no_object": [STL files], "no_plate": [object names]}
+
+def update_meshes(proj, stl_dir, plate_prefix='', sources=None):
     """Swap changed meshes for objects on the matching plates whose name matches an STL in stl_dir (same name, or the part name before ' - ').
     Position, rotation, per-object settings and pauses are kept: the new mesh keeps the old bbox centre (xy) and bed contact (z).
     The STL must be in the frame of the mesh it replaces. build() bakes the bed orientation ('+y', '-y', ...) into the vertices,
     so a part built with one needs its STL turned the same way first (ORIENT[face]); an STL straight from CAD is refused when
-    its bbox is the old one with the axes swapped (2026-11-18: six parts stood on the wrong face after a raw swap)."""
+    its bbox is the old one with the axes swapped (six parts once stood on the wrong face after a raw swap).
+    sources: {object or part name: the model-frame STL} when stl_dir holds turned copies, so the gate and the ledger tie the mesh
+    to the exported file (a quarter-turned copy is found without it, a free angle is not).
+    Two things are said, not skipped: an STL of stl_dir that matches no object of the project, and an object that is on no
+    plate (its mesh is never swapped: it is not on any matching plate). Both are also in LAST_UPDATE."""
     key = lambda n: n.split(' - ')[0].replace('.stl', '')
     stls = {key(f): os.path.join(stl_dir, f) for f in os.listdir(stl_dir) if f.endswith('.stl')}
     infos, files = load(proj); cfg = files['Metadata/model_settings.config'].decode(); model = files['3D/3dmodel.model'].decode(); changed = []
+    no_object, no_plate = [], []
+    try:                                                # the report never stands in the way of the swap
+        everything = [(oid, re.search(r'name" value="([^"]*)', body.split('<part')[0])) for oid, body in re.findall(r'<object id="(\d+)">(.*?)</object>', cfg, re.S)]
+        everything = [(oid, m.group(1)) for oid, m in everything if m]
+        placed = set(re.findall(r'object_id" value="(\d+)"', ''.join(plates(cfg, ''))))
+        no_object = sorted(os.path.basename(stls[k]) for k in set(stls) - {key(n) for _, n in everything})
+        no_plate = [n for oid, n in everything if oid not in placed]
+    except Exception: pass
+    if no_object: print('no object in the project for %d STL(s): %s' % (len(no_object), ', '.join(no_object)))
+    for n in no_plate: print('on no plate: %s%s' % (n, ' (its STL was NOT swapped in: put the object on a plate first)' if key(n) in stls else ''))
+    LAST_UPDATE.clear(); LAST_UPDATE.update(changed=changed, no_object=no_object, no_plate=no_plate)
     for oid, body, name in objects(cfg, plate_prefix):
         src = stls.get(key(name))
         if not src: continue
@@ -131,7 +324,7 @@ def update_meshes(proj, stl_dir, plate_prefix=''):
                              % (name, ' x '.join('%.1f' % x for x in nsz), ' x '.join('%.1f' % x for x in osz)))
         # unchanged = same triangle count, same bbox size, volume within 0.001 mm³ (absolute: a relative check once skipped a 10 mm³ change)
         # ... and the same vertices relative to the bbox corner: a hole moved inside the part keeps count, bbox and volume
-        # (2026-11-18: 4 lap screws moved 1.2 mm in two parts and the swap said "nothing changed")
+        # (4 lap screws once moved 1.2 mm in two parts and the swap said "nothing changed")
         same_pts = lambda: sorted((round(x - olo[0], 2), round(y - olo[1], 2), round(z - olo[2], 2)) for x, y, z in set(old)) == \
             sorted((round(x - nlo[0], 2), round(y - nlo[1], 2), round(z - nlo[2], 2)) for x, y, z in set(V))
         if len(oldF) == len(F) and abs(volume(old, oldF) - volume(V, F)) < 1e-3 and all(abs((ohi[i] - olo[i]) - (nhi[i] - nlo[i])) < 1e-3 for i in range(3)) and same_pts(): continue
@@ -139,6 +332,7 @@ def update_meshes(proj, stl_dir, plate_prefix=''):
         off = [oc[i] - nc[i] for i in range(3)]
         files[path] = (om[:blk.start(2)] + mesh_xml([(x + off[0], y + off[1], z + off[2]) for x, y, z in V], F) + om[blk.end(2):]).encode()
         cfg = cfg.replace(body, re.sub(r'face_count="\d+"', 'face_count="%d"' % len(F), body)); changed.append(name)
+        note_stl(name, src, False, model_stl=(sources or {}).get(name) or (sources or {}).get(key(name)), tool='update_meshes')
     if changed:
         files['Metadata/model_settings.config'] = cfg.encode(); save(proj, files, infos, zipfile.ZIP_STORED)
     return changed
@@ -153,6 +347,7 @@ def prep_object(o, stl_dir):
     """Read an object's STL, put its bed face down (orient), centre it on (0, 0, 0). Returns V, F, size, support blockers."""
     f, flip = o[1], o[2]
     V, F = read_stl(os.path.join(stl_dir, f))           # an absolute path works too
+    note_stl(o[0], os.path.join(stl_dir, f), flip, tool='prep_object')
     face, turn = (flip.split(',') + [''])[:2] if isinstance(flip, str) else (flip, '')
     def xf(V):
         if isinstance(face, str) and face.startswith('n'): V = [normal_down([float(x) for x in face[1:].split('/')], v) for v in V]
@@ -221,7 +416,7 @@ def purge_stl(path, tube_mm, thickness=1.2, filament_d=1.75):
         for t in tris: f.write(struct.pack('<12fH', 0, 0, 0, *v[t[0]], *v[t[1]], *v[t[2]], 0))
     return a
 
-FILAMENT_KEYS = json.load(open(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'filament_keys.json')))   # key -> values per filament
+with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'filament_keys.json')) as _f: FILAMENT_KEYS = json.load(_f)   # key -> values per filament
 
 def add_filament(ps, src):
     """Append the first filament of project settings src to project settings ps (same printer / nozzle). Returns its slot (1-based)."""
@@ -246,6 +441,7 @@ def set_project(ps, values):
     for k, v in values.items():
         if k not in ps: print('WARNING: %s is not in this project: a typo, or a key this printer does not have' % k)
         ps[k] = [v] * len(ps[k]) if isinstance(ps.get(k), list) else v
+        note_setting(k, v, 'global', 'set_project')
     d = ps.get('different_settings_to_system') or ['']
     for slot, ks in ((0, [k for k in values if k not in PRINTER_KEYS]), (len(d) - 1, [k for k in values if k in PRINTER_KEYS])):
         keys = [x for x in d[slot].split(';') if x]; keys += [k for k in ks if k not in keys]
@@ -260,6 +456,7 @@ def set_filament(ps, slot, values):
     for k, v in values.items():
         if not isinstance(ps.get(k), list) or len(ps[k]) < slot:
             raise KeyError('%s: not a filament list key with slot %d' % (k, slot))
+        note_setting(k, v, 'global', 'set_filament')
         if ps[k][slot - 1] != v:
             ps[k][slot - 1] = v; changed.append(k)
     d = ps.get('different_settings_to_system') or ['']
@@ -327,8 +524,12 @@ def only_filament(ps, name, colours=None):
         one['filament_colour'] = list(colours)
     return one
 
-def new_project(template, proj, filament=None, colours=None):
-    """Copy a template to proj, optionally down to one filament in the given colours. Then call build(proj, ...)."""
+def new_project(template, proj, filament=None, colours=None, settings=()):
+    """Copy a template to proj, optionally down to one filament in the given colours. Then call build(proj, ...).
+    When proj exists, the template's settings replace the ones it had. In a gated project the guard compares the fit
+    settings of the two: name in `settings` the ones this call is meant to replace ('xy_hole_compensation', ...), or
+    keep the template in step with the project."""
+    for k in settings or (): note_setting(k, None, 'global', 'new_project', proj)
     infos, files = load(template)
     if filament:
         files['Metadata/project_settings.config'] = json.dumps(only_filament(json.loads(files['Metadata/project_settings.config']), filament, colours), indent=4).encode()
@@ -405,6 +606,7 @@ def build(proj, stl_dir, plate_list, settings=None, extra=None, filament=1, titl
             res.append('  <object id="%d" p:UUID="%s" type="model">\n   <components>\n%s   </components>\n  </object>\n' % (obj_id, uuid.uuid4(),
                        ''.join('    <component p:path="/%s" objectid="%d" p:UUID="%s" transform="1 0 0 0 1 0 0 0 1 0 0 0"/>\n' % (path, mid, uuid.uuid4()) for mid in [mesh_id] + sub_ids)))
             items.append('  <item objectid="%d" p:UUID="%s" transform="%s" printable="1"/>\n' % (obj_id, uuid.uuid4(), tr))
+            for k, v in {**settings, **extra.get(name, {}), **per}.items(): note_setting(k, v, name, 'build', proj)
             opts = ''.join('    <metadata key="%s" value="%s"/>\n' % kv for kv in {**settings, **extra.get(name, {}), **per}.items())
             objcfg.append('  <object id="%d">\n    <metadata key="name" value="%s"/>\n' % (obj_id, name) + opts +
                           '    <metadata key="extruder" value="%d"/>\n    <metadata face_count="%d"/>\n    <part id="%d" subtype="normal_part">\n      <metadata key="name" value="%s"/>\n      <metadata key="matrix" value="1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 1"/>\n      <mesh_stat face_count="%d" edges_fixed="0" degenerate_facets="0" facets_removed="0" facets_reversed="0" backwards_edges="0"/>\n    </part>\n%s  </object>\n' % (fil, len(F) + 12 * len(bl), mesh_id, name, len(F),

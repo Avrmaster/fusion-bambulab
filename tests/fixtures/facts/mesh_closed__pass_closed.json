@@ -1,0 +1,20 @@
+{
+ "judge": "mesh_closed",
+ "case": "no open and no non-manifold edge",
+ "facts": {
+  "stl": "gate/run/quarantine/demo_knob.stl",
+  "sha256": "5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e",
+  "triangles": 8424,
+  "degenerate": 0,
+  "open_edges": 0,
+  "non_manifold_edges": 0,
+  "shells": 1,
+  "volume": 15320.4,
+  "bbox": [
+   [-20.0, -20.0, 0.0],
+   [20.0, 20.0, 24.0]
+  ],
+  "geom_hash": "abababababababababababababababababababab"
+ },
+ "expect": []
+}

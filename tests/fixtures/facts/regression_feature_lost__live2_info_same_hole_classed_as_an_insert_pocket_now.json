@@ -1,0 +1,179 @@
+{
+ "judge": "regression_feature_lost",
+ "case": "a stepped hole that an older census classed as nothing is an insert pocket by today's tables; its segments are the same: nothing is lost, one INFO row",
+ "incident": "after an update of the tools a part that nobody had touched was reported with a lost hole: the classifier had changed, the hole had not",
+ "facts": {
+  "holes": [
+   {
+    "id": "h1",
+    "anchor": {
+     "kind": "insert_pocket",
+     "axis": [
+      0,
+      -1,
+      0
+     ],
+     "point": [
+      -18.0,
+      40.0,
+      30.0
+     ]
+    },
+    "segments": [
+     {
+      "d": 7.5,
+      "len": 0.54
+     },
+     {
+      "d": 4.4,
+      "len": 1.5
+     },
+     {
+      "d": 3.6,
+      "len": 4.2
+     },
+     {
+      "d": 3.2,
+      "len": 8.0
+     }
+    ],
+    "depth": 14.24,
+    "through": false,
+    "floor": 2.0,
+    "exit": null,
+    "class": {
+     "table": "inserts",
+     "kind": "M3x6x5",
+     "role": "insert_pocket",
+     "match": "band"
+    },
+    "coaxial": []
+   },
+   {
+    "id": "h2",
+    "anchor": {
+     "kind": "hole",
+     "axis": [
+      0,
+      -1,
+      0
+     ],
+     "point": [
+      -30.0,
+      45.0,
+      36.0
+     ]
+    },
+    "segments": [
+     {
+      "d": 3.4,
+      "len": 6.0
+     }
+    ],
+    "depth": 6.0,
+    "through": true,
+    "floor": null,
+    "exit": null,
+    "class": {
+     "table": "screws",
+     "kind": "M3",
+     "role": "clearance",
+     "match": "exact"
+    },
+    "coaxial": []
+   }
+  ],
+  "openings": [],
+  "counts": {
+   "holes": 2,
+   "openings": 0
+  }
+ },
+ "ctx": {
+  "part": "demo/carriage",
+  "prev": {
+   "holes": [
+    {
+     "id": "h1",
+     "anchor": {
+      "kind": "hole",
+      "axis": [
+       0,
+       -1,
+       0
+      ],
+      "point": [
+       -18.0,
+       40.0,
+       30.0
+      ]
+     },
+     "segments": [
+      {
+       "d": 7.5,
+       "len": 0.54
+      },
+      {
+       "d": 4.4,
+       "len": 1.5
+      },
+      {
+       "d": 3.6,
+       "len": 4.2
+      },
+      {
+       "d": 3.2,
+       "len": 8.0
+      }
+     ],
+     "depth": 14.24,
+     "through": false,
+     "floor": 2.0,
+     "exit": null,
+     "class": null,
+     "coaxial": []
+    },
+    {
+     "id": "h2",
+     "anchor": {
+      "kind": "hole",
+      "axis": [
+       0,
+       -1,
+       0
+      ],
+      "point": [
+       -30.0,
+       45.0,
+       36.0
+      ]
+     },
+     "segments": [
+      {
+       "d": 3.4,
+       "len": 6.0
+      }
+     ],
+     "depth": 6.0,
+     "through": true,
+     "floor": null,
+     "exit": null,
+     "class": {
+      "table": "screws",
+      "kind": "M3",
+      "role": "clearance",
+      "match": "exact"
+     },
+     "coaxial": []
+    }
+   ],
+   "openings": []
+  }
+ },
+ "expect": [
+  {
+   "verdict": "INFO",
+   "ask": null
+  }
+ ]
+}

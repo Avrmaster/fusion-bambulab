@@ -1,0 +1,168 @@
+{
+ "judge": "screws_shell_bears",
+ "case": "two seam screws of a shell across a 0.35 mm gap; the unit looked into the gap and found no bought body: air, the wall bends",
+ "facts": {
+  "washers": [],
+  "passing": [],
+  "n_screws": 2,
+  "n_washers": 0,
+  "screws": [
+   {
+    "ref": "ref flange screws / M4x30 cap screw (1)",
+    "size": "M4",
+    "length": 30.0,
+    "named_length": 30.0,
+    "named_size": "M4",
+    "head": "cap",
+    "head_d": 7.0,
+    "head_h": 4.0,
+    "thread_d": 4.0,
+    "anchor": {
+     "kind": "screw",
+     "axis": [
+      0.0,
+      0.0,
+      1.0
+     ],
+     "point": [
+      43.3,
+      25.0,
+      34.0
+     ]
+    },
+    "role": "head",
+    "under_head": 9.0,
+    "under_head_min": 9.0,
+    "seat": {
+     "kind": "counterbore",
+     "d": 8.0,
+     "recess": 0.5,
+     "share": 1.0
+    },
+    "engagement": 6.0,
+    "into": {
+     "kind": "insert",
+     "name": "ref flange screws / insert M4 (1)"
+    },
+    "tip_room": 1.5,
+    "tip_room_capped": false,
+    "air_gap": 0.35,
+    "in_solid": {
+     "len": 0.0,
+     "name": null,
+     "part": null,
+     "at": null
+    },
+    "washer": null,
+    "gaps": [
+     {
+      "gap": 0.35,
+      "at": 14.0,
+      "between": [
+       {
+        "name": "Lid",
+        "kind": "printed",
+        "part": "demo/lid"
+       },
+       {
+        "name": "Housing",
+        "kind": "printed",
+        "part": "demo/housing"
+       }
+      ],
+      "search_r": 8.0,
+      "in_gap": []
+     }
+    ]
+   },
+   {
+    "ref": "ref flange screws / M4x30 cap screw (2)",
+    "size": "M4",
+    "length": 30.0,
+    "named_length": 30.0,
+    "named_size": "M4",
+    "head": "cap",
+    "head_d": 7.0,
+    "head_h": 4.0,
+    "thread_d": 4.0,
+    "anchor": {
+     "kind": "screw",
+     "axis": [
+      0.0,
+      0.0,
+      1.0
+     ],
+     "point": [
+      0.0,
+      50.0,
+      34.0
+     ]
+    },
+    "role": "head",
+    "under_head": 9.0,
+    "under_head_min": 9.0,
+    "seat": {
+     "kind": "counterbore",
+     "d": 8.0,
+     "recess": 0.5,
+     "share": 1.0
+    },
+    "engagement": 6.0,
+    "into": {
+     "kind": "insert",
+     "name": "ref flange screws / insert M4 (2)"
+    },
+    "tip_room": 1.5,
+    "tip_room_capped": false,
+    "air_gap": 0.35,
+    "in_solid": {
+     "len": 0.0,
+     "name": null,
+     "part": null,
+     "at": null
+    },
+    "washer": null,
+    "gaps": [
+     {
+      "gap": 0.35,
+      "at": 14.0,
+      "between": [
+       {
+        "name": "Lid",
+        "kind": "printed",
+        "part": "demo/lid"
+       },
+       {
+        "name": "Housing",
+        "kind": "printed",
+        "part": "demo/housing"
+       }
+      ],
+      "search_r": 8.0,
+      "in_gap": []
+     }
+    ]
+   }
+  ]
+ },
+ "params": {
+  "screws.air_gap_max": 0.05,
+  "screws.bridge_search_r": 8.0,
+  "bearings.contact_gap_max": 0.05
+ },
+ "ctx": {
+  "part": "demo/lid"
+ },
+ "expect": [
+  {
+   "verdict": "FAIL",
+   "measure": 0.35,
+   "limit": 0.05
+  },
+  {
+   "verdict": "FAIL",
+   "measure": 0.35,
+   "limit": 0.05
+  }
+ ]
+}

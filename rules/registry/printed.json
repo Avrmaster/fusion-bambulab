@@ -1,0 +1,90 @@
+{
+  "category": "printed",
+  "params": {},
+  "rules": [
+    {
+      "id": "printed.interface_change",
+      "title": "Printed status is read before an interface moves",
+      "statement": "Before a hole, a pocket, a seat or a mating face of a part or of its mate is moved, the print ledger is read: is a copy printed, and from which geometry. An unknown status counts as printed.",
+      "why": "The insert pockets of a large part that was already printed were moved in the model and had to be rolled back. A whole concept was built on a wrong idea of what was printed.",
+      "params": [],
+      "check": null,
+      "level": "attest",
+      "stage": "design",
+      "fix_order": [
+        "Read the print ledger for the part and its mates.",
+        "Keep the interface of a printed part; put the change into the unprinted mate.",
+        "The interface must move: say what happens to the printed copy and ask the owner."
+      ],
+      "attest": {
+        "question": "Is a copy of this part or of a part it mates with already printed, and did this change move, resize or remove an interface?",
+        "evidence": [
+          "label"
+        ],
+        "per": "part",
+        "labels": [
+          "no copy of this part or of a mate is printed (print ledger read)",
+          "a copy is printed; no interface moved, the printed copies still fit",
+          "a copy is printed and an interface moved: listed in the report for the owner with what happens to each printed copy"
+        ]
+      },
+      "x_see": [
+        "printed.status_recorded",
+        "printed.fix_in_model",
+        "printed.copy_action"
+      ]
+    },
+    {
+      "id": "printed.status_recorded",
+      "title": "Printed status is recorded data",
+      "statement": "The printed status of every part (printed or not, and which geometry was printed) is data in the print ledger. A plate name or a memory is not a record. A part with no record counts as printed.",
+      "why": "Printed status lived in plate names and in memory: nobody could say which geometry a printed part had.",
+      "params": [],
+      "check": null,
+      "level": "advice",
+      "stage": "design",
+      "fix_order": [],
+      "attest": null
+    },
+    {
+      "id": "printed.fix_in_model",
+      "title": "A printed part is still fixed in the model",
+      "statement": "A rule violation of a printed part is still fixed in the model, for the next print. No reprint is asked for. Unprinted mates stay compatible with both the printed copy and the fixed model. A bench instruction covers the printed copy.",
+      "why": "\"Printed parts are frozen\" and \"what is printed is fixed in the model too\" both stood. The pockets of a printed part were moved; its unprinted mate then got slots that fit both.",
+      "params": [],
+      "check": null,
+      "level": "advice",
+      "stage": "design",
+      "fix_order": [],
+      "attest": null,
+      "note": "Two accepted rules met here; this is one rule with the condition under which each holds."
+    },
+    {
+      "id": "printed.copy_action",
+      "title": "Every change says what happens to the printed copy",
+      "statement": "Every model change of a printed part states what happens to the printed copy: usable as it is, a hand patch, or a reprint.",
+      "why": "No lost print is on record. Without the line the owner learns at assembly that the part on the bench no longer matches the model.",
+      "params": [],
+      "check": null,
+      "level": "advice",
+      "stage": "design",
+      "fix_order": [],
+      "attest": null,
+      "x_see": [
+        "process.finish_routine"
+      ]
+    },
+    {
+      "id": "printed.defect_triage",
+      "title": "A flawed print is critical or tolerable, and the owner decides",
+      "statement": "A defect of a printed part is one of two classes, and the owner decides: critical (the model changes and the part is reprinted before assembly) or tolerable (patched by hand now, fixed in the model for the next print). Both actions are recorded. A tolerable part is never reprinted unasked.",
+      "why": "No lost print is on record. Without both entries the model fix of a hand-patched part is forgotten until the same flaw is printed again.",
+      "params": [],
+      "check": null,
+      "level": "advice",
+      "stage": "design",
+      "fix_order": [],
+      "attest": null
+    }
+  ]
+}

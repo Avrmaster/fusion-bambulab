@@ -1,0 +1,455 @@
+{
+  "category": "bearings",
+  "params": {
+    "bearings.ref_pattern": {
+      "default": "(?i)bearing",
+      "unit": "regex",
+      "looser": null,
+      "measured_on": "naming habit of one project; set it to how the bearing refs of your documents are named",
+      "class": "geometry",
+      "formula": null,
+      "description": "a body whose name (or whose component's name) matches is a candidate for a bearing, and so is one whose name carries a designation of the bearing table; its size is read from its geometry and must be a row of the table. A name alone stands only for a body with no ring geometry"
+    },
+    "bearings.clamp_room": {
+      "default": 1.0,
+      "unit": "mm",
+      "looser": "lower",
+      "measured_on": "decided after both bearings of a built joint stayed loose with 0 to 0.3 mm of room (printed seats, steel washers under M3 screws, one printer, 0.6 nozzle); 1.0 itself is not confirmed by a print",
+      "class": "fit",
+      "formula": null,
+      "description": "the room for a clamped ring is shorter than the ring by this much, so the screws close on the ring and a gap stays open at the flange",
+      "measured_under": null
+    },
+    "bearings.cover_share_min": {
+      "default": 0.5,
+      "unit": "share",
+      "looser": "lower",
+      "measured_on": "decided: half the circle for a shoulder or lip; not measured",
+      "class": "limit",
+      "formula": null,
+      "description": "share of a ring-face circle a shoulder or lip must cover to count as holding that face"
+    },
+    "bearings.clamp_points_min": {
+      "default": 4,
+      "unit": "count",
+      "looser": "lower",
+      "measured_on": "owner decision of one project: six washers per ring where they fit, never under four; three beside a connector slot was a named exception",
+      "class": "limit",
+      "formula": null,
+      "description": "separate clamps (steel washers under screws) round a ring face that hold it instead of a full shoulder"
+    },
+    "bearings.contact_gap_max": {
+      "default": 0.05,
+      "unit": "mm",
+      "looser": "higher",
+      "measured_on": "decided: modelling tolerance of a touching face",
+      "class": "limit",
+      "formula": null,
+      "description": "a part farther than this from a ring face does not hold it"
+    },
+    "bearings.seat_d_tol": {
+      "default": 0.3,
+      "unit": "mm",
+      "looser": "higher",
+      "measured_on": "decided: covers a seat tapered by 0.25 on the diameter at its entry; not measured",
+      "class": "fit",
+      "formula": null,
+      "description": "largest difference between a seat diameter and the bearing diameter it holds",
+      "measured_under": null
+    },
+    "bearings.pass_clearance": {
+      "default": 0.2,
+      "unit": "mm",
+      "looser": "lower",
+      "measured_on": "decided after a bearing could not pass a ring 1.2 mm under its outer diameter; the 0.2 was never measured",
+      "class": "fit",
+      "formula": null,
+      "description": "radial clearance to the bearing of everything it passes on the way to its seat",
+      "measured_under": null
+    },
+    "bearings.clamp_plastic_max": {
+      "default": 0.0,
+      "unit": "mm",
+      "looser": "higher",
+      "measured_on": "decided: printed plastic under a clamp load creeps; one project accepted about 4 mm in one joint as a named exception",
+      "class": "limit",
+      "formula": null,
+      "description": "printed plastic allowed between the head of a clamp screw and the ring it clamps"
+    },
+    "bearings.seat_taper": {
+      "default": 0.25,
+      "unit": "mm",
+      "looser": null,
+      "measured_on": "owner decision of one project (one printer, 0.6 nozzle, PETG); the fit of a seat tapered this way is not yet measured",
+      "class": "fit",
+      "formula": null,
+      "description": "a printed seat is nominal where the ring ends up and this much wider on the diameter at its entry (a post: this much smaller at its free end)",
+      "measured_under": null
+    },
+    "bearings.seat_taper_thick_base": {
+      "default": 0.5,
+      "unit": "mm",
+      "looser": null,
+      "measured_on": "one printed post measured 0.5 mm smaller on the diameter beside its thick base than at its free end (one printer, 0.6 nozzle, PETG); as a compensation it is decided, never printed",
+      "class": "fit",
+      "formula": null,
+      "description": "compensation on the diameter for the part of a seat that sits right beside a thick base, until the first print is measured",
+      "measured_under": null
+    },
+    "bearings.seat_lead_in": {
+      "default": 0.3,
+      "unit": "mm",
+      "looser": null,
+      "measured_on": "decided, never measured",
+      "class": "geometry",
+      "formula": null,
+      "description": "leg of the 45 degree chamfer at the mouth of a bearing seat"
+    },
+    "bearings.lip_min": {
+      "default": 2.0,
+      "unit": "mm",
+      "looser": "lower",
+      "measured_on": "owner decision of one project (one printer, 0.6 nozzle); small gearbox parts of the same project kept 1.0, decided and not measured",
+      "class": "limit",
+      "formula": null,
+      "description": "least thickness of a printed lip or shoulder that holds a ring face"
+    },
+    "bearings.other_ring_relief": {
+      "default": 0.5,
+      "unit": "mm",
+      "looser": "lower",
+      "measured_on": "decided, never measured",
+      "class": "geometry",
+      "formula": null,
+      "description": "a hub or shoulder that carries one ring stands back from the other ring and the seal by this much along the axis"
+    },
+    "bearings.axial_free_gap": {
+      "default": 0.3,
+      "unit": "mm",
+      "looser": "lower",
+      "measured_on": "decided (0.3 to 0.5 was in use) after a closed axial loop met a bought unit that was 0.4 mm off its drawing; not measured",
+      "class": "fit",
+      "formula": null,
+      "description": "open axial gap at the stack of a bearing pair that does not set the length",
+      "measured_under": null
+    },
+    "bearings.shaft_under_bore": {
+      "default": 2.0,
+      "unit": "mm",
+      "looser": null,
+      "measured_on": "owner decision of one project after hardened pins of the nominal bore size did not enter the bearings",
+      "class": "geometry",
+      "formula": null,
+      "description": "a bought shaft or pin through a bearing is this much smaller than the bore and carries a printed sleeve"
+    },
+    "bearings.sleeve_axial_play": {
+      "default": 0.2,
+      "unit": "mm",
+      "looser": null,
+      "measured_on": "decided, never measured",
+      "class": "fit",
+      "formula": null,
+      "description": "axial play of a printed sleeve between the two parts that close it in",
+      "measured_under": null
+    }
+  },
+  "rules": [
+    {
+      "id": "bearings.holding",
+      "title": "Every bearing ring is held on both faces",
+      "statement": "Bearings are found, not listed. A name picks the candidates (the bearing pattern, or a designation of the bearing table in the name of a body or of its component); the geometry decides: a ring whose d, D and B are a row of the table is that bearing, and a body that measures otherwise than the row its name carries is not a bearing. A ring that only misses its row (two of d, D and B fit: the model of the bought part is off), and a ring the probe passed over, is not judged and not passed: the check is not run for it until the model or the table is corrected. Each ring of each bearing (inner and outer) is held along the axis on both faces, four contacts per bearing, by something that touches only that ring: a printed shoulder or lip over at least {bearings.cover_share_min} of the ring-face circle, or at least {bearings.clamp_points_min} separate clamps (steel washers under screws) round it, each within {bearings.contact_gap_max} of the face. A press fit alone holds no ring. A cover that touches both rings fails; the other bearing of a pair, ring on ring, is no such cover. A bearing with no table row or no ring geometry is never skipped: the check is not run until the row is added or the ref is a ring. A ring is judged with the part that seats it or holds one of its faces. A bearing that bought bodies hold and at whose rings no printed part stands, seats or clamps (the rollers inside a bought gearbox) is not a finding of a printed part that is screwed to that assembly: one row per part tells how many and which, and names the mesh bodies near them. A printed lip or clamp that stops short of a ring face answers for that face, however far off it stands. A bearing that nothing touches at all stays a finding of every part near it. A ring that is free on purpose is a named exception: an owner waiver on this rule.",
+      "why": "Bearings were modelled with no retention at all. A shoulder touched the turning ring. A 2 mm printed retainer carried a whole joint on four weak inserts. Bearings and their clamps lived in hand-typed tables inside a script: a new bearing was invisible to every check until someone added a row.",
+      "params": [
+        "bearings.ref_pattern",
+        "bearings.cover_share_min",
+        "bearings.clamp_points_min",
+        "bearings.contact_gap_max"
+      ],
+      "check": {
+        "probe": "fusion_bearings",
+        "judge": "bearings_holding",
+        "needs": "fusion"
+      },
+      "level": "block",
+      "stage": "design",
+      "fix_order": [
+        "Add a printed shoulder or lip on the open face: on that ring only, past the ring chamfer (the bearing table gives the least shoulder diameters).",
+        "Where a shoulder cannot be printed or assembled, add steel washers under screws next to the ring, spread round the circle.",
+        "A cover that touches both rings: relieve it over the other ring and the seal.",
+        "A bearing with no table row: add its size to the bearing table. A bearing the gate did not find at all: name its ref so the pattern matches.",
+        "A ring that is free on purpose (a floating bearing against one lip, an idler pair on its bolt): owner waiver that names the bearing and what closes it."
+      ],
+      "attest": null
+    },
+    {
+      "id": "bearings.clamp_room",
+      "title": "A clamped ring has clamp room",
+      "statement": "The axial room between the two stops of a clamped ring is shorter than the ring by at least {bearings.clamp_room}: the screws close on the ring, not on the plastic, and a visible gap stays open at the flange. The same holds for a spacer clamped between two rings. Clamp screws sit next to the ring. The open gap is counted in every stack above it. A ring is clamped when two bodies touch its two faces (each within {bearings.contact_gap_max}); a body that only stands near a face clamps nothing, and bearings.holding fails that face.",
+      "why": "Both bearings of a built joint stayed loose however hard the screws were tightened: the seats had 0 to 0.3 mm of clamp room. Printed shims and a longer spacer patched the printed parts. The cut that made the room was driven by two hand tables and nothing measured the result.",
+      "params": [
+        "bearings.clamp_room",
+        "bearings.contact_gap_max"
+      ],
+      "check": {
+        "probe": "fusion_bearings",
+        "judge": "bearings_clamp_room",
+        "needs": "fusion"
+      },
+      "level": "block",
+      "stage": "design",
+      "fix_order": [
+        "Set the landing of the clamp (washer landing or cover face) back from the ring face by the clamp room.",
+        "A spacer clamped between two rings: make the room for it shorter than the spacer by the clamp room too.",
+        "Add the open gap to every stack above it: screw lengths and the height of whatever sits on the flange.",
+        "Run the insert and relief checks of the part again: a landing cut can remove a melt relief or thin a wall, and it moves the hardware refs.",
+        "A part that is already printed: a shim of the missing room under the clamp, recorded as a bench patch; the model is fixed all the same."
+      ],
+      "attest": null,
+      "note": "A clamp of bought bodies on a bearing with no printed part at its rings (a steel washer on a roller inside a bought gearbox) is not judged for the printed part beside it: bearings.holding tells those bearings in one row. A clamp row that names a printed part, touching or not, keeps the bearing judged."
+    },
+    {
+      "id": "bearings.seat",
+      "title": "A seat fits its bearing",
+      "statement": "Every bearing sits in a seat of its own size: the seat diameter where the ring ends up differs from the bearing diameter (bore for a seat on a post, outer diameter for a seat in a housing) by at most {bearings.seat_d_tol}; the way into the seat is not in the bearing's way by more than that; and every bearing-sized seat of the part holds a bearing. Sizes come from the bearing table; a size or formula copied from another bearing is evaluated again. Every bought bearing exists as a named ref body in each document that uses it. A seat with a bought body on its axis that no pattern recognised is not called empty: the check is not run until the body is named. A hole that is only near a bearing diameter is asked, not failed.",
+      "why": "A formula copied from another bearing size left a ring 1.2 mm under the outer diameter in the way: the bearing could not reach its seat and the lid was reprinted. One copy of a bearing ref stayed 2 mm off after the bearing moved. Seats were compared with their bearings by a hand table of eight rows.",
+      "params": [
+        "bearings.seat_d_tol",
+        "bearings.contact_gap_max"
+      ],
+      "check": {
+        "probe": "fusion_bearings",
+        "judge": "bearings_seat",
+        "needs": "fusion"
+      },
+      "level": "block",
+      "stage": "design",
+      "fix_order": [
+        "Take d, D and B from the bearing table of the rules (tables/bearings.json).",
+        "Evaluate again every size that was copied from another bearing.",
+        "An entry that is in the way: widen everything the bearing passes to its own diameter and more (bearings.insertion_path).",
+        "A seat with no bearing in it: place the bearing ref (in every document that uses the bearing), or remove the seat.",
+        "A seat that is tapered or compensated by more than the tolerance on purpose: the project raises the tolerance with a measured or owner value, never the agent."
+      ],
+      "attest": null,
+      "note": "The seat of a bearing that bought bodies hold and at whose rings no printed part stands, seats or clamps (a roller on a steel post) is not this part's seat: not judged here, bearings.holding tells those bearings in one row."
+    },
+    {
+      "id": "bearings.insertion_path",
+      "title": "A bearing can reach its seat",
+      "statement": "Everything a bearing passes on the way to its seat clears it by {bearings.pass_clearance} on the radius: larger than its outer diameter in a housing, smaller than its bore on a post. That includes a ring, a lip or the seat of another bearing that lies on the way. A formula copied from another bearing size is evaluated again.",
+      "why": "A bearing could not pass a ring 1.2 mm under its outer diameter and never reached its seat; the printed lid was thrown away. The ring came from a formula written for a smaller bearing.",
+      "params": [
+        "bearings.pass_clearance"
+      ],
+      "check": null,
+      "level": "attest",
+      "stage": "design",
+      "fix_order": [
+        "Widen everything between the seat mouth and the seat to the bearing diameter plus the pass clearance.",
+        "Move the narrow ring behind the seat, or make it a separate part fitted after the bearing.",
+        "Put the bearing in from the other side."
+      ],
+      "attest": {
+        "question": "For every bearing of this part: does each diameter between the seat mouth and the seat clear the bearing by the pass clearance?",
+        "evidence": [
+          "label",
+          "na",
+          "waiver"
+        ],
+        "per": "part",
+        "labels": [
+          "measured in the model: everything on the way clears the bearing",
+          "the seat opens straight onto a free face: nothing lies on the way"
+        ]
+      },
+      "deferred": true,
+      "note": "Deferred. bearings.seat already fails a seat whose entry is narrower than the bearing by more than the seat tolerance. Not measured yet: the pass clearance itself, and whatever lies on the way outside the seat (a lip farther out, another part)."
+    },
+    {
+      "id": "bearings.no_plastic_in_clamp",
+      "title": "No printed plastic in a bearing clamp stack",
+      "statement": "Between the head of a clamp screw and the ring it clamps there is steel only: the washer and the ring. At most {bearings.clamp_plastic_max} of printed plastic lies in that stack: plastic under a clamp load creeps and the clamp loosens. A longer standard screw is no reason to put plastic into the stack.",
+      "why": "One clamp ran through about 4 mm of a printed part and was accepted once, as an exception, with the order to tighten it again after the first hours. The longer standard screw would have put 17 mm of plastic into the same clamp.",
+      "params": [
+        "bearings.clamp_plastic_max"
+      ],
+      "check": null,
+      "level": "attest",
+      "stage": "design",
+      "fix_order": [
+        "Seat the washer on the ring and the screw head on the washer.",
+        "Thread the clamp screw into the part the ring sits in, next to the ring, so nothing printed lies under the head.",
+        "Plastic that must stay in the stack: owner waiver with its thickness, and a retighten step in the build notes."
+      ],
+      "attest": {
+        "question": "For every bearing clamp of this part: what lies between the screw head and the ring?",
+        "evidence": [
+          "label",
+          "na",
+          "waiver"
+        ],
+        "per": "part",
+        "labels": [
+          "steel only: head, washer, ring",
+          "this part has no bearing clamp"
+        ],
+        "auto": [
+          {
+            "when": [
+              "no_bearing_here"
+            ],
+            "label": "this part has no bearing clamp"
+          }
+        ],
+        "held": {
+          "steel only: head, washer, ring": {
+            "some": [
+              "fusion_bearings.bearings.clamps"
+            ]
+          },
+          "this part has no bearing clamp": {
+            "none": [
+              "fusion_bearings.bearings.clamps"
+            ]
+          }
+        }
+      },
+      "note": "Asked once per changed part; answered by the gate itself only when the bearing unit, the census and the unit fusion_near all have facts, none of them shows a bearing or a seat, no name on an axis or near speaks of one (the name of a component counts), and every body near is a fastener by its name. The screw probe knows the plastic under each head and the bearing probe knows the clamps; nothing joins the two yet, so the stack is answered. A label is held against the clamps the bearing probe found: \"no bearing clamp\" is refused while it lists one, \"steel only\" while it lists none."
+    },
+    {
+      "id": "bearings.exceptions_named",
+      "title": "A bearing that is not clamped is a named exception",
+      "statement": "A bearing that is not held on four ring faces is an exception with a name: a floating bearing against one lip, an idler pair on its bolt, a bearing captured in the print, the bearings inside a bought unit or inside a sub-assembly that has its own document. Each one has an owner waiver on bearings.holding that names the bearing, what holds it instead and why that is enough. An exception that stands only in a comment of a tool is not named.",
+      "why": "The exceptions of one project were listed only in the docstring of a cutting script. The question whether one outer ring, held by a single lip, was held well enough stayed open for weeks.",
+      "params": [],
+      "check": null,
+      "level": "advice",
+      "stage": "design",
+      "fix_order": [
+        "Run the gate on every document that holds bearings, the sub-assembly documents too.",
+        "Propose a waiver per free ring; the owner accepts or rejects it."
+      ],
+      "attest": null
+    },
+    {
+      "id": "bearings.sleeve_end_and_preload",
+      "title": "A sleeve end takes no clamp load",
+      "statement": "The end of a printed sleeve or thin spacer never takes the clamp load of a bearing: the clamp closes on steel. Preload screws are tightened evenly and only until the play is gone. A ring is pressed home only through the ring that is being fitted, never through the balls.",
+      "why": "No print was lost to this yet. It is written from how the parts fail: a one-line sleeve end crushes under a clamp and the bearing ends up loose; force through the balls dents the races.",
+      "params": [],
+      "check": null,
+      "level": "advice",
+      "stage": "design",
+      "fix_order": [
+        "Let the sleeve end short of the clamped faces: it has axial play.",
+        "Clamp the rings against a steel spacer, a shoulder of the shaft or washers."
+      ],
+      "attest": null
+    },
+    {
+      "id": "bearings.print_in",
+      "title": "A bearing captured in the print",
+      "statement": "A bearing that is laid into a paused print (print-in): layers do not stick to steel, so the layer over the bearing needs plastic beside it to land on; the pause height lies on the layer grid; two parts whose lips face each other cannot be assembled round a captured bearing. Prefer a bearing that slides on after printing.",
+      "why": "A print-in bearing failed: the layers over it did not stick to the steel and the lips of the two parts faced each other. The design went to slide-on bearings.",
+      "params": [],
+      "check": null,
+      "level": "advice",
+      "stage": "design",
+      "fix_order": [
+        "Make the bearing slide on after printing, held by a lip on one face and a clamp on the other.",
+        "Where it must be captured: put the pause on a layer boundary and give the first layer over it plastic to land on."
+      ],
+      "attest": null
+    },
+    {
+      "id": "bearings.seat_taper",
+      "title": "A printed seat is tapered, and shrinks beside a thick base",
+      "statement": "A printed bearing seat is tapered with a lead-in: nominal where the ring ends up, {bearings.seat_taper} wider on the diameter at the entry (a post: smaller at its free end), with a {bearings.seat_lead_in} x 45 degree chamfer at the mouth. The part of a seat right beside a thick base shrinks more as it cools: compensate it by {bearings.seat_taper_thick_base} on the diameter until the first print is measured, then use the measured value. Zones another ring must pass stay clear of the taper. A compensation above {bearings.seat_d_tol} needs that tolerance raised in the project with a measured or owner value.",
+      "why": "A heavy base was printed with a bearing post that measured nominal at its free end and 0.5 mm small at the disc: the lower bearing rocked on it. An older rule said seats are modelled nominal and the fit is left to the slicer.",
+      "params": [
+        "bearings.seat_taper",
+        "bearings.seat_taper_thick_base",
+        "bearings.seat_lead_in",
+        "bearings.seat_d_tol"
+      ],
+      "check": null,
+      "level": "advice",
+      "stage": "design",
+      "fix_order": [
+        "Measure the first print at both ends of the seat and write the result as a measured project parameter.",
+        "Print the seat zone as a small coupon before the big part when the part is heavy."
+      ],
+      "attest": null,
+      "note": "Supersedes \"seats are modelled nominal, the fit is the slicer's compensation\": that still holds only for the part of a seat away from a thick base."
+    },
+    {
+      "id": "bearings.one_stack_sets_pair",
+      "title": "One stack sets a bearing pair",
+      "statement": "In an arrangement of two bearings exactly one stack sets the length, for example the inner rings through a spacer. The other ring pair has no second hard stop: it keeps an open gap of {bearings.axial_free_gap} or slides. A part has one axial datum. Where two load paths meet across a bearing, one of them is a sliding fit with an open gap sized from the measured bought part.",
+      "why": "A printed joint did not go together: a closed axial loop through the bearing met a bought gear unit that was 0.4 mm off its drawing. Three parts were reprinted. A tube was printed with a second stop under the ring.",
+      "params": [
+        "bearings.axial_free_gap"
+      ],
+      "check": null,
+      "level": "advice",
+      "stage": "design",
+      "fix_order": [
+        "Name the stack that sets the length and remove the second stop.",
+        "Measure the bought unit before the gap is sized."
+      ],
+      "attest": null
+    },
+    {
+      "id": "bearings.shoulder_one_ring",
+      "title": "A shoulder touches one ring",
+      "statement": "A shoulder or hub beside a bearing touches exactly one ring. Its band lies on that ring's face, past the ring chamfer (the bearing table gives the least shoulder diameters), and it stands back from the other ring and the seal by {bearings.other_ring_relief} along the axis. A lip that holds a ring is at least {bearings.lip_min} thick and follows the minimum wall; where that does not fit, pick a narrower bearing. A flat ledge that faces down in the print is not a shoulder: it cannot be printed.",
+      "why": "A 1 mm inner-ring shoulder was modelled as a flat ledge that faced down: it could not be printed. Another shoulder touched the turning ring.",
+      "params": [
+        "bearings.other_ring_relief",
+        "bearings.lip_min"
+      ],
+      "check": null,
+      "level": "advice",
+      "stage": "design",
+      "fix_order": [
+        "Narrow the shoulder to the band of its own ring.",
+        "Print the shoulder as part of an upward-opening seat, or make it a separate ring.",
+        "Pick a narrower or smaller bearing when the lip cannot reach its thickness."
+      ],
+      "attest": null
+    },
+    {
+      "id": "bearings.seat_prints_upward",
+      "title": "A seat prints as a cylinder that opens upward",
+      "statement": "A bearing seat prints as a vertical cylinder that opens upward, with no support inside it. If the layers are then loaded badly, keep the seat orientation and add material.",
+      "why": "A cam was printed on its side for layer strength: the seat sagged, the bearing did not go on, the part was reprinted upright.",
+      "params": [],
+      "check": null,
+      "level": "advice",
+      "stage": "design",
+      "fix_order": [
+        "Turn the part so the seat axis is the print axis.",
+        "Add material where the layers are loaded across; do not turn the seat on its side."
+      ],
+      "attest": null
+    },
+    {
+      "id": "bearings.shaft_sleeve",
+      "title": "A bought shaft through a bearing carries a printed sleeve",
+      "statement": "A bought shaft or pin through a bearing is {bearings.shaft_under_bore} smaller than the bore and carries a printed sleeve with {bearings.sleeve_axial_play} of axial play. A shaft of the nominal bore size is bought only after its tolerance class is read: an m6 pin does not enter a bore of the same nominal size. Its length is checked against the pocket measured on the exported part, and only ready lengths are bought. The sleeve is a one-line wall: its two diameters come from a fit ladder (walls.one_line).",
+      "why": "Hardened pins of the nominal bore size did not enter the bearings and were 6 mm too long for their pocket: the money was wasted and the pins were ordered again.",
+      "params": [
+        "bearings.shaft_under_bore",
+        "bearings.sleeve_axial_play"
+      ],
+      "check": null,
+      "level": "advice",
+      "stage": "design",
+      "fix_order": [
+        "Read the tolerance class and the real length of the bought shaft before the order.",
+        "Size the sleeve from the fit ladder, not from the model."
+      ],
+      "attest": null
+    }
+  ]
+}

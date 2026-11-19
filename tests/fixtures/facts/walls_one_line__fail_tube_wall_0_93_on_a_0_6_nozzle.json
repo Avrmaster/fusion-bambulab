@@ -1,0 +1,39 @@
+{
+ "judge": "walls_one_line",
+ "case": "a sleeve with a 0.925 mm wall for a 0.62 mm line: one line, bore and outside print off size",
+ "incident": "ten sleeves came out with the bore 0.3 mm small; the second print was loose outside",
+ "facts": {
+  "stl": "stl/demo.stl",
+  "triangles": 48210,
+  "bbox": [
+   [-20.0, -20.0, 0.0],
+   [20.0, 20.0, 126.0]
+  ],
+  "area": 31250.0,
+  "samples": 20000,
+  "spacing": 1.25,
+  "coverage": 0.97,
+  "report_under": 3.0,
+  "budget_s": 60.0,
+  "elapsed_s": 21.4,
+  "regions": [
+   {
+    "kind": "wall",
+    "min": 0.925,
+    "p50": 0.93,
+    "area": 590.0,
+    "point": [2.95, 0.0, 16.0],
+    "normal": [1, 0, 0],
+    "samples": 400,
+    "bbox": [
+     [0.9500000000000002, -2.0, 14.0],
+     [4.95, 2.0, 18.0]
+    ]
+   }
+  ]
+ },
+ "params": {"target.line_width": 0.62, "target.nozzle": 0.6},
+ "expect": [
+  {"verdict": "FAIL", "measure": 0.925, "limit": 1.24}
+ ]
+}

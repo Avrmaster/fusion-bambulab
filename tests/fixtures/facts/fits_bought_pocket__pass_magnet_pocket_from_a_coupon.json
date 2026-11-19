@@ -1,0 +1,50 @@
+{
+ "judge": "fits_bought_pocket",
+ "case": "the same pocket after the coupon: the diameter is measured (M) for this project, the depth is the owner's decision (U)",
+ "facts": {
+  "holes": [
+   {
+    "id": "h1",
+    "anchor": {
+     "kind": "hole",
+     "axis": [
+      0,
+      0,
+      1
+     ],
+     "point": [
+      10.0,
+      0.0,
+      6.0
+     ]
+    },
+    "segments": [
+     {
+      "d": 4.2,
+      "len": 1.8
+     }
+    ],
+    "depth": 1.8,
+    "through": false,
+    "floor": 2.0,
+    "exit": null,
+    "class": null,
+    "coaxial": []
+   }
+  ],
+  "openings": [],
+  "counts": {}
+ },
+ "params": {
+  "sensors.magnet_d": 4.0,
+  "sensors.magnet_h": 1.6,
+  "sensors.magnet_pocket_d": 4.2,
+  "sensors.magnet_pocket_depth": 1.7,
+  "sensors.magnet_pocket_d#tag": "M",
+  "sensors.magnet_pocket_depth#tag": "U"
+ },
+ "ctx": {
+  "part": "demo/lever"
+ },
+ "expect": []
+}

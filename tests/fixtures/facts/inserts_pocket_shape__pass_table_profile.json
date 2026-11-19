@@ -1,0 +1,65 @@
+{
+ "judge": "inserts_pocket_shape",
+ "case": "the pocket of the table (relief, lead-in, hole) and an M3 clearance hole beside it",
+ "facts": {
+  "holes": [
+   {
+    "id": "h1",
+    "anchor": {
+     "kind": "insert_pocket",
+     "axis": [0, 0, 1],
+     "point": [10.0, 0.0, 12.0]
+    },
+    "segments": [
+     {"d": 7.5, "len": 0.54},
+     {"d": 4.4, "len": 1.5},
+     {"d": 3.6, "len": 5.0}
+    ],
+    "depth": 7.04,
+    "through": false,
+    "floor": 2.0,
+    "exit": null,
+    "class": {"table": "inserts", "kind": "M3x4x5", "role": "insert_pocket", "match": "exact"},
+    "coaxial": []
+   },
+   {
+    "id": "h2",
+    "anchor": {
+     "kind": "insert_pocket",
+     "axis": [0, 0, 1],
+     "point": [-10.0, 0.0, 12.0]
+    },
+    "segments": [
+     {"d": 4.4, "len": 1.5},
+     {"d": 3.6, "len": 5.0}
+    ],
+    "depth": 6.5,
+    "through": false,
+    "floor": 2.0,
+    "exit": null,
+    "class": {"table": "inserts", "kind": "M3x4x5", "role": "insert_pocket", "match": "exact"},
+    "coaxial": []
+   },
+   {
+    "id": "h3",
+    "anchor": {
+     "kind": "hole",
+     "axis": [0, 0, 1],
+     "point": [0.0, 15.0, 12.0]
+    },
+    "segments": [
+     {"d": 3.4, "len": 12.0}
+    ],
+    "depth": 12.0,
+    "through": true,
+    "floor": null,
+    "exit": null,
+    "class": {"table": "screws", "kind": "M3", "role": "clearance", "match": "exact"},
+    "coaxial": []
+   }
+  ],
+  "openings": [],
+  "counts": {"holes": 3, "openings": 0, "insert_pocket": 2, "clearance": 1, "unknown": 0}
+ },
+ "expect": []
+}

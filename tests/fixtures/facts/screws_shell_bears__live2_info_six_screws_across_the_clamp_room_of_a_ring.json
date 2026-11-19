@@ -1,0 +1,501 @@
+{
+ "judge": "screws_shell_bears",
+ "case": "six screws pull a lid onto a housing across a 1.0 mm gap; a bearing ring stands in that gap 5 mm from each screw; along the screw the lid ends on the ring and the shoulder of the housing begins right behind it: the gap is its clamp room, one INFO row",
+ "incident": "six flange screws were reported as clamping across 1 mm of air; two parts that clamp the outer ring of a large bearing between them close on the ring, and the gap between their flanges is its clamp room",
+ "facts": {
+  "washers": [],
+  "passing": [],
+  "n_screws": 6,
+  "n_washers": 0,
+  "screws": [
+   {
+    "ref": "ref flange screws / M4x30 cap screw (1)",
+    "size": "M4",
+    "length": 30.0,
+    "named_length": 30.0,
+    "named_size": "M4",
+    "head": "cap",
+    "head_d": 7.0,
+    "head_h": 4.0,
+    "thread_d": 4.0,
+    "anchor": {
+     "kind": "screw",
+     "axis": [
+      0.0,
+      0.0,
+      1.0
+     ],
+     "point": [
+      43.3,
+      25.0,
+      34.0
+     ]
+    },
+    "role": "head",
+    "under_head": 9.0,
+    "under_head_min": 9.0,
+    "seat": {
+     "kind": "counterbore",
+     "d": 8.0,
+     "recess": 0.5,
+     "share": 1.0
+    },
+    "engagement": 6.0,
+    "into": {
+     "kind": "insert",
+     "name": "ref flange screws / insert M4 (1)"
+    },
+    "tip_room": 1.5,
+    "tip_room_capped": false,
+    "air_gap": 1.0,
+    "in_solid": {
+     "len": 0.0,
+     "name": null,
+     "part": null,
+     "at": null
+    },
+    "washer": null,
+    "gaps": [
+     {
+      "gap": 1.0,
+      "at": 14.0,
+      "between": [
+       {
+        "name": "Lid",
+        "kind": "printed",
+        "part": "demo/lid"
+       },
+       {
+        "name": "Housing",
+        "kind": "printed",
+        "part": "demo/housing"
+       }
+      ],
+      "search_r": 8.0,
+      "in_gap": [
+       {
+        "name": "ref ball bearing 6008 (1)",
+        "kind": "hardware",
+        "off": 5.0,
+        "along": [
+         0.0,
+         0.0
+        ],
+        "lines": 1
+       }
+      ]
+     }
+    ]
+   },
+   {
+    "ref": "ref flange screws / M4x30 cap screw (2)",
+    "size": "M4",
+    "length": 30.0,
+    "named_length": 30.0,
+    "named_size": "M4",
+    "head": "cap",
+    "head_d": 7.0,
+    "head_h": 4.0,
+    "thread_d": 4.0,
+    "anchor": {
+     "kind": "screw",
+     "axis": [
+      0.0,
+      0.0,
+      1.0
+     ],
+     "point": [
+      0.0,
+      50.0,
+      34.0
+     ]
+    },
+    "role": "head",
+    "under_head": 9.0,
+    "under_head_min": 9.0,
+    "seat": {
+     "kind": "counterbore",
+     "d": 8.0,
+     "recess": 0.5,
+     "share": 1.0
+    },
+    "engagement": 6.0,
+    "into": {
+     "kind": "insert",
+     "name": "ref flange screws / insert M4 (2)"
+    },
+    "tip_room": 1.5,
+    "tip_room_capped": false,
+    "air_gap": 1.0,
+    "in_solid": {
+     "len": 0.0,
+     "name": null,
+     "part": null,
+     "at": null
+    },
+    "washer": null,
+    "gaps": [
+     {
+      "gap": 1.0,
+      "at": 14.0,
+      "between": [
+       {
+        "name": "Lid",
+        "kind": "printed",
+        "part": "demo/lid"
+       },
+       {
+        "name": "Housing",
+        "kind": "printed",
+        "part": "demo/housing"
+       }
+      ],
+      "search_r": 8.0,
+      "in_gap": [
+       {
+        "name": "ref ball bearing 6008 (1)",
+        "kind": "hardware",
+        "off": 5.0,
+        "along": [
+         0.0,
+         0.0
+        ],
+        "lines": 1
+       }
+      ]
+     }
+    ]
+   },
+   {
+    "ref": "ref flange screws / M4x30 cap screw (3)",
+    "size": "M4",
+    "length": 30.0,
+    "named_length": 30.0,
+    "named_size": "M4",
+    "head": "cap",
+    "head_d": 7.0,
+    "head_h": 4.0,
+    "thread_d": 4.0,
+    "anchor": {
+     "kind": "screw",
+     "axis": [
+      0.0,
+      0.0,
+      1.0
+     ],
+     "point": [
+      -43.3,
+      25.0,
+      34.0
+     ]
+    },
+    "role": "head",
+    "under_head": 9.0,
+    "under_head_min": 9.0,
+    "seat": {
+     "kind": "counterbore",
+     "d": 8.0,
+     "recess": 0.5,
+     "share": 1.0
+    },
+    "engagement": 6.0,
+    "into": {
+     "kind": "insert",
+     "name": "ref flange screws / insert M4 (3)"
+    },
+    "tip_room": 1.5,
+    "tip_room_capped": false,
+    "air_gap": 1.0,
+    "in_solid": {
+     "len": 0.0,
+     "name": null,
+     "part": null,
+     "at": null
+    },
+    "washer": null,
+    "gaps": [
+     {
+      "gap": 1.0,
+      "at": 14.0,
+      "between": [
+       {
+        "name": "Lid",
+        "kind": "printed",
+        "part": "demo/lid"
+       },
+       {
+        "name": "Housing",
+        "kind": "printed",
+        "part": "demo/housing"
+       }
+      ],
+      "search_r": 8.0,
+      "in_gap": [
+       {
+        "name": "ref ball bearing 6008 (1)",
+        "kind": "hardware",
+        "off": 5.0,
+        "along": [
+         0.0,
+         0.0
+        ],
+        "lines": 1
+       }
+      ]
+     }
+    ]
+   },
+   {
+    "ref": "ref flange screws / M4x30 cap screw (4)",
+    "size": "M4",
+    "length": 30.0,
+    "named_length": 30.0,
+    "named_size": "M4",
+    "head": "cap",
+    "head_d": 7.0,
+    "head_h": 4.0,
+    "thread_d": 4.0,
+    "anchor": {
+     "kind": "screw",
+     "axis": [
+      0.0,
+      0.0,
+      1.0
+     ],
+     "point": [
+      -43.3,
+      -25.0,
+      34.0
+     ]
+    },
+    "role": "head",
+    "under_head": 9.0,
+    "under_head_min": 9.0,
+    "seat": {
+     "kind": "counterbore",
+     "d": 8.0,
+     "recess": 0.5,
+     "share": 1.0
+    },
+    "engagement": 6.0,
+    "into": {
+     "kind": "insert",
+     "name": "ref flange screws / insert M4 (4)"
+    },
+    "tip_room": 1.5,
+    "tip_room_capped": false,
+    "air_gap": 1.0,
+    "in_solid": {
+     "len": 0.0,
+     "name": null,
+     "part": null,
+     "at": null
+    },
+    "washer": null,
+    "gaps": [
+     {
+      "gap": 1.0,
+      "at": 14.0,
+      "between": [
+       {
+        "name": "Lid",
+        "kind": "printed",
+        "part": "demo/lid"
+       },
+       {
+        "name": "Housing",
+        "kind": "printed",
+        "part": "demo/housing"
+       }
+      ],
+      "search_r": 8.0,
+      "in_gap": [
+       {
+        "name": "ref ball bearing 6008 (1)",
+        "kind": "hardware",
+        "off": 5.0,
+        "along": [
+         0.0,
+         0.0
+        ],
+        "lines": 1
+       }
+      ]
+     }
+    ]
+   },
+   {
+    "ref": "ref flange screws / M4x30 cap screw (5)",
+    "size": "M4",
+    "length": 30.0,
+    "named_length": 30.0,
+    "named_size": "M4",
+    "head": "cap",
+    "head_d": 7.0,
+    "head_h": 4.0,
+    "thread_d": 4.0,
+    "anchor": {
+     "kind": "screw",
+     "axis": [
+      0.0,
+      0.0,
+      1.0
+     ],
+     "point": [
+      -0.0,
+      -50.0,
+      34.0
+     ]
+    },
+    "role": "head",
+    "under_head": 9.0,
+    "under_head_min": 9.0,
+    "seat": {
+     "kind": "counterbore",
+     "d": 8.0,
+     "recess": 0.5,
+     "share": 1.0
+    },
+    "engagement": 6.0,
+    "into": {
+     "kind": "insert",
+     "name": "ref flange screws / insert M4 (5)"
+    },
+    "tip_room": 1.5,
+    "tip_room_capped": false,
+    "air_gap": 1.0,
+    "in_solid": {
+     "len": 0.0,
+     "name": null,
+     "part": null,
+     "at": null
+    },
+    "washer": null,
+    "gaps": [
+     {
+      "gap": 1.0,
+      "at": 14.0,
+      "between": [
+       {
+        "name": "Lid",
+        "kind": "printed",
+        "part": "demo/lid"
+       },
+       {
+        "name": "Housing",
+        "kind": "printed",
+        "part": "demo/housing"
+       }
+      ],
+      "search_r": 8.0,
+      "in_gap": [
+       {
+        "name": "ref ball bearing 6008 (1)",
+        "kind": "hardware",
+        "off": 5.0,
+        "along": [
+         0.0,
+         0.0
+        ],
+        "lines": 1
+       }
+      ]
+     }
+    ]
+   },
+   {
+    "ref": "ref flange screws / M4x30 cap screw (6)",
+    "size": "M4",
+    "length": 30.0,
+    "named_length": 30.0,
+    "named_size": "M4",
+    "head": "cap",
+    "head_d": 7.0,
+    "head_h": 4.0,
+    "thread_d": 4.0,
+    "anchor": {
+     "kind": "screw",
+     "axis": [
+      0.0,
+      0.0,
+      1.0
+     ],
+     "point": [
+      43.3,
+      -25.0,
+      34.0
+     ]
+    },
+    "role": "head",
+    "under_head": 9.0,
+    "under_head_min": 9.0,
+    "seat": {
+     "kind": "counterbore",
+     "d": 8.0,
+     "recess": 0.5,
+     "share": 1.0
+    },
+    "engagement": 6.0,
+    "into": {
+     "kind": "insert",
+     "name": "ref flange screws / insert M4 (6)"
+    },
+    "tip_room": 1.5,
+    "tip_room_capped": false,
+    "air_gap": 1.0,
+    "in_solid": {
+     "len": 0.0,
+     "name": null,
+     "part": null,
+     "at": null
+    },
+    "washer": null,
+    "gaps": [
+     {
+      "gap": 1.0,
+      "at": 14.0,
+      "between": [
+       {
+        "name": "Lid",
+        "kind": "printed",
+        "part": "demo/lid"
+       },
+       {
+        "name": "Housing",
+        "kind": "printed",
+        "part": "demo/housing"
+       }
+      ],
+      "search_r": 8.0,
+      "in_gap": [
+       {
+        "name": "ref ball bearing 6008 (1)",
+        "kind": "hardware",
+        "off": 5.0,
+        "along": [
+         0.0,
+         0.0
+        ],
+        "lines": 1
+       }
+      ]
+     }
+    ]
+   }
+  ]
+ },
+ "params": {
+  "screws.air_gap_max": 0.05,
+  "screws.bridge_search_r": 8.0,
+  "bearings.contact_gap_max": 0.05
+ },
+ "ctx": {
+  "part": "demo/lid"
+ },
+ "expect": [
+  {
+   "verdict": "INFO",
+   "measure": 1.0
+  }
+ ]
+}

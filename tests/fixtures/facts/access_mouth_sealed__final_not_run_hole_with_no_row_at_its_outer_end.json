@@ -1,0 +1,92 @@
+{
+ "judge": "access_mouth_sealed",
+ "case": "a blind D8.6 hole of no table that lies flat against a printed plate. The facts hold no opening row at its mouth (the row lies 0.5 mm inside the hole): whether it is sealed was not measured",
+ "facts": {
+  "openings": [
+   {
+    "feature": "h5",
+    "of": "hole",
+    "anchor": {
+     "kind": "hole",
+     "axis": [
+      0,
+      0,
+      -1
+     ],
+     "point": [
+      0,
+      0,
+      0.5
+     ]
+    },
+    "end": "mouth",
+    "paths": {
+     "own": {
+      "r": 4.3,
+      "reach": 60.0,
+      "free": 0.05,
+      "hits": [
+       {
+        "name": "Plate",
+        "kind": "printed",
+        "part": null,
+        "at": 0.05,
+        "share": 1.0,
+        "approx": false,
+        "expected": false
+       }
+      ]
+     }
+    }
+   }
+  ],
+  "closed": []
+ },
+ "params": {
+  "access.seal_gap": 0.2,
+  "access.cap_max": 2.0
+ },
+ "ctx": {
+  "part": "demo/bracket",
+  "census": {
+   "holes": [
+    {
+     "id": "h5",
+     "anchor": {
+      "kind": "hole",
+      "axis": [
+       0,
+       0,
+       -1
+      ],
+      "point": [
+       0,
+       0,
+       0.0
+      ]
+     },
+     "segments": [
+      {
+       "d": 8.6,
+       "len": 8.0
+      }
+     ],
+     "depth": 8.0,
+     "through": false,
+     "floor": 5.0,
+     "exit": null,
+     "class": null,
+     "coaxial": []
+    }
+   ],
+   "openings": [],
+   "partial": [],
+   "counts": {}
+  }
+ },
+ "expect": [
+  {
+   "verdict": "NOT_RUN"
+  }
+ ]
+}

@@ -8,7 +8,7 @@ Run through the Fusion MCP (fusion_mcp_execute, featureType script) with exec():
     g['convert']('Bracket')              one part per call: old straight pockets -> lead-in + narrow hole (sleeve join)
     g['audit']('Bracket')                read-only: every pocket has its lead-in, nothing solid on its axis, and a melt relief
     g['relief']('Bracket', dry=True)     melt reliefs where a pocket opens straight onto the face (convert() never adds them)
-    g['wall']('Bracket')                 read-only GATE: plastic round every pocket; rows under WALL_TARGET say what stops the wall
+    g['wall']('Bracket')                 read-only GATE: plastic round every pocket; rows under the wall target say what stops the wall
     g['cut']('Bracket', 'Body1', [((x, y, z), (ax, ay, az))])   new pockets: point on the face (mm), axis out of the material
 
 Pocket, from the face down: melt relief (D x depth), lead-in (D x depth), hole down to `depth` below the relief floor.
@@ -19,10 +19,20 @@ reference bodies), only those coaxial with an insert ref body (INSERT_RE); witho
 longer than `depth` (check the plan first: the old diameter is often also a screw or rod hole). Refused, with a reason: a cavity
 crossing the sleeve wall, a pocket too short for the lead-in, an unclear open end. A long hole with an insert at each end
 counts as two pockets. A curved through exit (a radial set-screw pocket into a shaft bore) is trimmed where the full wall ends.
-Each convert() adds one base feature of sleeves and one combine JOIN per host body at the end of the part's timeline."""
-import adsk.core, adsk.fusion, math, re
+Each convert() adds one base feature of sleeves and one combine JOIN per host body at the end of the part's timeline.
 
-# measured in PETG-CF on a Bambu P2S (0.4 nozzle), slicer X-Y hole compensation 0.125 (skills/print-design)
+Thresholds: wall() and relief() take them from PARAMS when the caller sets it (nothing sets it for you: the gate measures
+with its own probe and does not load this file; in a project with a gate set g['PARAMS'] yourself from the values in
+gate/owner/params.json, keys "inserts.wall_target", "inserts.wall_floor", "inserts.relief_wall_min"), else from
+the constants WALL_TARGET, WALL_FLOOR and RELIEF_WALL. The pass line of wall() is the wall target itself.
+A part name may be a component name (its first occurrence) or the full path of one occurrence ("Base:1+Bracket:1").
+Every row of wall() and relief() names its pocket twice: `at_mm` as before, and `axis` + `part_mm` (the pocket top in
+the component's own frame and the direction out of the material), which stay the same when the occurrence is moved.
+Long parts: wall(..., start=i, limit=n, budget=seconds) and relief(..., dry=True, start=i, limit=n) work through a window
+of the pockets and return `next` (the index to go on from, None when the part is done)."""
+import adsk.core, adsk.fusion, math, re, time
+
+# measured in PETG-CF on a Bambu P2S, slicer X-Y hole compensation 0.125 (skills/print-design); the nozzle of that coupon is not on record
 POCKETS = {
     'M3x4x5': dict(relief_d=7.5, relief_depth=0.54, lead_d=4.4, lead_depth=1.5, hole_d=3.6, depth=6.5,
                    old_d=4.4,                        # the straight pocket it replaces (too loose with hole compensation)
@@ -34,7 +44,8 @@ HW_PREFIX = 'HW (ref)'
 INSERT_RE = r'^insert M3x'
 FEATURE = 'insert pocket sleeves'
 RELIEF_FALLBACK_D = (6.5, 5.9)          # where the full relief leaves too little wall (print-design, Heat-set inserts)
-RELIEF_WALL = 1.2                         # mm of plastic kept beside a relief
+RELIEF_WALL = 2.45                        # mm of plastic kept beside a relief: the default of inserts.relief_wall_min in rules/registry/inserts.json
+PARAMS = None                             # {"inserts.wall_target": 4.0, ...}: the caller's thresholds (set by hand; the gate does not set it); None = the constants
 
 _app = adsk.core.Application.get()
 _TOL_R, _TOL_AX = 0.003, 0.004
@@ -80,7 +91,21 @@ def _cyl(o, a, s_a, s_b, r):
 
 
 def _occ(comp_name):
-    return next((o for o in _d().rootComponent.allOccurrences if o.component.name == comp_name), None)
+    occs = list(_d().rootComponent.allOccurrences)
+    return next((o for o in occs if o.fullPathName == comp_name), None) or next((o for o in occs if o.component.name == comp_name), None)
+
+
+def _param(name, default):
+    v = (PARAMS or {}).get(name)
+    return default if v is None else float(v)
+
+
+def _part_frame(po):
+    """converters from the document frame (cm) into the component's own frame: point -> mm, direction -> unit vector"""
+    m = po.transform2; t = m.translation; t = (t.x, t.y, t.z)
+    R = [[m.getCell(i, j) for j in range(3)] for i in range(3)]
+    return (lambda q: tuple(round(10 * sum(R[i][k] * (q[i] - t[i]) for i in range(3)), 2) for k in range(3)),
+            lambda a: tuple(round(sum(R[i][k] * a[i] for i in range(3)), 4) + 0.0 for k in range(3)))
 
 
 def _faces(body, r):
@@ -282,7 +307,7 @@ def _relief_d(b, o, a, sg, s_top):
         if _ring(b, o, a, u, v, q, r, 16) >= 12:       # material all round: the relief wall (any size, also the fallbacks).
             return round(20 * r, 1)                    # A wall on one side only (a spigot beside the pocket) is not a relief
         r += 0.005
-    return 0                                           # air out to D12: the lead-in ends at the part's face
+    return 0                                           # air out to 6 mm from the axis: the lead-in ends at the part's face
 
 
 def audit(comp_name, kind=None):
@@ -305,36 +330,45 @@ def audit(comp_name, kind=None):
     return dict(part=comp_name, pockets=n, bad=bad, old_pockets_left=old, no_relief=no_relief)
 
 
-def relief(comp_name, dry=False, kind=None):
+def relief(comp_name, dry=False, kind=None, start=0, limit=None):
     """add the melt relief where a converted pocket opens straight onto the face (the mating part lands on the plastic ring
-    the insert pushes up). Relief D from POCKETS, else the smaller fallbacks while at least RELIEF_WALL of plastic stays
-    beside it; none fits -> skipped (shave the ring by hand). The lead-in is cut 1 relief deeper so it keeps its length
-    under the relief floor; the narrow hole is left as it is. One base feature + one combine CUT per host body."""
-    K = _k(kind); comp = _occ(comp_name).component
-    TB = adsk.fusion.TemporaryBRepManager.get(); tools = []; rows = []
+    the insert pushes up). Relief D from POCKETS, else the smaller fallbacks while at least the relief wall (PARAMS
+    "inserts.relief_wall_min", else RELIEF_WALL) of plastic stays beside it; none fits -> skipped (shave the ring by hand).
+    The lead-in is cut 1 relief deeper so it keeps its length under the relief floor; the narrow hole is left as it is.
+    One base feature + one combine CUT per host body.
+    Rows: at_mm (the pocket top, component frame), axis (out of the material), part_mm (the same point: the name of the
+    pocket that wall() uses too), relief_d or skipped. start / limit: only pockets start .. start + limit - 1 (counted over
+    the bodies in order); `next` is the index to go on from, None when the part is done."""
+    K = _k(kind); comp = _occ(comp_name).component; W = _param('inserts.relief_wall_min', RELIEF_WALL)
+    TB = adsk.fusion.TemporaryBRepManager.get(); tools = []; rows = []; n = 0; nxt = None
     for b in [b for b in comp.bRepBodies if b.isSolid]:
         for o, a, sg, s_top in _pockets(b, K):
+            n += 1
+            if n - 1 < start:
+                continue
+            if limit is not None and n - 1 >= start + limit:
+                nxt = n - 1 if nxt is None else nxt; continue
             if _relief_d(b, o, a, sg, s_top) != 0:
                 continue
             u, v = _frame(a); at = tuple(round(10 * (o[k] + a[k] * s_top), 2) for k in range(3))
+            name = dict(at_mm=at, axis=tuple(round(sg * a[k], 4) + 0.0 for k in range(3)), part_mm=at)
             mid = s_top - sg * K['relief'] / 2
             r = next((r for r in [K['r_relief']] + [d / 20 for d in RELIEF_FALLBACK_D]
-                      if _ring(b, o, a, u, v, mid, r + RELIEF_WALL / 10, 24) == 24), None)
+                      if _ring(b, o, a, u, v, mid, r + W / 10, 24) == 24), None)
             if r is None:
-                rows.append(dict(at_mm=at, skipped='less than %g mm of wall for any relief' % RELIEF_WALL)); continue
+                rows.append(dict(name, skipped='less than %g mm of wall for any relief' % W)); continue
             t = _cyl(o, a, s_top - sg * K['relief'], s_top + sg * 0.03, r)
             TB.booleanOperation(t, _cyl(o, a, s_top - sg * (K['relief'] - 0.001), s_top - sg * (K['relief'] + K['lead']), K['r_lead']),
                                 adsk.fusion.BooleanTypes.UnionBooleanType)
-            tools.append((b, t)); rows.append(dict(at_mm=at, relief_d=round(20 * r, 1)))
+            tools.append((b, t)); rows.append(dict(name, relief_d=round(20 * r, 1)))
     if tools and not dry:
         p = K['p']
         _join_or_cut(comp, tools, adsk.fusion.FeatureOperations.CutFeatureOperation,
                      'insert melt reliefs D%g x %g' % (p['relief_d'], p['relief_depth']), 'insert relief tools')
-    return dict(part=comp_name, reliefs=len(tools), dry=dry, rows=rows)
+    return dict(part=comp_name, pockets=n, reliefs=len(tools), dry=dry, rows=rows, next=nxt)
 
 
 WALL_TARGET, WALL_FLOOR = 4.0, 1.6        # mm round the lead-in: the target wherever there is room / the floor (print-design)
-WALL_PASS = 3.8                           # a pocket is listed under this: the D12 boss round a D4.4 lead-in passes
 
 
 def _others(po):
@@ -400,23 +434,36 @@ def _in_mesh(m, p):
     return n % 2 == 1
 
 
-def wall(comp_name, target=None, floor=None, kind=None, neighbours=True):
+def wall(comp_name, target=None, floor=None, kind=None, neighbours=True, start=0, limit=None, budget=None):
     """read-only GATE: the plastic round every insert pocket of a part, measured radially from the lead-in over the insert's
-    length (48 directions, 3 depths). A hot insert softens a thin wall and bulges it, so the wall is WALL_TARGET wherever
-    there is room and `floor` only where something really stops it. Rows (pockets under `target`, default WALL_PASS: the
-    D12 boss), each with a verdict:
+    length (48 directions, 3 depths). A hot insert softens a thin wall and bulges it, so the wall is the target wherever
+    there is room and `floor` only where something really stops it. `target` and `floor` default to PARAMS
+    "inserts.wall_target" / "inserts.wall_floor" when the caller set PARAMS, else to WALL_TARGET / WALL_FLOOR.
+    Rows (every pocket under `target`; the rays step 0.1 mm, so a wall of exactly the target passes), each with a verdict:
       FAIL     under the floor
       GROW     under the target and in some thin direction nothing stands within the target: grow the part there
       BLOCKED  under the target, every thin direction ends at another body / a cavity of the part itself (named in `by`)
     `free` counts the thin directions with nothing in the way (static pose only: check moving neighbours yourself).
     Neighbours are the solid bodies and the mesh bodies (a printed part kept as an STL ref) of every other occurrence.
-    One part per call. Returns dict(part, pockets, fail, grow, blocked, rows)."""
+    A row names its pocket by at_mm (the pocket top, document frame) and by axis + part_mm (the direction out of the
+    material and the pocket top in the component's own frame: the same after the occurrence is moved).
+    One part per call. start / limit: only pockets start .. start + limit - 1 (counted over the bodies in order);
+    budget: seconds after which no further pocket is started. `next` is the index to go on from, None when the part is
+    done (`pockets` then counts all of them). Returns dict(part, pockets, fail, grow, blocked, rows, next)."""
     K = _k(kind); po = _occ(comp_name); assert po, 'no component %r' % comp_name
-    T = (target or WALL_PASS) / 10; F = (floor or WALL_FLOOR) / 10; L = K['p']['insert_len'] / 10; RL = K['r_lead']
-    rows = []; n = 0; others = None; meshes = None
+    T = (target or _param('inserts.wall_target', WALL_TARGET)) / 10; F = (floor or _param('inserts.wall_floor', WALL_FLOOR)) / 10
+    L = K['p']['insert_len'] / 10; RL = K['r_lead']; t0 = time.time(); to_pt, to_vec = _part_frame(po)
+    rows = []; n = 0; nxt = None; others = None; meshes = None
     for b in [b for b in po.bRepBodies if b.isSolid]:
+        if nxt is not None:
+            break
         for o, a, sg, s_top in _pockets(b, K):
-            n += 1; u, v = _frame(a); thin = []
+            n += 1
+            if n - 1 < start:
+                continue
+            if (limit is not None and n - 1 >= start + limit) or (budget is not None and n - 1 > start and time.time() - t0 > budget):
+                nxt = n - 1; n -= 1; break
+            u, v = _frame(a); thin = []
             for k in range(48):
                 th = 2 * math.pi * k / 48; w = T
                 for s in (s_top - sg * K['lead'] / 2, s_top - sg * L * 0.6, s_top - sg * L):
@@ -433,7 +480,7 @@ def wall(comp_name, target=None, floor=None, kind=None, neighbours=True):
                 if others is None:
                     others = _others(po)
                     meshes = _meshes(po)
-                G = WALL_TARGET / 10                   # what stands within the design target, at any of the three depths
+                G = max(T, _param('inserts.wall_target', WALL_TARGET) / 10)   # what stands within the target, at any of the three depths
                 for w, th in thin:
                     hit = None
                     for sm in (s_top - sg * K['lead'] / 2, s_top - sg * L * 0.6, s_top - sg * L):
@@ -459,7 +506,8 @@ def wall(comp_name, target=None, floor=None, kind=None, neighbours=True):
                         by[hit] = min(by.get(hit, 99), round(10 * w, 1))
             d = tuple(round(u[i] * math.cos(thmin) + v[i] * math.sin(thmin), 2) for i in range(3))
             verdict = 'FAIL' if wmin < F - 0.001 else ('GROW' if free or not neighbours else 'BLOCKED')
-            rows.append(dict(at_mm=tuple(round(10 * (o[i] + a[i] * s_top), 1) for i in range(3)), wall_mm=round(10 * wmin, 1),
-                             towards=d, thin_dirs=len(thin), free=free, by=by, verdict=verdict))
+            top = tuple(o[i] + a[i] * s_top for i in range(3))
+            rows.append(dict(at_mm=tuple(round(10 * x, 1) for x in top), axis=to_vec(tuple(sg * x for x in a)), part_mm=to_pt(top),
+                             wall_mm=round(10 * wmin, 1), towards=d, thin_dirs=len(thin), free=free, by=by, verdict=verdict))
     c = lambda x: sum(r['verdict'] == x for r in rows)
-    return dict(part=comp_name, pockets=n, fail=c('FAIL'), grow=c('GROW'), blocked=c('BLOCKED'), rows=rows)
+    return dict(part=comp_name, pockets=n, fail=c('FAIL'), grow=c('GROW'), blocked=c('BLOCKED'), rows=rows, next=nxt)

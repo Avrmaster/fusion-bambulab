@@ -1,0 +1,178 @@
+{
+ "judge": "access_hole_covered",
+ "case": "a blind screw hole whose mouth lies flat against a motor body that was drawn later: asked, and never free unless the motor comes last",
+ "facts": {
+  "openings": [
+   {
+    "feature": "h3",
+    "of": "hole",
+    "anchor": {
+     "kind": "hole",
+     "axis": [
+      0,
+      0,
+      -1
+     ],
+     "point": [
+      15.5,
+      -15.5,
+      0.0
+     ]
+    },
+    "end": "mouth",
+    "paths": {
+     "own": {
+      "r": 1.7,
+      "reach": 60.0,
+      "free": 0.0,
+      "hits": [
+       {
+        "name": "ref motor 42",
+        "kind": "bought",
+        "part": null,
+        "at": 0.0,
+        "share": 1.0,
+        "approx": false,
+        "expected": false
+       }
+      ]
+     }
+    }
+   },
+   {
+    "feature": "h4",
+    "of": "hole",
+    "anchor": {
+     "kind": "hole",
+     "axis": [
+      0,
+      0,
+      1
+     ],
+     "point": [
+      -15.5,
+      -15.5,
+      8.0
+     ]
+    },
+    "end": "mouth",
+    "paths": {
+     "own": {
+      "r": 1.7,
+      "reach": 60.0,
+      "free": 60.0,
+      "hits": [
+       {
+        "name": "ref screw M3x12 cap",
+        "kind": "hardware",
+        "part": null,
+        "at": 0.0,
+        "share": 1.0,
+        "approx": false,
+        "expected": true
+       }
+      ]
+     }
+    }
+   }
+  ],
+  "closed": []
+ },
+ "params": {
+  "access.reach": 60.0,
+  "access.min_blocked_share": 0.02,
+  "access.seal_gap": 0.2,
+  "access.cap_max": 2.0,
+  "sensors.magnet_pocket_d": 4.2,
+  "sensors.magnet_pocket_depth": 2.1
+ },
+ "expect": [
+  {
+   "verdict": "FAIL",
+   "measure": 0.0,
+   "limit": 60.0,
+   "by": [
+    "ref motor 42"
+   ],
+   "ask": "assembly.order"
+  }
+ ],
+ "ctx": {
+  "part": "demo/bracket",
+  "census": {
+   "holes": [
+    {
+     "id": "h3",
+     "anchor": {
+      "kind": "hole",
+      "axis": [
+       0,
+       0,
+       -1
+      ],
+      "point": [
+       15.5,
+       -15.5,
+       0.0
+      ]
+     },
+     "segments": [
+      {
+       "d": 3.4,
+       "len": 8.0
+      }
+     ],
+     "depth": 8.0,
+     "through": false,
+     "floor": 5.0,
+     "exit": null,
+     "class": null,
+     "coaxial": []
+    },
+    {
+     "id": "h4",
+     "anchor": {
+      "kind": "hole",
+      "axis": [
+       0,
+       0,
+       1
+      ],
+      "point": [
+       -15.5,
+       -15.5,
+       8.0
+      ]
+     },
+     "segments": [
+      {
+       "d": 3.4,
+       "len": 8.0
+      }
+     ],
+     "depth": 8.0,
+     "through": true,
+     "floor": null,
+     "exit": {
+      "kind": "hole",
+      "axis": [
+       0,
+       0,
+       -1
+      ],
+      "point": [
+       -15.5,
+       -15.5,
+       0.0
+      ]
+     },
+     "class": null,
+     "coaxial": []
+    }
+   ],
+   "openings": [],
+   "partial": [],
+   "counts": {}
+  }
+ }
+}

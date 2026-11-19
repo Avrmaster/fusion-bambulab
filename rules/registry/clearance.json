@@ -1,0 +1,229 @@
+{
+  "category": "clearance",
+  "params": {
+    "clearance.min_gap_moving": {
+      "default": 2.0,
+      "unit": "mm",
+      "looser": "lower",
+      "measured_on": "decided by the agent after a plate rubbed a turning pulley at 0.5 mm (one printer, 0.6 nozzle, PETG); never confirmed by a print or by the owner",
+      "class": "limit",
+      "formula": null,
+      "description": "least gap between a part and every neighbour that moves relative to it"
+    },
+    "clearance.scan_margin": {
+      "default": null,
+      "unit": "mm",
+      "looser": "lower",
+      "measured_on": "computed from the minimum gap",
+      "class": "geometry",
+      "formula": "clearance.min_gap_moving + 3",
+      "description": "how far round a part the gap probe looks for moving neighbours"
+    },
+    "clearance.gap_to_supported_face": {
+      "default": 1.2,
+      "unit": "mm",
+      "looser": "lower",
+      "measured_on": "one printed carrier: 0.2 mm of running clearance to a roof printed over supports was not enough, about 1.2 axial worked (one printer)",
+      "class": "limit",
+      "formula": null,
+      "tag": "M",
+      "description": "running clearance to a face that was printed over supports"
+    },
+    "clearance.belt_wander": {
+      "default": 0.5,
+      "unit": "mm",
+      "looser": "lower",
+      "measured_on": "decided, never measured",
+      "class": "geometry",
+      "formula": null,
+      "description": "side room a belt needs for wander, on top of the gap"
+    },
+    "clearance.gap_over_foreign_head": {
+      "default": 1.0,
+      "unit": "mm",
+      "looser": "lower",
+      "measured_on": "decided, never measured",
+      "class": "geometry",
+      "formula": null,
+      "description": "clearance round a neighbour's screw head in the relief of a part that lies over it"
+    },
+    "clearance.sweep_step": {
+      "default": 1.0,
+      "unit": "deg",
+      "looser": "higher",
+      "measured_on": "decided; a helper of one project stepped by 3 degrees, which can step over a rib",
+      "class": "geometry",
+      "formula": null,
+      "description": "step of a sweep over the travel of a joint"
+    },
+    "clearance.sweep_step_near_stop": {
+      "default": 0.5,
+      "unit": "deg",
+      "looser": "higher",
+      "measured_on": "decided, never measured",
+      "class": "geometry",
+      "formula": null,
+      "description": "step of a sweep inside the fine zone before each stop"
+    },
+    "clearance.sweep_fine_zone": {
+      "default": 10.0,
+      "unit": "deg",
+      "looser": "lower",
+      "measured_on": "decided, never measured",
+      "class": "geometry",
+      "formula": null,
+      "description": "zone before each stop that is swept with the fine step"
+    }
+  },
+  "rules": [
+    {
+      "id": "clearance.min_gap_moving",
+      "title": "Gap to every moving neighbour",
+      "statement": "A part keeps at least {clearance.min_gap_moving} to every neighbour of another declared motion group (printed, bought, hardware and mesh-only bodies within {clearance.scan_margin}), measured as the least distance in the pose as modelled. Clearance is a measured minimum gap, never \"0 mm3 of overlap\"; a coplanar pass counts as a collision. Parts that are fastened to each other move together and belong to one motion group: a gap of 0 between two groups is a collision or a wrong declaration. A mesh-only body is known by its bounding box: its box at the full gap or farther is a pass, its box nearer than that decides nothing and is reported as not checked, never as a failure. A part in no motion group is not measured, and the report says so for the part; the scan says it once for the document. The motion groups are declared in the layout of the project. The travel between the modelled poses is not covered here (clearance.sweep_full_travel).",
+      "why": "A motor plate was declared printable on \"0 mm3 of overlap\": its border hung 0.5 mm over the flange of a turning pulley and rubbed. The plate was reprinted several times in two days. The only tool measured overlap; gaps were printed ad hoc in three part scripts.",
+      "params": [
+        "clearance.min_gap_moving",
+        "clearance.scan_margin"
+      ],
+      "check": {
+        "probe": "fusion_gap",
+        "judge": "clearance_min_gap_moving",
+        "needs": "fusion"
+      },
+      "level": "block",
+      "stage": "design",
+      "fix_order": [
+        "Move the part or its neighbour apart.",
+        "Shape the moving feature so that it passes; do not carve the stationary part for it.",
+        "Cut this part back along the real envelope of the moving neighbour, to the full gap, and leave no thin ledge.",
+        "A gap that must be smaller: owner waiver that names the pair and the measured gap, with a hand test before power."
+      ],
+      "attest": null
+    },
+    {
+      "id": "clearance.static_all_neighbours",
+      "title": "No overlap with any neighbour in the static pose",
+      "statement": "Every new or changed part is intersected in the static pose with every neighbour, stationary against stationary too: hardware refs, heads of fasteners and ties, cables, springs and parts that exist only as meshes. Allowed overlaps are a named list with their expected volumes (an insert in its pocket, a press fit); anything else fails.",
+      "why": "Three new parts overlapped a neighbour by 4.6 to 7 cm3 for a day. A screw head sat 2.5 mm inside a printed part that existed only as a mesh. A mirrored ear landed on two screw heads. The helper that existed tested only the new tool body handed to it, and no mesh refs.",
+      "params": [],
+      "check": null,
+      "level": "attest",
+      "stage": "design",
+      "fix_order": [
+        "Cut or move the new part.",
+        "An overlap that is meant (a press fit, an insert): add it to the named list with its volume."
+      ],
+      "attest": {
+        "question": "Was this part intersected with every neighbour in the static pose, hardware and mesh-only parts included?",
+        "evidence": [
+          "label",
+          "na"
+        ],
+        "per": "part",
+        "labels": [
+          "intersected with all neighbours: only the named overlaps",
+          "this part touches no other part"
+        ]
+      },
+      "deferred": true,
+      "note": "Deferred: the gap probe measures other motion groups only. Overlap inside one group is not measured yet."
+    },
+    {
+      "id": "clearance.sweep_full_travel",
+      "title": "Every joint is swept over its full travel",
+      "statement": "After every edit each affected joint is swept over its full travel and every adjustment position, both ends of a slide included. The list of fixed bodies is generated: every body that does not turn, the joint base included, never a hand-picked list. The step is {clearance.sweep_step}, and {clearance.sweep_step_near_stop} within {clearance.sweep_fine_zone} of each stop: a coarse step jumps over a rib. The hard stop is the first contact. A mechanism is checked at several phases. The gap in every pose is at least {clearance.min_gap_moving}.",
+      "why": "A sweep left the joint base out of its hand-picked list of fixed bodies: contact 1 degree before the stop. A 0.04 mm gap between a corner and a belt stood in a specification.",
+      "params": [
+        "clearance.sweep_step",
+        "clearance.sweep_step_near_stop",
+        "clearance.sweep_fine_zone",
+        "clearance.min_gap_moving"
+      ],
+      "check": null,
+      "level": "attest",
+      "stage": "design",
+      "fix_order": [
+        "Cut the part that meets first along the real envelope of the moving one.",
+        "Move the stop so that it is the first contact."
+      ],
+      "attest": {
+        "question": "Was every joint this part belongs to, or stands beside, swept over its full travel after the last edit?",
+        "evidence": [
+          "label",
+          "na"
+        ],
+        "per": "part",
+        "labels": [
+          "swept with a generated list of fixed bodies: the hard stop is the first contact",
+          "this part is in no moving joint and beside none"
+        ]
+      },
+      "deferred": true,
+      "note": "Deferred: the gap probe measures the pose as modelled. A sweep with a cursor over the angles is not built."
+    },
+    {
+      "id": "clearance.mirror_other_side",
+      "title": "A mirrored feature is checked on its new side",
+      "statement": "A mirrored or moved feature is checked again against what exists only on the new side: screw heads, slots, cables. Where a part lies over a neighbour's screw heads it gets reliefs with {clearance.gap_over_foreign_head} round each head.",
+      "why": "A mirrored switch ear sat on two screw heads of the part below.",
+      "params": [
+        "clearance.gap_over_foreign_head"
+      ],
+      "check": null,
+      "level": "advice",
+      "stage": "design",
+      "fix_order": [
+        "Run the gate on the part after the mirror, with the neighbours of the new side placed."
+      ],
+      "attest": null
+    },
+    {
+      "id": "clearance.no_cut_stationary",
+      "title": "Shape the moving feature, not the stationary part",
+      "statement": "Do not carve a stationary part to let a moving feature pass: shape the moving feature. Nothing printed stands over a moving belt, and a belt gets {clearance.belt_wander} of side room for wander on top of the gap.",
+      "why": "A relief groove cut for a cam left a 1 mm ledge the owner found in the slicer. A plate border still stood over the belt after the first fix.",
+      "params": [
+        "clearance.belt_wander"
+      ],
+      "check": null,
+      "level": "advice",
+      "stage": "design",
+      "fix_order": [
+        "Change the moving feature first.",
+        "Where the stationary part must give way: cut it back as a whole face, never as a groove."
+      ],
+      "attest": null
+    },
+    {
+      "id": "clearance.supported_face",
+      "title": "A face printed over supports needs a wider running gap",
+      "statement": "A running clearance to a face that was printed over supports is {clearance.gap_to_supported_face}, not the gap that works against a clean face (about 0.2): a face on supports comes out rough.",
+      "why": "0.2 mm of clearance to a roof printed over supports was not enough on a printed carrier; the pocket was enlarged the same day.",
+      "params": [
+        "clearance.gap_to_supported_face"
+      ],
+      "check": null,
+      "level": "advice",
+      "stage": "design",
+      "fix_order": [
+        "Widen the gap to the supported face.",
+        "Turn the part so that the running face prints clean, on the bed or as a top face."
+      ],
+      "attest": null
+    },
+    {
+      "id": "clearance.hand_test_before_power",
+      "title": "Unconfirmed clearances get a hand test",
+      "statement": "Every clearance under the gap rule that no print has confirmed is listed with a hand test: the joint is turned through its whole travel by hand before power is applied.",
+      "why": "No incident of its own: it is the bench half of the gap rule. The rub that paid for the gap rule was found only when the joint turned.",
+      "params": [],
+      "check": null,
+      "level": "advice",
+      "stage": "design",
+      "fix_order": [
+        "Put the hand test into the build notes of the joint."
+      ],
+      "attest": null
+    }
+  ]
+}

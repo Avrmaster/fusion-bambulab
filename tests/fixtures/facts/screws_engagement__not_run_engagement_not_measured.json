@@ -1,0 +1,40 @@
+{
+ "judge": "screws_engagement",
+ "case": "a thread that ends in this part with no engagement number is not a pass",
+ "facts": {
+  "screws": [
+   {
+    "ref": "ref screw M3x12 cap",
+    "size": "M3",
+    "length": 12.0,
+    "head": "cap",
+    "anchor": {
+     "kind": "screw",
+     "axis": [0, 0, 1],
+     "point": [0.0, 0.0, 12.0]
+    },
+    "role": "thread",
+    "under_head": null,
+    "seat": null,
+    "engagement": null,
+    "into": null,
+    "tip_room": 1.2,
+    "air_gap": 0.0,
+    "washer": null
+   }
+  ],
+  "washers": []
+ },
+ "params": {
+  "screws.min_engagement": 3.2,
+  "screws.min_engagement[M2]": 2.0,
+  "screws.min_engagement[M2.5]": 2.5,
+  "screws.min_engagement[M3]": 3.2,
+  "screws.min_engagement[M4]": 4.0,
+  "screws.min_engagement[M5]": 5.0,
+  "screws.min_engagement[M6]": 6.0
+ },
+ "expect": [
+  {"verdict": "NOT_RUN"}
+ ]
+}

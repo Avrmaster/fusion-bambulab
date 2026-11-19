@@ -24,7 +24,7 @@
 Install the fusion-bambulab skills from https://github.com/Avrmaster/fusion-bambulab, refer to the repo's AGENTS.md for instructions.
 ```
 
-Then turn on Fusion's MCP server: [two clicks, with screenshots](INSTALL.md#turn-on-fusions-mcp-server). Update, uninstall and older versions: [INSTALL.md](INSTALL.md). Only Claude Code has been tested so far.
+Then turn on Fusion's MCP server: [two clicks, with screenshots](INSTALL.md#turn-on-fusions-mcp-server). Update, uninstall and older versions: [INSTALL.md](INSTALL.md). What each version changes, and what to check before refreshing a project: [CHANGELOG.md](CHANGELOG.md). Only Claude Code has been tested so far.
 
 ## What it does
 
@@ -82,14 +82,16 @@ The plugin connects Claude Code to Fusion's built-in MCP server, so every sessio
 | `fusion-export` | Checked STL export, stamped with the Fusion version, plus stale-part and thin-feature checks |
 | `bambu-project` | Builds and updates `.3mf` projects from code, keeping what you changed by hand |
 | `print-design` | Orientation, tolerances, inserts, test prints, and what to do with a flawed print |
+| `gate` | The print gate: registered rules, one check command, stamps tied to the geometry, a guard in the `.3mf` writer |
+| `print-ledger` | What was written into each `.3mf` and what is already printed, before a printed part's interface moves; the owner's words are committed word for word, and the optional reader of the slicer's job cache is off until the owner switches it on |
 | `fusion-cam` | CNC from Fusion Manufacture: stock that matches the part, helical holes, facing, GRBL-safe posting, `cam_refresh` and `nc_check` |
 | `cnc-station` | A laptop with gSender next to the machine, fed from the Mac: job pages with steps, sync, read-only GRBL queries |
 
-Claude picks the last six up on its own when the task calls for them.
+Claude picks all but the first up on its own when the task calls for them.
 
 ## Requirements
 
-- [Claude Code](https://code.claude.com) and Python 3
+- [Claude Code](https://code.claude.com) 2.1.139 or newer, and Python 3.9+ as `python3` on your PATH
 - Autodesk Fusion with **Preferences > General > API > Fusion MCP Server** on ([how, with screenshots](INSTALL.md#turn-on-fusions-mcp-server))
 - Bambu Studio, for the print side
 
@@ -105,6 +107,7 @@ my-project/
 ├── DESIGN_RULES.md      fits and decisions, tagged measured or not
 ├── fusion/parts.json    which Fusion bodies are printed parts
 ├── stl/                 checked exports
+├── gate/                optional: the print gate (rules, stamps, the owner's numbers)
 └── bambulab/
     ├── build_3mf.py     plates, orientation and settings, as code
     ├── template.3mf     your printer's presets
@@ -112,6 +115,23 @@ my-project/
 ```
 
 Tools are copied into each project, so it keeps building without the plugin and an old project does not change under you.
+
+## The print gate
+
+A design rule that lives only in prose gets forgotten, and a print pays for it: a thin wall round an insert, a bearing held by nothing, a hole closed by a later part. The gate keeps the rules in a registry (`rules/registry/`), each with the incident behind it, a number a project can set, and where possible a check. One command finds the parts, runs the checks and sums the verdict:
+
+```bash
+python3 <plugin>/tools/setup_project.py my-project --gate   # add the gate to a project
+python3 gate/tools/gate.py run --changed                    # check what changed in Fusion
+python3 gate/tools/gate.py export demo/bracket              # checked STL plus its stamp
+python3 gate/tools/gate.py verify                           # every mesh of the .3mf has a valid stamp
+```
+
+A part counts as checked only when its stamp exists, and the stamp dies when the geometry changes. A project starts in `observe` mode, where the `.3mf` writer only reports unstamped meshes; `enforce` refuses them. The writer also compares the slicer settings every fit depends on (hole compensation, layer height and the like) with the file on disk at each save, and `verify` holds them against what the project declares: a change no tool was asked to make is refused in `enforce` mode and is one loud line in `observe` mode. Waivers and looser numbers are the owner's: the project's permission rules put a prompt in front of them. Without `gate/project.json` the guard, the stamps and the checks do not run. The `gate` skill has the workflow.
+
+Since 0.2.0 the plugin ships one SessionStart hook (`hooks/hooks.json`): at the start of every session it runs `tools/gate/gate_hook.py` from the plugin, which looks for `gate/project.json` in the session folder and above it. Where there is none it prints nothing; in a gated project it prints the short gate digest into the session. It reads only local files, calls neither Fusion nor the network and never runs code from the project. It writes nothing, except in a gated project the git-ignored cache of STL hashes (`gate/run/stl_hashes.json`). It goes away only with the plugin (or with all hooks, via Claude Code's `disableAllHooks` setting).
+
+A blocking verdict needs a measurement. What the gate could not measure (a mesh body in a path, a screw it did not recognise, facts of an older check) is listed as `NOT_RUN` with the one thing to do about it, never as a failure and never as a pass. Hardware is found by name and confirmed by shape, so a screw drawn as a head body and a shank body, or a bearing inside a bought assembly, is still a screw and a bearing; the name patterns are parameters of the project. Equal findings on a patterned feature are one line in the report. For a model that already exists, `gate.py run --audit` records what is there as inherited findings for the owner to decide, and asks nothing about parts that did not change. After the owner has adopted that list, a later audit only proposes: a new part is never inherited by itself. A question the facts of a part prove pointless is answered by the gate; a name alone never proves that, and an answer that the facts contradict is refused and asked again.
 
 ## Good to know
 

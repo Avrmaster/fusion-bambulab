@@ -1,0 +1,120 @@
+{
+ "judge": "bearings_holding",
+ "case": "two equal bearings side by side: the other bearing lies on both rings, ring on ring, and locks nothing",
+ "incident": "the second bearing of a roller pair was reported as a cover that touches both rings",
+ "facts": {
+  "bearings": [
+   {
+    "ref": "ref roller pair / bearing 686 (1)",
+    "designation": "686ZZ",
+    "by": "geometry",
+    "d": 6.0,
+    "D": 13.0,
+    "B": 5.0,
+    "anchor": {
+     "kind": "bearing",
+     "axis": [
+      0,
+      0,
+      1
+     ],
+     "point": [
+      0,
+      0,
+      2.5
+     ]
+    },
+    "rings": {
+     "inner": {
+      "faces": [
+       {
+        "side": "+",
+        "covered": [
+         {
+          "name": "ref roller pair / bearing 686",
+          "kind": "hardware",
+          "part": null,
+          "share": 1.0,
+          "points": 1,
+          "gap": 0.0,
+          "touches_other_ring": true,
+          "bearing": true,
+          "twin": true
+         }
+        ]
+       },
+       {
+        "side": "-",
+        "covered": [
+         {
+          "name": "Carriage",
+          "kind": "printed",
+          "part": "demo/carriage",
+          "share": 1.0,
+          "points": 1,
+          "gap": 0.0,
+          "touches_other_ring": false
+         }
+        ]
+       }
+      ]
+     },
+     "outer": {
+      "faces": [
+       {
+        "side": "+",
+        "covered": [
+         {
+          "name": "ref roller pair / bearing 686",
+          "kind": "hardware",
+          "part": null,
+          "share": 1.0,
+          "points": 1,
+          "gap": 0.0,
+          "touches_other_ring": true,
+          "bearing": true,
+          "twin": true
+         }
+        ]
+       },
+       {
+        "side": "-",
+        "covered": [
+         {
+          "name": "Carriage",
+          "kind": "printed",
+          "part": "demo/carriage",
+          "share": 1.0,
+          "points": 1,
+          "gap": 0.0,
+          "touches_other_ring": false
+         }
+        ]
+       }
+      ]
+     }
+    },
+    "clamps": [],
+    "seat": {
+     "inner": {
+      "d": 6.1,
+      "part": "demo/carriage",
+      "len": 5.0,
+      "entry_d": 6.1
+     },
+     "outer": null
+    }
+   }
+  ],
+  "seats_without_bearing": []
+ },
+ "params": {
+  "bearings.cover_share_min": 0.5,
+  "bearings.clamp_points_min": 4,
+  "bearings.contact_gap_max": 0.05
+ },
+ "ctx": {
+  "part": "demo/carriage"
+ },
+ "expect": []
+}

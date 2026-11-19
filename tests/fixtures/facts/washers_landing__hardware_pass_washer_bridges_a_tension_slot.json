@@ -1,0 +1,103 @@
+{
+ "judge": "washers_landing",
+ "case": "a D7 washer over a 3.4 mm wide belt-tension slot bears on both flanks: 42 to 58 % of each sample circle, which is all that lies beside the slot",
+ "incident": "four washers over tension slots were failed for lying on 58 % of their ring",
+ "facts": {
+  "screws": [],
+  "washers": [
+   {
+    "id": "w1",
+    "ref": "ref hardware / washer M3 (1)",
+    "od": 7.0,
+    "id_d": 3.2,
+    "t": 0.5,
+    "anchor": {
+     "kind": "face",
+     "axis": [
+      0,
+      0,
+      1
+     ],
+     "point": [
+      20.0,
+      10.0,
+      6.0
+     ]
+    },
+    "landing": {
+     "share": 0.583,
+     "share_all": 0.528,
+     "gap": 0.0,
+     "open_d": 4.64,
+     "ring_shares": [
+      0.417,
+      0.417,
+      0.583,
+      0.583,
+      0.583,
+      0.583
+     ],
+     "on_bearing": null,
+     "look": 2.0,
+     "on": "demo/tension_plate",
+     "spot_face_d": null,
+     "wall_angles": 0,
+     "covers": [
+      {
+       "name": "Tension plate",
+       "kind": "printed",
+       "part": "demo/tension_plate",
+       "share": 0.528,
+       "gap": 0.0,
+       "bearing": false
+      }
+     ]
+    },
+    "proud": {
+     "height": 3.5,
+     "nearest": null
+    },
+    "screw": "ref hardware / M3x16 cap (1)"
+   }
+  ]
+ },
+ "params": {
+  "washers.landing_share_min": 0.95,
+  "washers.landing_gap_max": 0.05,
+  "washers.spot_face_clearance": 1.2,
+  "bearings.clamp_room": 1.0,
+  "washers.slot_land_min": 1.0
+ },
+ "ctx": {
+  "part": "demo/tension_plate",
+  "census": {
+   "holes": [],
+   "openings": [
+    {
+     "id": "o1",
+     "anchor": {
+      "kind": "face",
+      "axis": [
+       0,
+       0,
+       1
+      ],
+      "point": [
+       21.0,
+       10.0,
+       6.0
+      ]
+     },
+     "shape": "slot",
+     "size": [
+      9.4,
+      3.4
+     ],
+     "through": true,
+     "depth": null
+    }
+   ]
+  }
+ },
+ "expect": []
+}

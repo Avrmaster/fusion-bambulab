@@ -1,0 +1,26 @@
+{
+ "judge": "walls_thin_faces",
+ "case": "two volumes of one body touch along two edges: each of them joins four faces",
+ "incident": "a loose block that touched the part along an edge went into an export",
+ "facts": {
+  "width_cap": 2.0,
+  "lumps": 1,
+  "shells": 1,
+  "n_faces": 40,
+  "non_manifold_edges": 2,
+  "seam_edges": 3,
+  "faces": []
+ },
+ "params": {
+  "walls.min_face_width": 1.2,
+  "walls.strip_turn_max": 60,
+  "overhang.bridge_step": 0.3
+ },
+ "expect": [
+  {
+   "verdict": "FAIL",
+   "measure": 2,
+   "limit": 0
+  }
+ ]
+}

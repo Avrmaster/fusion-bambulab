@@ -1,0 +1,261 @@
+{
+ "judge": "access_hole_covered",
+ "case": "a bearing seat D22.2 x 7 with a D12 shoulder: the clamp washers lie over its mouth by design, and the D22 x 0.1 ring at the end of the taper is the same bore, not a hole of its own",
+ "facts": {
+  "openings": [
+   {
+    "feature": "h6",
+    "of": "hole",
+    "anchor": {
+     "kind": "hole",
+     "axis": [
+      0,
+      0,
+      -1
+     ],
+     "point": [
+      0.0,
+      0.0,
+      0.0
+     ]
+    },
+    "end": "mouth",
+    "paths": {
+     "own": {
+      "r": 11.1,
+      "reach": 60.0,
+      "free": 0.05,
+      "hits": [
+       {
+        "name": "ref clamp / washer M3 (1)",
+        "kind": "hardware",
+        "part": null,
+        "at": 0.05,
+        "share": 0.06,
+        "approx": false,
+        "expected": false
+       },
+       {
+        "name": "ref clamp / washer M3 (2)",
+        "kind": "hardware",
+        "part": null,
+        "at": 0.05,
+        "share": 0.06,
+        "approx": false,
+        "expected": false
+       }
+      ]
+     }
+    }
+   },
+   {
+    "feature": "h6",
+    "of": "hole",
+    "anchor": {
+     "kind": "hole",
+     "axis": [
+      0,
+      0,
+      1
+     ],
+     "point": [
+      0.0,
+      0.0,
+      9.0
+     ]
+    },
+    "end": "exit",
+    "paths": {
+     "own": {
+      "r": 6.0,
+      "reach": 60.0,
+      "free": 60.0,
+      "hits": []
+     }
+    }
+   },
+   {
+    "feature": "h7",
+    "of": "hole",
+    "anchor": {
+     "kind": "hole",
+     "axis": [
+      0,
+      0,
+      1
+     ],
+     "point": [
+      0.0,
+      0.0,
+      7.0
+     ]
+    },
+    "end": "mouth",
+    "paths": {
+     "own": {
+      "r": 11.0,
+      "reach": 60.0,
+      "free": 0.05,
+      "hits": [
+       {
+        "name": "Turntable",
+        "kind": "self",
+        "part": "demo/bracket",
+        "at": 0.05,
+        "share": 0.7,
+        "approx": false,
+        "expected": false
+       }
+      ]
+     }
+    }
+   },
+   {
+    "feature": "h7",
+    "of": "hole",
+    "anchor": {
+     "kind": "hole",
+     "axis": [
+      0,
+      0,
+      -1
+     ],
+     "point": [
+      0.0,
+      0.0,
+      6.9
+     ]
+    },
+    "end": "exit",
+    "paths": {
+     "own": {
+      "r": 11.0,
+      "reach": 60.0,
+      "free": 60.0,
+      "hits": [
+       {
+        "name": "ref axle / bearing 608",
+        "kind": "hardware",
+        "part": null,
+        "at": 0.05,
+        "share": 0.94,
+        "approx": false,
+        "expected": true
+       }
+      ]
+     }
+    }
+   }
+  ],
+  "closed": []
+ },
+ "params": {
+  "access.reach": 60.0,
+  "access.min_blocked_share": 0.02,
+  "access.seal_gap": 0.2,
+  "access.cap_max": 2.0,
+  "sensors.magnet_pocket_d": 4.2,
+  "sensors.magnet_pocket_depth": 2.1
+ },
+ "expect": [],
+ "ctx": {
+  "part": "demo/bracket",
+  "census": {
+   "holes": [
+    {
+     "id": "h6",
+     "anchor": {
+      "kind": "hole",
+      "axis": [
+       0,
+       0,
+       -1
+      ],
+      "point": [
+       0.0,
+       0.0,
+       0.0
+      ]
+     },
+     "segments": [
+      {
+       "d": 22.2,
+       "len": 7.0
+      },
+      {
+       "d": 12.0,
+       "len": 2.0
+      }
+     ],
+     "depth": 9.0,
+     "through": true,
+     "floor": null,
+     "exit": {
+      "kind": "hole",
+      "axis": [
+       0,
+       0,
+       1
+      ],
+      "point": [
+       0.0,
+       0.0,
+       9.0
+      ]
+     },
+     "class": null,
+     "coaxial": [
+      {
+       "name": "ref axle / bearing 608",
+       "kind": "hardware",
+       "part": null
+      }
+     ]
+    },
+    {
+     "id": "h7",
+     "anchor": {
+      "kind": "hole",
+      "axis": [
+       0,
+       0,
+       1
+      ],
+      "point": [
+       0.0,
+       0.0,
+       7.0
+      ]
+     },
+     "segments": [
+      {
+       "d": 22.0,
+       "len": 0.1
+      }
+     ],
+     "depth": 0.1,
+     "through": true,
+     "floor": null,
+     "exit": {
+      "kind": "hole",
+      "axis": [
+       0,
+       0,
+       -1
+      ],
+      "point": [
+       0.0,
+       0.0,
+       6.9
+      ]
+     },
+     "class": null,
+     "coaxial": []
+    }
+   ],
+   "openings": [],
+   "partial": [],
+   "counts": {}
+  }
+ }
+}

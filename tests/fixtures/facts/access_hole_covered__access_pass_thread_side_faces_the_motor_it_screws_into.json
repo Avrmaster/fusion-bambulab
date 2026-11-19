@@ -1,0 +1,143 @@
+{
+ "judge": "access_hole_covered",
+ "case": "the same counterbore with a free key side; the motor it screws into stands 8 mm behind the thread side: nothing is asked there",
+ "facts": {
+  "openings": [
+   {
+    "feature": "h1",
+    "of": "counterbore",
+    "anchor": {
+     "kind": "hole",
+     "axis": [
+      0,
+      0,
+      1
+     ],
+     "point": [
+      10.0,
+      10.0,
+      10.0
+     ]
+    },
+    "end": "mouth",
+    "paths": {
+     "own": {
+      "r": 3.25,
+      "reach": 60.0,
+      "free": 60.0,
+      "hits": []
+     }
+    }
+   },
+   {
+    "feature": "h1",
+    "of": "counterbore",
+    "anchor": {
+     "kind": "hole",
+     "axis": [
+      0,
+      0,
+      -1
+     ],
+     "point": [
+      10.0,
+      10.0,
+      0.0
+     ]
+    },
+    "end": "exit",
+    "paths": {
+     "own": {
+      "r": 1.7,
+      "reach": 60.0,
+      "free": 8.0,
+      "hits": [
+       {
+        "name": "ref motor 42 / front cap",
+        "kind": "bought",
+        "part": null,
+        "at": 0.05,
+        "share": 0.17,
+        "approx": false,
+        "expected": true
+       },
+       {
+        "name": "ref motor 42 / stator",
+        "kind": "bought",
+        "part": null,
+        "at": 8.0,
+        "share": 1.0,
+        "approx": false,
+        "expected": false
+       }
+      ]
+     }
+    }
+   }
+  ],
+  "closed": []
+ },
+ "params": {
+  "access.reach": 60.0,
+  "access.min_blocked_share": 0.02,
+  "access.seal_gap": 0.2,
+  "access.cap_max": 2.0,
+  "sensors.magnet_pocket_d": 4.2,
+  "sensors.magnet_pocket_depth": 2.1
+ },
+ "expect": [],
+ "ctx": {
+  "part": "demo/bracket",
+  "census": {
+   "holes": [
+    {
+     "id": "h1",
+     "anchor": {
+      "kind": "hole",
+      "axis": [
+       0,
+       0,
+       1
+      ],
+      "point": [
+       10.0,
+       10.0,
+       10.0
+      ]
+     },
+     "segments": [
+      {
+       "d": 6.5,
+       "len": 3.5
+      },
+      {
+       "d": 3.4,
+       "len": 6.5
+      }
+     ],
+     "depth": 10.0,
+     "through": true,
+     "floor": null,
+     "exit": {
+      "kind": "hole",
+      "axis": [
+       0,
+       0,
+       -1
+      ],
+      "point": [
+       10.0,
+       10.0,
+       0.0
+      ]
+     },
+     "class": null,
+     "coaxial": []
+    }
+   ],
+   "openings": [],
+   "partial": [],
+   "counts": {}
+  }
+ }
+}

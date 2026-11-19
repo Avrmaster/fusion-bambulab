@@ -1,0 +1,243 @@
+{
+  "category": "switches",
+  "params": {
+    "switches.pretravel": {
+      "default": 3.0,
+      "unit": "mm",
+      "looser": null,
+      "measured_on": "placeholder: one batch of a common roller-lever micro switch; measure the batch in hand",
+      "class": "geometry",
+      "formula": null,
+      "description": "travel of the roller from rest to the click"
+    },
+    "switches.total_travel": {
+      "default": 4.4,
+      "unit": "mm",
+      "looser": null,
+      "measured_on": "placeholder: one batch of a common roller-lever micro switch; measure the batch in hand",
+      "class": "geometry",
+      "formula": null,
+      "description": "travel of the roller from rest to its end"
+    },
+    "switches.rest_gap_min": {
+      "default": 1.0,
+      "unit": "mm",
+      "looser": "lower",
+      "measured_on": "decided after a roller rubbed a passing ring at 0.8 mm",
+      "class": "limit",
+      "formula": null,
+      "description": "least gap between the lever at rest and every surface that passes it"
+    },
+    "switches.lift_margin": {
+      "default": 0.7,
+      "unit": "mm",
+      "looser": "lower",
+      "measured_on": "simulated, not printed",
+      "class": "limit",
+      "formula": null,
+      "tag": "S",
+      "description": "cam lift over the pre-travel, and under the total travel"
+    },
+    "switches.click_before_end_min": {
+      "default": 1.0,
+      "unit": "mm",
+      "looser": "lower",
+      "measured_on": "simulated, not printed",
+      "class": "limit",
+      "formula": null,
+      "tag": "S",
+      "description": "cam travel between the click and the hard stop"
+    },
+    "switches.ramp_angle": {
+      "default": 45,
+      "unit": "deg",
+      "looser": null,
+      "measured_on": "decided: the ramp of the one cam that was printed and worked",
+      "class": "geometry",
+      "formula": null,
+      "description": "ramp angle of a switch cam"
+    },
+    "switches.pressure_angle_max": {
+      "default": 25,
+      "unit": "deg",
+      "looser": "higher",
+      "measured_on": "simulated, not printed",
+      "class": "limit",
+      "formula": null,
+      "tag": "S",
+      "description": "largest pressure angle between cam and roller"
+    },
+    "switches.snap_strain_max": {
+      "default": 0.02,
+      "unit": "share",
+      "looser": "higher",
+      "measured_on": "simulated, not printed",
+      "class": "limit",
+      "formula": null,
+      "tag": "S",
+      "description": "largest strain of a snap clip while it opens"
+    },
+    "switches.cradle_fit_per_side": {
+      "default": 0.1,
+      "unit": "mm",
+      "looser": null,
+      "measured_on": "one printer: 0.1 to 0.15 per side held a small switch body",
+      "class": "fit",
+      "formula": null,
+      "tag": "M",
+      "description": "clearance per side between a printed cradle and the switch body",
+      "measured_under": {
+        "nozzle": null,
+        "material": null,
+        "xy_hole_compensation": null,
+        "layer_height": null
+      }
+    },
+    "switches.soft_limit_inside_click_min": {
+      "default": 1.5,
+      "unit": "deg",
+      "looser": "lower",
+      "measured_on": "decided",
+      "class": "limit",
+      "formula": null,
+      "description": "how far the soft limit lies inside the click angle"
+    }
+  },
+  "rules": [
+    {
+      "id": "switches.measured_travel",
+      "title": "A switch actuator is designed from the measured switch",
+      "statement": "A switch actuator is designed from the travel measured on the real switch (free, click, end, differential), once per batch: {switches.pretravel} to the click and {switches.total_travel} to the end are placeholders. The vendor model gives the outline only; its measured error is carried as a number.",
+      "why": "The model showed the roller touching a passing ring: the lever of the vendor model was 1.1 mm too long. The cradles were moved twice.",
+      "params": [
+        "switches.pretravel",
+        "switches.total_travel"
+      ],
+      "check": null,
+      "level": "advice",
+      "stage": "design",
+      "fix_order": [],
+      "attest": null,
+      "note": "Asked through hardware.bought_from_step.",
+      "x_see": [
+        "hardware.bought_from_step",
+        "fits.bought_part_measured"
+      ]
+    },
+    {
+      "id": "switches.cam_lift",
+      "title": "Cam lift, rest gap and the click before the stop",
+      "statement": "The cam lift lies between the pre-travel and the total travel with a margin of {switches.lift_margin} at every angle the cam covers. At rest the lever keeps at least {switches.rest_gap_min} to every surface that passes it. The end cam clicks at least {switches.click_before_end_min} of cam travel before the hard stop under the worst lever model, and stays pressed through the stop.",
+      "why": "A roller rubbed a turning ring at 0.8 mm and made noise. A cam tuned to a guessed gap clicked exactly at the stop on the test print.",
+      "params": [
+        "switches.lift_margin",
+        "switches.rest_gap_min",
+        "switches.click_before_end_min"
+      ],
+      "check": null,
+      "level": "advice",
+      "stage": "design",
+      "fix_order": [],
+      "attest": null,
+      "x_see": [
+        "switches.click_before_stop"
+      ]
+    },
+    {
+      "id": "switches.click_before_stop",
+      "title": "The switch simulation judges this geometry",
+      "statement": "The lift, the rest gap and the click before the stop of every switch cam are inside their limits in the project's simulation of this geometry.",
+      "why": "The simulation wrote numbers and its thresholds stood only in its header: nothing judged them.",
+      "params": [
+        "switches.lift_margin",
+        "switches.rest_gap_min",
+        "switches.click_before_end_min"
+      ],
+      "check": null,
+      "level": "attest",
+      "stage": "design",
+      "fix_order": [],
+      "attest": {
+        "question": "Switch cam: which simulation ran on this geometry, and are lift, rest gap and click inside their limits?",
+        "evidence": [
+          "label",
+          "param",
+          "na"
+        ],
+        "per": "part",
+        "labels": [
+          "the project simulation ran on this geometry: lift, rest gap and click are inside their limits",
+          "no switch cam on this part"
+        ]
+      },
+      "deferred": true,
+      "note": "Deferred: the simulation stays a project script until the gate can run and judge it.",
+      "x_see": [
+        "switches.cam_lift"
+      ]
+    },
+    {
+      "id": "switches.cam_shape",
+      "title": "A switch cam is one arc with ramps",
+      "statement": "A switch cam is one continuous arc with ramps of {switches.ramp_angle} and filleted transitions, rising from the bed face: never tabs or steps. The pressure angle stays under {switches.pressure_angle_max}. The cam meets the roller from the pivot side of the lever; for the other direction the switch is turned.",
+      "why": "The cams of three joints were exported stepped although the proven cam of the first joint was a ramp; the owner flagged them.",
+      "params": [
+        "switches.ramp_angle",
+        "switches.pressure_angle_max"
+      ],
+      "check": null,
+      "level": "advice",
+      "stage": "design",
+      "fix_order": [],
+      "attest": null
+    },
+    {
+      "id": "switches.mount",
+      "title": "A switch is held by shape and can be replaced",
+      "statement": "A small bought sensor sits on the fixed part in a printed cradle (a pad, end walls, pegs) with {switches.cradle_fit_per_side} per side. It is held by shape, by a snap clip sized by strain (a share under {switches.snap_strain_max}), not by friction. Terminals stay open for soldering. The switch can be fitted and replaced on the finished joint. A handed bought part is turned, never mirrored.",
+      "why": "Switches fell out of press-fit cradles on built joints.",
+      "params": [
+        "switches.cradle_fit_per_side",
+        "switches.snap_strain_max"
+      ],
+      "check": null,
+      "level": "advice",
+      "stage": "design",
+      "fix_order": [],
+      "attest": null,
+      "x_see": [
+        "symmetry.rotate_not_mirror",
+        "assembly.modular_mounts"
+      ]
+    },
+    {
+      "id": "switches.one_per_axis",
+      "title": "One end switch per axis, and it is in the model",
+      "statement": "One end switch per axis, at its homing end and pressed only there. Homing travel is bounded, so that a dead switch ends in \"no trigger\" and not in a collision. Switches are wired normally closed. Soft limits follow from the click, release and stop angles with stated margins: at least {switches.soft_limit_inside_click_min} inside the click. The switch, the cam and the sensor of every axis are in the model before it is printed.",
+      "why": "Placeholder ratios made a built axis run past its switch.",
+      "params": [
+        "switches.soft_limit_inside_click_min"
+      ],
+      "check": null,
+      "level": "advice",
+      "stage": "design",
+      "fix_order": [],
+      "attest": null
+    },
+    {
+      "id": "switches.gap_is_prediction",
+      "title": "A gap from the model is a prediction",
+      "statement": "A sensor gap predicted from the model is measured on a cheap test print before the final material. The correction goes into the cam radius only. Every gap has a stated tolerance window.",
+      "why": "A predicted gap was 0.85 mm off on the first print.",
+      "params": [],
+      "check": null,
+      "level": "advice",
+      "stage": "design",
+      "fix_order": [],
+      "attest": null,
+      "x_see": [
+        "fits.test_cheap_first"
+      ]
+    }
+  ]
+}

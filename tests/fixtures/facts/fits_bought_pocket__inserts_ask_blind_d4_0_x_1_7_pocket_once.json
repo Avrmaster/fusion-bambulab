@@ -1,0 +1,50 @@
+{
+ "judge": "fits_bought_pocket",
+ "case": "the same blind D4.0 x 1.7 pocket, no magnet parameter of that size: asked once what goes in",
+ "facts": {
+  "holes": [
+   {
+    "id": "h1",
+    "anchor": {
+     "kind": "hole",
+     "axis": [
+      0,
+      0,
+      1
+     ],
+     "point": [
+      10.0,
+      0.0,
+      8.0
+     ]
+    },
+    "segments": [
+     {
+      "d": 4.0,
+      "len": 1.7
+     }
+    ],
+    "depth": 1.7,
+    "through": false,
+    "floor": 2.0,
+    "exit": null,
+    "class": null,
+    "coaxial": []
+   }
+  ],
+  "openings": [],
+  "counts": {}
+ },
+ "params": {
+  "sensors.magnet_pocket_d": 5.2,
+  "sensors.magnet_pocket_depth": 2.1,
+  "sensors.magnet_pocket_d#tag": "D",
+  "sensors.magnet_pocket_depth#tag": "D"
+ },
+ "expect": [
+  {
+   "verdict": "INFO",
+   "ask": "fits.pocket_content"
+  }
+ ]
+}

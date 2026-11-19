@@ -1,0 +1,133 @@
+{
+  "table": "washers",
+  "about": "Flat washers: inner diameter, outer diameter, thickness, mm. normal = ISO 7089 (DIN 125), large = ISO 7093 (DIN 9021), small = DIN 433. \"wide\" rows are not in a standard: retail washers with an extra wide rim, as used for clamps. Measure your own stock: outer diameters vary, and a washer is modelled at its measured size (washers.landing).",
+  "tol": {
+    "d": 0.3,
+    "t": 0.2
+  },
+  "sizes": {
+    "M2": {
+      "normal": {
+        "id": 2.2,
+        "od": 5.0,
+        "t": 0.3
+      },
+      "small": {
+        "id": 2.2,
+        "od": 4.5,
+        "t": 0.3
+      }
+    },
+    "M2.5": {
+      "normal": {
+        "id": 2.7,
+        "od": 6.0,
+        "t": 0.5
+      },
+      "small": {
+        "id": 2.7,
+        "od": 5.0,
+        "t": 0.5
+      }
+    },
+    "M3": {
+      "normal": {
+        "id": 3.2,
+        "od": 7.0,
+        "t": 0.5
+      },
+      "large": {
+        "id": 3.2,
+        "od": 9.0,
+        "t": 0.8
+      },
+      "small": {
+        "id": 3.2,
+        "od": 6.0,
+        "t": 0.5
+      },
+      "wide": {
+        "id": 3.2,
+        "od": 12.0,
+        "t": 1.0,
+        "od_measured": 11.7,
+        "about": "a retail M3 x 12 washer; one batch measured D11.7"
+      },
+      "wide_thick": {
+        "id": 3.2,
+        "od": 12.0,
+        "t": 1.5,
+        "od_measured": 11.7,
+        "about": "the same washer 1.5 thick: for clamps that carry tipping (washers.thickness_by_load)"
+      }
+    },
+    "M4": {
+      "normal": {
+        "id": 4.3,
+        "od": 9.0,
+        "t": 0.8
+      },
+      "large": {
+        "id": 4.3,
+        "od": 12.0,
+        "t": 1.0
+      },
+      "small": {
+        "id": 4.3,
+        "od": 8.0,
+        "t": 0.5
+      }
+    },
+    "M5": {
+      "normal": {
+        "id": 5.3,
+        "od": 10.0,
+        "t": 1.0
+      },
+      "large": {
+        "id": 5.3,
+        "od": 15.0,
+        "t": 1.2
+      },
+      "small": {
+        "id": 5.3,
+        "od": 9.0,
+        "t": 1.0
+      }
+    },
+    "M6": {
+      "normal": {
+        "id": 6.4,
+        "od": 12.0,
+        "t": 1.6
+      },
+      "large": {
+        "id": 6.4,
+        "od": 18.0,
+        "t": 1.6
+      },
+      "small": {
+        "id": 6.4,
+        "od": 11.0,
+        "t": 1.6
+      }
+    }
+  },
+  "insert_stops": {
+    "about": "The washer that stops a heat-set insert flush with its relief floor decides the relief diameter (inserts.relief_stop_washer). The relief rows of rules/tables/inserts.json name the stop of each diameter.",
+    "M3": [
+      {
+        "relief_d": 7.5,
+        "washer": "normal"
+      },
+      {
+        "relief_d": 6.5,
+        "washer": "small"
+      },
+      {
+        "relief_d": 5.9,
+        "washer": null
+      }
+    ]
+  }
+}

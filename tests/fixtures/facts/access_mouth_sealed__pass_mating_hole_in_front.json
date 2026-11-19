@@ -1,0 +1,75 @@
+{
+ "judge": "access_mouth_sealed",
+ "case": "a pocket mouth against the mating part, whose coaxial clearance hole and screw belong there",
+ "facts": {
+  "openings": [
+   {
+    "feature": "h6",
+    "of": "insert_pocket",
+    "anchor": {
+     "kind": "insert_pocket",
+     "axis": [
+      0,
+      1,
+      0
+     ],
+     "point": [
+      -22.0,
+      5.0,
+      31.0
+     ]
+    },
+    "end": "mouth",
+    "paths": {
+     "own": {
+      "r": 2.2,
+      "reach": 60.0,
+      "free": 60.0,
+      "hits": [
+       {
+        "name": "Cover",
+        "kind": "printed",
+        "part": "demo/cover",
+        "at": 0.0,
+        "share": 1.0,
+        "approx": false,
+        "expected": true
+       },
+       {
+        "name": "ref screw M3x12 cap",
+        "kind": "hardware",
+        "part": null,
+        "at": 0.0,
+        "share": 1.0,
+        "approx": false,
+        "expected": true
+       }
+      ]
+     },
+     "iron": {
+      "r": 4.0,
+      "reach": 30.0,
+      "free": 30.0,
+      "hits": [
+       {
+        "name": "ref screw M3x12 cap",
+        "kind": "hardware",
+        "part": null,
+        "at": 0.0,
+        "share": 1.0,
+        "approx": false,
+        "expected": true
+       }
+      ]
+     }
+    }
+   }
+  ],
+  "closed": []
+ },
+ "params": {
+  "access.seal_gap": 0.2,
+  "access.cap_max": 2.0
+ },
+ "expect": []
+}

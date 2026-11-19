@@ -1,0 +1,34 @@
+{
+ "test": "no_motor_near",
+ "case": "a toothed wheel: a belt, a pin and an insert are near. The belt is a bought body whose name matches no pattern: a name can only make the question asked, so \"no motor\" is not proven",
+ "probes": {
+  "fusion_near": {
+   "margin": 10.0,
+   "bodies": [
+    {
+     "kind": "bought",
+     "gap": 0.0,
+     "path": "ref belt 280",
+     "name": "ref belt 280"
+    },
+    {
+     "kind": "hardware",
+     "gap": 0.0,
+     "path": "ref shaft",
+     "name": "ref axle / dowel 8x60"
+    },
+    {
+     "kind": "hardware",
+     "gap": 0.0,
+     "path": "ref hardware",
+     "name": "ref hardware / insert M3x4x5 (2)"
+    }
+   ]
+  }
+ },
+ "params": {
+  "motors.ref_pattern": "(?i)motor|nema|stepper|servo|connector|plug"
+ },
+ "expect": false,
+ "says": "whose name does not say what they are (ref belt 280)"
+}

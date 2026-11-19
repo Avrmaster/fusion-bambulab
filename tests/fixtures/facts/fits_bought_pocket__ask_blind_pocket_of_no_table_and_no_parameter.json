@@ -1,0 +1,96 @@
+{
+ "judge": "fits_bought_pocket",
+ "case": "a blind D6.1 x 3 hole: no row of any table and no declared pocket parameter has that size, so it is asked what goes in; a through hole of no table with a bought pin on its axis is asked too",
+ "facts": {
+  "holes": [
+   {
+    "id": "h1",
+    "anchor": {
+     "kind": "hole",
+     "axis": [
+      0,
+      0,
+      1
+     ],
+     "point": [
+      10.0,
+      0.0,
+      6.0
+     ]
+    },
+    "segments": [
+     {
+      "d": 6.1,
+      "len": 3.0
+     }
+    ],
+    "depth": 3.0,
+    "through": false,
+    "floor": 2.0,
+    "exit": null,
+    "class": null,
+    "coaxial": []
+   },
+   {
+    "id": "h2",
+    "anchor": {
+     "kind": "hole",
+     "axis": [
+      0,
+      0,
+      1
+     ],
+     "point": [
+      30.0,
+      4.0,
+      6.0
+     ]
+    },
+    "segments": [
+     {
+      "d": 8.3,
+      "len": 6.0
+     }
+    ],
+    "depth": 6.0,
+    "through": true,
+    "floor": null,
+    "exit": null,
+    "class": null,
+    "coaxial": [
+     {
+      "name": "ref pin D8 x 20",
+      "kind": "bought",
+      "part": null
+     }
+    ]
+   }
+  ],
+  "openings": [],
+  "counts": {}
+ },
+ "params": {
+  "sensors.magnet_d": 4.0,
+  "sensors.magnet_h": 1.6,
+  "sensors.magnet_pocket_d": 4.2,
+  "sensors.magnet_pocket_depth": 1.7,
+  "sensors.magnet_pocket_d#tag": "M",
+  "sensors.magnet_pocket_depth#tag": "M"
+ },
+ "ctx": {
+  "part": "demo/lever"
+ },
+ "expect": [
+  {
+   "verdict": "INFO",
+   "ask": "fits.pocket_content"
+  },
+  {
+   "verdict": "INFO",
+   "ask": "fits.pocket_content",
+   "by": [
+    "ref pin D8 x 20"
+   ]
+  }
+ ]
+}

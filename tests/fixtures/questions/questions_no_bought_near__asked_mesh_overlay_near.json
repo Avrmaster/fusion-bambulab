@@ -1,0 +1,20 @@
+{
+ "test": "no_bought_near",
+ "case": "a part under an old mesh overlay of the model: a mesh is known by its box only, so it cannot prove that nothing bought touches the part",
+ "probes": {
+  "fusion_near": {
+   "margin": 10.0,
+   "bodies": [
+    {
+     "kind": "mesh",
+     "gap": 0.0,
+     "path": "",
+     "name": "ref old arm (mesh) / link"
+    }
+   ]
+  }
+ },
+ "params": {},
+ "expect": false,
+ "says": "bought, hardware or mesh body(ies) within 10 mm"
+}

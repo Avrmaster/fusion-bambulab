@@ -1,0 +1,41 @@
+{
+ "judge": "bearings_seat",
+ "case": "a D22 x 7 seat with a bought body on its axis that the name patterns did not take for a bearing: not proven empty",
+ "incident": "a bearing named by its designation alone inside an assembly component was missed, and its seat was failed as empty",
+ "facts": {
+  "bearings": [],
+  "seats_without_bearing": [
+   {
+    "hole": "h6",
+    "anchor": {
+     "kind": "hole",
+     "axis": [
+      0,
+      0,
+      1
+     ],
+     "point": [
+      0.0,
+      0.0,
+      7.0
+     ]
+    },
+    "d": 22.0,
+    "designation": "608",
+    "match": "exact",
+    "bodies": [
+     "ref roller axle / ring A",
+     "ref roller axle / axle pin"
+    ]
+   }
+  ]
+ },
+ "params": {
+  "bearings.seat_d_tol": 0.3
+ },
+ "expect": [
+  {
+   "verdict": "NOT_RUN"
+  }
+ ]
+}

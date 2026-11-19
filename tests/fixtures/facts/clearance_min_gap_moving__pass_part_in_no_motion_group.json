@@ -1,0 +1,11 @@
+{
+ "judge": "clearance_min_gap_moving",
+ "case": "a part of no declared motion group: nothing is measured, nothing is found",
+ "facts": {
+  "own_group": null,
+  "margin": 5.0,
+  "gaps": []
+ },
+ "params": {"clearance.min_gap_moving": 2.0},
+ "expect": []
+}

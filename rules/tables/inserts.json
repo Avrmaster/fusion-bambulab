@@ -1,0 +1,263 @@
+{
+  "table": "inserts",
+  "about": "Heat-set insert kinds and the pocket each one needs, from the mouth down: melt relief, lead-in, hole. Depths are from the relief floor; the insert ends flush with it. \"band\" is the range of diameters that says \"this hole is meant for that insert\": a hole whose smallest diameter is in a band and that does not have the profile of its row is a wrong pocket (inserts.pocket_shape). The band of a measured kind is wide enough to catch every form that failed; the band of a recorded kind is narrow, round its recorded hole, so that dowel and magnet holes stay out of it. \"profile\" says how far a row can be trusted: measured (a coupon in the named material), derived (computed from a measured row, never printed) or recorded (numbers that were in use and never measured: do not cut new pockets from them). A recorded row is a straight hole (lead-in depth 0.0): it keeps the band, so that such a pocket is seen and measured, and it is not a profile a pocket can match. Kinds with the same diameters are told apart by depth and by the insert ref on their axis.",
+  "tol": {
+    "d": 0.1,
+    "depth": 0.3
+  },
+  "melt_room": 2.5,
+  "melt_room_about": "measured with the M3x4x5 row: hole depth = insert length + 2.5 below the relief floor, room for the displaced plastic and the screw tip",
+  "hole_short_by_relief": false,
+  "hole_short_by_relief_tag": "D",
+  "hole_short_by_relief_about": "false: a pocket ends at its row's hole depth below the relief floor, as the row was measured. true would let a pocket WITH a melt relief end one relief depth short of that depth and still be the pocket of its row: a decision nobody measured on a print, so it is not the default. Why the question comes up: tools/fusion/insert_pockets.py relief() cuts the relief and moves the lead-in down by the relief depth into a pocket that exists, and leaves the narrow hole as it is, so every pocket that got its relief later is hole depth minus relief depth deep below the relief floor (M3x4x5: 6.5 - 0.54 = 5.96, 1.96 of room under the insert instead of the 2.5 the row was measured with). With false each such pocket is a row of inserts.pocket_shape that says so; the owner decides the group once in the triage list (tolerate, or the rule is wrong for his project), or deepens the holes. A pocket without a relief gets no such allowance either way.",
+  "kinds": {
+    "M3x4x5": {
+      "thread": "M3",
+      "insert_len": 4.0,
+      "knurl_d": 5.0,
+      "pilot_d": 4.2,
+      "relief": {
+        "d": 7.5,
+        "depth": 0.54,
+        "fallback_d": [
+          6.5,
+          5.9
+        ],
+        "depth_about": "3 layers of 0.18; a whole number of layers of the project",
+        "bed_face_d": 5.9,
+        "bed_face_about": "decided: on a face that lies on the bed the smallest relief keeps the bridge over it short",
+        "stops": [
+          {
+            "d": 7.5,
+            "washer": "normal",
+            "washer_od": 7.0,
+            "how": "screw and normal flat washer: the washer lands on the relief floor"
+          },
+          {
+            "d": 6.5,
+            "washer": "small",
+            "washer_od": 6.0,
+            "how": "screw and small-series flat washer"
+          },
+          {
+            "d": 5.9,
+            "washer": null,
+            "washer_od": null,
+            "how": "no stop: push the insert 0.5 below the face by eye"
+          }
+        ],
+        "tag": "D",
+        "tag_about": "D7.5 x 0.54 is an owner decision of one project (the relief holds about 17 mm3, the knurl displaces 4 to 5); the fallback diameters are decided, never measured"
+      },
+      "lead_in": {
+        "d": 4.4,
+        "depth": 1.5
+      },
+      "hole": {
+        "d": 3.6,
+        "depth": 6.5
+      },
+      "band": {
+        "d": [
+          3.5,
+          5.3
+        ],
+        "blind_only": false,
+        "min_depth": 2.0,
+        "min_depth_about": "decided: a blind hole under half the shortest insert length is no insert pocket (a magnet or peg pocket); it is asked as an unknown hole instead"
+      },
+      "tag": "M",
+      "profile": "measured",
+      "measured_on": "coupon in PETG-CF on one Bambu P2S, slicer X-Y hole compensation 0.125; the nozzle of the coupon is not on record (0.4 in one note, 0.6 in another). The same numbers are POCKETS in tools/fusion/insert_pockets.py",
+      "measured": {
+        "material": "PETG-CF",
+        "printer": "one Bambu P2S",
+        "nozzle": null,
+        "hole_compensation": 0.125,
+        "insert": "length 4.0, knurl D5.0, plain pilot band D4.2 (calliper)"
+      },
+      "superseded": [
+        {
+          "form": "lead-in D5.2 x 1.0 + hole D4.6 x 5.0",
+          "result": "first form; replaced by the next one"
+        },
+        {
+          "form": "lead-in D5.1 x 1.5 + hole D4.6 x 5.0",
+          "result": "the cold insert dropped 65 % of its length and gripped weakly"
+        },
+        {
+          "form": "straight D4.4 x 6.5 (the datasheet hole)",
+          "result": "about D4.65 as printed with hole compensation: the insert pulled out by hand with a screw"
+        },
+        {
+          "form": "straight D3.7",
+          "result": "grips well, but nothing centres the insert: it goes in tilted"
+        },
+        {
+          "form": "lead-in D4.4 x 1.5 + hole D3.4",
+          "result": "too tight: displaced plastic bulged into the thread"
+        }
+      ]
+    },
+    "M3x6x5": {
+      "thread": "M3",
+      "insert_len": 6.0,
+      "knurl_d": 5.0,
+      "pilot_d": 4.2,
+      "relief": {
+        "d": 7.5,
+        "depth": 0.54,
+        "fallback_d": [
+          6.5,
+          5.9
+        ],
+        "depth_about": "3 layers of 0.18; a whole number of layers of the project",
+        "bed_face_d": 5.9,
+        "bed_face_about": "decided: on a face that lies on the bed the smallest relief keeps the bridge over it short",
+        "stops": [
+          {
+            "d": 7.5,
+            "washer": "normal",
+            "washer_od": 7.0,
+            "how": "screw and normal flat washer: the washer lands on the relief floor"
+          },
+          {
+            "d": 6.5,
+            "washer": "small",
+            "washer_od": 6.0,
+            "how": "screw and small-series flat washer"
+          },
+          {
+            "d": 5.9,
+            "washer": null,
+            "washer_od": null,
+            "how": "no stop: push the insert 0.5 below the face by eye"
+          }
+        ],
+        "tag": "D",
+        "tag_about": "D7.5 x 0.54 is an owner decision of one project (the relief holds about 17 mm3, the knurl displaces 4 to 5); the fallback diameters are decided, never measured"
+      },
+      "lead_in": {
+        "d": 4.4,
+        "depth": 1.5
+      },
+      "hole": {
+        "d": 3.6,
+        "depth": 8.5
+      },
+      "band": {
+        "d": [
+          3.5,
+          5.3
+        ],
+        "blind_only": false,
+        "min_depth": 2.0,
+        "min_depth_about": "decided: a blind hole under half the shortest insert length is no insert pocket (a magnet or peg pocket); it is asked as an unknown hole instead"
+      },
+      "tag": "D",
+      "profile": "derived",
+      "measured_on": "not measured: derived from the M3x4x5 row (same make, same knurl and pilot band, 2.0 longer; depth = length + 2.5). Print a coupon before a part depends on it",
+      "superseded": [
+        {
+          "form": "straight D4.4 x 6.0",
+          "result": "never tested for this length; it is the form that failed for M3x4x5"
+        }
+      ]
+    },
+    "M4": {
+      "thread": "M4",
+      "insert_len": 7.0,
+      "knurl_d": 6.0,
+      "pilot_d": 6.0,
+      "relief": {
+        "d": 8.5,
+        "depth": 0.54,
+        "fallback_d": [],
+        "tag": "D",
+        "tag_about": "not on record for this kind: a small-series M4 flat washer (D8) plus 0.5, by the rule of the M3 rows"
+      },
+      "lead_in": {
+        "d": 5.6,
+        "depth": 0.0
+      },
+      "hole": {
+        "d": 5.6,
+        "depth": 8.0
+      },
+      "band": {
+        "d": [
+          5.5,
+          5.7
+        ],
+        "blind_only": true,
+        "min_depth": 5.0
+      },
+      "tag": "D",
+      "profile": "recorded",
+      "measured_on": "not measured. Recorded: a D5.6 x 8 hole under a D6.1 lead-in. The lead-in, as wide as the knurl, is the loose form that failed for M3 and is not carried: the row keeps the straight hole only. Insert length and pilot band are not on record (7.0 and 6.0 here are placeholders: 8 less the 1.0 of the old depth rule, and the knurl). Measure the insert and print a coupon before a part depends on it",
+      "superseded": [
+        {
+          "form": "lead-in D6.1 + hole D5.6 x 8",
+          "result": "a lead-in as wide as the knurl: the form that let M3 inserts drop in cold; do not reuse"
+        }
+      ]
+    },
+    "M5x10x7": {
+      "thread": "M5",
+      "insert_len": 10.0,
+      "knurl_d": 7.0,
+      "pilot_d": 7.0,
+      "relief": {
+        "d": 9.0,
+        "depth": 0.54,
+        "fallback_d": [],
+        "tag": "D",
+        "tag_about": "recorded with the pocket; a normal M5 flat washer (D10) does not go into it, a small-series one (D9) has no clearance"
+      },
+      "lead_in": {
+        "d": 6.4,
+        "depth": 0.0
+      },
+      "hole": {
+        "d": 6.4,
+        "depth": 11.0
+      },
+      "band": {
+        "d": [
+          6.3,
+          6.5
+        ],
+        "blind_only": true,
+        "min_depth": 5.0
+      },
+      "tag": "D",
+      "profile": "recorded",
+      "measured_on": "not measured. Recorded: a straight D6.4 x 11 hole under a D9 x 0.54 relief, for an insert 10 long and about D7 (one sample; the pilot band was not measured, 7.0 here is a placeholder). A straight datasheet hole is the form that failed for M3x4x5: print a coupon before a part depends on it"
+    }
+  },
+  "pilots": {
+    "M3 thread-forming": {
+      "thread": "M3",
+      "d": [
+        2.4,
+        2.7
+      ],
+      "nominal_d": 2.5,
+      "tag": "D",
+      "measured_on": "decided: D2.5 for a rarely turned, lightly loaded screw; a D2.6 hole tapped in the print came out oval and stripped"
+    },
+    "M2 self-tapping": {
+      "thread": "M2",
+      "d": [
+        1.6,
+        1.8
+      ],
+      "nominal_d": 1.7,
+      "depth": 6.0,
+      "floor_min": 2.0,
+      "tag": "D",
+      "measured_on": "decided from a photo of a bought board, not measured and not printed: D1.7 x 6.0 with at least 2.0 left under it"
+    }
+  },
+  "pilots_about": "Holes for a thread formed in the plastic itself. Allowed only as a named exception (inserts.no_tapped_plastic). A wood screw has no row: add one with its measured pilot before a print depends on it."
+}

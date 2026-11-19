@@ -1,0 +1,158 @@
+{
+ "test": "no_screw_feature",
+ "case": "a flange with four D9 through holes for M8 screws, a size the screws table has no row for; no ref is modelled. The census calls each hole \"near a bearing seat size\" by its diameter alone: a guess that proves nothing",
+ "probes": {
+  "fusion_screws": {
+   "screws": [],
+   "washers": [],
+   "unreadable_washers": [],
+   "not_screws": [],
+   "n_screws": 0,
+   "n_washers": 0,
+   "passing": [],
+   "rejected": [],
+   "fastener_holes": []
+  },
+  "fusion_census": {
+   "holes": [
+    {
+     "id": "h1",
+     "anchor": {
+      "kind": "hole",
+      "axis": [
+       0,
+       0,
+       1
+      ],
+      "point": [
+       0,
+       0,
+       0
+      ]
+     },
+     "segments": [
+      {
+       "d": 9.0,
+       "len": 6.0
+      }
+     ],
+     "through": true,
+     "class": {
+      "table": "bearings",
+      "kind": "684",
+      "role": "bearing_seat",
+      "match": "band"
+     },
+     "coaxial": []
+    },
+    {
+     "id": "h2",
+     "anchor": {
+      "kind": "hole",
+      "axis": [
+       0,
+       0,
+       1
+      ],
+      "point": [
+       0,
+       0,
+       0
+      ]
+     },
+     "segments": [
+      {
+       "d": 9.0,
+       "len": 6.0
+      }
+     ],
+     "through": true,
+     "class": {
+      "table": "bearings",
+      "kind": "684",
+      "role": "bearing_seat",
+      "match": "band"
+     },
+     "coaxial": []
+    },
+    {
+     "id": "h3",
+     "anchor": {
+      "kind": "hole",
+      "axis": [
+       0,
+       0,
+       1
+      ],
+      "point": [
+       0,
+       0,
+       0
+      ]
+     },
+     "segments": [
+      {
+       "d": 9.0,
+       "len": 6.0
+      }
+     ],
+     "through": true,
+     "class": {
+      "table": "bearings",
+      "kind": "684",
+      "role": "bearing_seat",
+      "match": "band"
+     },
+     "coaxial": []
+    },
+    {
+     "id": "h4",
+     "anchor": {
+      "kind": "hole",
+      "axis": [
+       0,
+       0,
+       1
+      ],
+      "point": [
+       0,
+       0,
+       0
+      ]
+     },
+     "segments": [
+      {
+       "d": 9.0,
+       "len": 6.0
+      }
+     ],
+     "through": true,
+     "class": {
+      "table": "bearings",
+      "kind": "684",
+      "role": "bearing_seat",
+      "match": "band"
+     },
+     "coaxial": []
+    }
+   ],
+   "openings": [
+    {
+     "id": "o1",
+     "shape": "window",
+     "size": [
+      20.0,
+      12.0
+     ],
+     "through": true
+    }
+   ],
+   "partial": [],
+   "bores": [],
+   "counts": {}
+  }
+ },
+ "params": {},
+ "expect": false,
+ "says": "4 hole(s) of no table that a screw could use (D9)"
+}

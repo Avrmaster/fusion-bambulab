@@ -1,0 +1,108 @@
+{
+  "category": "assembly",
+  "params": {},
+  "rules": [
+    {
+      "id": "assembly.order",
+      "title": "What is mounted later may cover an opening",
+      "statement": "An opening or a screw head with another part in front of it is allowed only as a named exception: that part is mounted later and comes off first, and the order is written in the build notes. One question per part and rule, for all the parts that stand in front of its openings or of its screw heads; it is asked again when another part joins them.",
+      "why": "Heads ended up under parts fitted later and nobody had written the removal order.",
+      "params": [],
+      "check": null,
+      "level": "attest",
+      "stage": "design",
+      "fix_order": [],
+      "attest": {
+        "question": "These bodies stand in front of openings or screw heads of this part (the finding says how far out each one is and what the nearest cover): {by}. Is each of them mounted after what it covers, and does it come off first?",
+        "evidence": [
+          "label",
+          "waiver"
+        ],
+        "per": "finding",
+        "labels": [
+          "every cover named is mounted later and comes off first: the order is in the build notes"
+        ]
+      },
+      "x_see": [
+        "assembly.written_order"
+      ]
+    },
+    {
+      "id": "assembly.written_order",
+      "title": "Every joint has a written assembly order",
+      "statement": "Every joint has a written assembly order. Each part slides onto an assembled unit along one axis. Each screw is driven at a step where nothing covers it. The largest diameter that must pass each opening is checked. The order is verified step by step, not only in the assembled pose, and the build book follows in the same pass.",
+      "why": "A bearing covered the screws of the gearbox behind it while the cap screws came from the gearbox side: the joint could not be assembled as drawn.",
+      "params": [],
+      "check": null,
+      "level": "advice",
+      "stage": "design",
+      "fix_order": [],
+      "attest": null,
+      "note": "Covered openings are found by access.hole_covered and access.screw_path and asked through assembly.order, one question per part for all its covers.",
+      "x_see": [
+        "assembly.order",
+        "motors.insert_as_unit"
+      ]
+    },
+    {
+      "id": "assembly.disassembly",
+      "title": "Every tight fit has a designed way apart",
+      "statement": "Every press fit or snug fit has a designed way apart: pry slots or jacking threads. A keyed joint without screws is safe only while its axial play is smaller than the key engagement.",
+      "why": "A built gearbox could not be opened easily.",
+      "params": [],
+      "check": null,
+      "level": "advice",
+      "stage": "design",
+      "fix_order": [],
+      "attest": null
+    },
+    {
+      "id": "assembly.modular_mounts",
+      "title": "Load joints are one piece, small mounts bolt on",
+      "statement": "A load-carrying joint stays one solid piece with few fasteners. A small mount (a switch stand, a cable holder, a clip) is a separate bolt-on part on existing screws, located by printed faces; the screw gets longer by the mount. A big printed part is never cut or reprinted for a small mount. Own inserts only where no existing screw can be reached. A sensor that may change sits on a plate that can be swapped.",
+      "why": "A switch tower was cast into a large printed base and had to be cut off by hand. A cable holder was first added to the model of that printed base.",
+      "params": [],
+      "check": null,
+      "level": "advice",
+      "stage": "design",
+      "fix_order": [],
+      "attest": null,
+      "note": "\"Few inserts, one piece\" and \"modular bolt-on mounts\" both stand; the condition is whether the part carries the load of the joint.",
+      "x_see": [
+        "printed.interface_change"
+      ]
+    },
+    {
+      "id": "assembly.hardware_owner",
+      "title": "A hardware reference belongs to one part",
+      "statement": "A hardware reference belongs to one part. An insert or a dowel belongs to the part it is pressed into. A screw belongs to the part under its head; the screw of a bearing clamp belongs to the part its shank screws into. A washer or a shim belongs to the printed part it sits on.",
+      "why": "No lost print is on record. Without one owner per reference a moved hole leaves its hardware behind, and a purchase list counts it twice or not at all.",
+      "params": [],
+      "check": null,
+      "level": "advice",
+      "stage": "design",
+      "fix_order": [],
+      "attest": null,
+      "x_see": [
+        "hardware.refs_present"
+      ]
+    },
+    {
+      "id": "assembly.build_book",
+      "title": "The build book is generated from the model",
+      "statement": "The assembly book is generated from the model and its reference bodies: one action per step, every fastener of the step visible, inserts listed per part and face before any screw step, real insertion directions, which bearing ring to press. It is generated again after every hardware change.",
+      "why": "Renders of the book still showed box motors; the book was not regenerated after three hardware changes.",
+      "params": [],
+      "check": null,
+      "level": "advice",
+      "stage": "design",
+      "fix_order": [],
+      "attest": null,
+      "x_see": [
+        "process.finish_routine",
+        "hardware.refs_present",
+        "assembly.hardware_owner"
+      ]
+    }
+  ]
+}

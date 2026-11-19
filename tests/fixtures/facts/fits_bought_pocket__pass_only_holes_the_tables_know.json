@@ -1,0 +1,89 @@
+{
+ "judge": "fits_bought_pocket",
+ "case": "an M3 clearance hole with its screw and a through hole of no table with nothing on its axis: neither is a pocket for a bought part",
+ "facts": {
+  "holes": [
+   {
+    "id": "h1",
+    "anchor": {
+     "kind": "hole",
+     "axis": [
+      0,
+      0,
+      1
+     ],
+     "point": [
+      10.0,
+      0.0,
+      6.0
+     ]
+    },
+    "segments": [
+     {
+      "d": 3.4,
+      "len": 6.0
+     }
+    ],
+    "depth": 6.0,
+    "through": true,
+    "floor": null,
+    "exit": null,
+    "class": {
+     "table": "screws",
+     "kind": "M3",
+     "role": "clearance",
+     "match": "exact"
+    },
+    "coaxial": [
+     {
+      "name": "ref screw M3x10",
+      "kind": "hardware",
+      "part": null
+     }
+    ]
+   },
+   {
+    "id": "h2",
+    "anchor": {
+     "kind": "hole",
+     "axis": [
+      0,
+      0,
+      1
+     ],
+     "point": [
+      30.0,
+      4.0,
+      6.0
+     ]
+    },
+    "segments": [
+     {
+      "d": 12.4,
+      "len": 6.0
+     }
+    ],
+    "depth": 6.0,
+    "through": true,
+    "floor": null,
+    "exit": null,
+    "class": null,
+    "coaxial": []
+   }
+  ],
+  "openings": [],
+  "counts": {}
+ },
+ "params": {
+  "sensors.magnet_d": 4.0,
+  "sensors.magnet_h": 1.6,
+  "sensors.magnet_pocket_d": 4.2,
+  "sensors.magnet_pocket_depth": 1.7,
+  "sensors.magnet_pocket_d#tag": "D",
+  "sensors.magnet_pocket_depth#tag": "D"
+ },
+ "ctx": {
+  "part": "demo/lever"
+ },
+ "expect": []
+}

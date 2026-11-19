@@ -1,0 +1,80 @@
+{
+ "judge": "access_hole_covered",
+ "case": "a window with a motor body through it: the probe found the motor in the opening itself, so it is what the window is for",
+ "facts": {
+  "openings": [
+   {
+    "feature": "o1",
+    "of": "window",
+    "anchor": {
+     "kind": "face",
+     "axis": [
+      1,
+      0,
+      0
+     ],
+     "point": [
+      20.0,
+      0.0,
+      30.0
+     ]
+    },
+    "end": "mouth",
+    "paths": {
+     "own": {
+      "r": 14.0,
+      "reach": 60.0,
+      "free": 0.05,
+      "hits": [
+       {
+        "name": "ref motor 42 / body",
+        "kind": "bought",
+        "part": null,
+        "at": 0.05,
+        "share": 0.9,
+        "approx": false,
+        "expected": false
+       },
+       {
+        "name": "ref motor 42 / cap",
+        "kind": "bought",
+        "part": null,
+        "at": 49.3,
+        "share": 0.9,
+        "approx": false,
+        "expected": false
+       }
+      ]
+     }
+    },
+    "inside": [
+     {
+      "name": "ref motor 42 / body",
+      "kind": "bought",
+      "approx": false
+     }
+    ],
+    "section": "inscribed circle"
+   }
+  ],
+  "closed": []
+ },
+ "params": {
+  "access.reach": 60.0,
+  "access.min_blocked_share": 0.02,
+  "access.seal_gap": 0.2,
+  "access.cap_max": 2.0,
+  "sensors.magnet_pocket_d": 4.2,
+  "sensors.magnet_pocket_depth": 2.1
+ },
+ "expect": [],
+ "ctx": {
+  "part": "demo/bracket",
+  "census": {
+   "holes": [],
+   "openings": [],
+   "partial": [],
+   "counts": {}
+  }
+ }
+}

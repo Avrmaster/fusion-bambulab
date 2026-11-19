@@ -1,0 +1,174 @@
+{
+ "judge": "access_hole_covered",
+ "case": "a clearance hole with a bought body on its axis; the facts come from a probe that knew screws by name only and say nothing about a screw: not judged, collect again",
+ "facts": {
+  "openings": [
+   {
+    "feature": "h5",
+    "of": "hole",
+    "anchor": {
+     "kind": "hole",
+     "axis": [
+      0,
+      0,
+      1
+     ],
+     "point": [
+      30.0,
+      10.0,
+      10.0
+     ]
+    },
+    "end": "mouth",
+    "paths": {
+     "own": {
+      "r": 1.7,
+      "reach": 60.0,
+      "free": 40.0,
+      "hits": [
+       {
+        "name": "ref fasteners / M3x25 shank (3)",
+        "kind": "bought",
+        "part": null,
+        "at": 0.05,
+        "share": 0.9,
+        "approx": false,
+        "expected": true
+       },
+       {
+        "name": "Lid",
+        "kind": "printed",
+        "part": "demo/lid",
+        "at": 40.0,
+        "share": 1.0,
+        "approx": false,
+        "expected": false
+       }
+      ]
+     }
+    }
+   },
+   {
+    "feature": "h5",
+    "of": "hole",
+    "anchor": {
+     "kind": "hole",
+     "axis": [
+      0,
+      0,
+      -1
+     ],
+     "point": [
+      30.0,
+      10.0,
+      0.0
+     ]
+    },
+    "end": "exit",
+    "paths": {
+     "own": {
+      "r": 1.7,
+      "reach": 60.0,
+      "free": 9.0,
+      "hits": [
+       {
+        "name": "ref fasteners / M3x25 shank (3)",
+        "kind": "bought",
+        "part": null,
+        "at": 0.05,
+        "share": 0.9,
+        "approx": false,
+        "expected": true
+       },
+       {
+        "name": "ref motor 42 / stator",
+        "kind": "bought",
+        "part": null,
+        "at": 9.0,
+        "share": 1.0,
+        "approx": false,
+        "expected": false
+       }
+      ]
+     }
+    }
+   }
+  ],
+  "closed": []
+ },
+ "params": {
+  "access.reach": 60.0,
+  "access.min_blocked_share": 0.02,
+  "access.seal_gap": 0.2,
+  "access.cap_max": 2.0,
+  "sensors.magnet_pocket_d": 4.2,
+  "sensors.magnet_pocket_depth": 2.1
+ },
+ "expect": [
+  {
+   "verdict": "NOT_RUN",
+   "ask": null
+  }
+ ],
+ "ctx": {
+  "part": "demo/bracket",
+  "census": {
+   "holes": [
+    {
+     "id": "h5",
+     "anchor": {
+      "kind": "hole",
+      "axis": [
+       0,
+       0,
+       1
+      ],
+      "point": [
+       30.0,
+       10.0,
+       10.0
+      ]
+     },
+     "segments": [
+      {
+       "d": 3.4,
+       "len": 10.0
+      }
+     ],
+     "depth": 10.0,
+     "through": true,
+     "floor": null,
+     "exit": {
+      "kind": "hole",
+      "axis": [
+       0,
+       0,
+       -1
+      ],
+      "point": [
+       30.0,
+       10.0,
+       0.0
+      ]
+     },
+     "class": null,
+     "coaxial": [
+      {
+       "name": "ref fasteners / M3x25 shank (3)",
+       "kind": "bought",
+       "part": null
+      },
+      {
+       "name": "Base",
+       "kind": "printed",
+       "part": null
+      }
+     ]
+    }
+   ],
+   "openings": [],
+   "partial": [],
+   "counts": {}
+  }
+ }
+}

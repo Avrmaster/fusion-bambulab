@@ -1,0 +1,77 @@
+{
+ "test": "no_bearing_here",
+ "case": "a bracket: the bearing unit lists nothing, the census holds a screw hole with its screw, and every body within the margin is a fastener by its name",
+ "probes": {
+  "fusion_bearings": {
+   "bearings": [],
+   "seats_without_bearing": [],
+   "near_bearings": [],
+   "not_bearings": [],
+   "rejected": []
+  },
+  "fusion_census": {
+   "holes": [
+    {
+     "id": "h1",
+     "anchor": {
+      "kind": "hole",
+      "axis": [
+       0,
+       0,
+       1
+      ],
+      "point": [
+       0,
+       0,
+       0
+      ]
+     },
+     "segments": [
+      {
+       "d": 3.4,
+       "len": 6.0
+      }
+     ],
+     "through": true,
+     "class": {
+      "table": "screws",
+      "kind": "M3",
+      "role": "clearance",
+      "match": "exact"
+     },
+     "coaxial": [
+      {
+       "kind": "hardware",
+       "name": "ref hardware / M3x12 cap (1)",
+       "part": null
+      }
+     ]
+    }
+   ],
+   "openings": [],
+   "partial": [],
+   "bores": [],
+   "counts": {}
+  },
+  "fusion_near": {
+   "margin": 10.0,
+   "bodies": [
+    {
+     "kind": "hardware",
+     "gap": 0.0,
+     "path": "ref hardware",
+     "name": "ref hardware / M3x12 cap (1)"
+    },
+    {
+     "kind": "hardware",
+     "gap": 0.0,
+     "path": "ref hardware",
+     "name": "ref hardware / insert M3x4x5 (2)"
+    }
+   ]
+  }
+ },
+ "params": {},
+ "expect": true,
+ "says": "every body that near is a fastener by its name"
+}

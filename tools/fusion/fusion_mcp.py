@@ -11,7 +11,7 @@ URL = os.environ.get('FUSION_MCP_URL', 'http://127.0.0.1:27182/mcp')
 def post(body, sid=None, timeout=600):
     h = {'Content-Type': 'application/json', 'Accept': 'application/json, text/event-stream'}
     if sid: h['Mcp-Session-Id'] = sid
-    r = urllib.request.urlopen(urllib.request.Request(URL, json.dumps(body).encode(), h), timeout=timeout)
+    r = urllib.request.build_opener(urllib.request.ProxyHandler({})).open(urllib.request.Request(URL, json.dumps(body).encode(), h), timeout=timeout)   # Fusion is local: never through http_proxy
     raw = r.read().decode('utf-8', 'replace'); sid = r.headers.get('Mcp-Session-Id') or sid
     if 'event-stream' in (r.headers.get('Content-Type') or ''):
         data = [l[5:].strip() for l in raw.splitlines() if l.startswith('data:')]; raw = data[-1] if data else ''

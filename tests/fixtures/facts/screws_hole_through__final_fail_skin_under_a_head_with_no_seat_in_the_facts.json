@@ -1,0 +1,53 @@
+{
+ "judge": "screws_hole_through",
+ "case": "the same thin skin right under the head of a screw whose seat the facts do not hold (the head sits on another part). No seat row is no proof of a counterbore: the hole is closed there, FAIL",
+ "incident": "two screws from below were failed as \"hole closed\" for the one-layer bridge that lets their counterbores print without support",
+ "facts": {
+  "screws": [
+   {
+    "ref": "ref hardware / M3x10 button (1)",
+    "size": "M3",
+    "length": 12.0,
+    "head": "button",
+    "anchor": {
+     "kind": "screw",
+     "axis": [
+      0,
+      0,
+      -1
+     ],
+     "point": [
+      10.0,
+      20.0,
+      2.0
+     ]
+    },
+    "role": "head",
+    "under_head": 6.0,
+    "seat": null,
+    "engagement": null,
+    "into": null,
+    "tip_room": null,
+    "air_gap": 0.0,
+    "in_solid": {
+     "len": 0.28,
+     "name": "Base",
+     "part": "demo/base",
+     "at": 0.0
+    },
+    "washer": null
+   }
+  ],
+  "washers": []
+ },
+ "params": {
+  "screws.hole_overcut": 1.0,
+  "screws.solid_shank_max": 0.1,
+  "overhang.bridge_step": 0.3
+ },
+ "expect": [
+  {
+   "verdict": "FAIL"
+  }
+ ]
+}

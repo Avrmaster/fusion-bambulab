@@ -1,0 +1,382 @@
+{
+  "category": "print",
+  "params": {
+    "print.first_layer_growth": {
+      "default": 0.18,
+      "unit": "mm",
+      "looser": null,
+      "measured_on": "one printer: measured on printed bed faces",
+      "class": "geometry",
+      "formula": null,
+      "tag": "M",
+      "description": "how far the first layer spreads past the modelled outline"
+    },
+    "print.bed_face_lead_in": {
+      "default": 0.3,
+      "unit": "mm",
+      "looser": "lower",
+      "measured_on": "decided",
+      "class": "geometry",
+      "formula": null,
+      "description": "lead-in or chamfer on a bed-face edge that mates"
+    },
+    "print.z_clearance": {
+      "default": 0.1,
+      "unit": "mm",
+      "looser": "lower",
+      "measured_on": "decided, not printed",
+      "class": "limit",
+      "formula": null,
+      "description": "least room over a bought part along the print axis, after the depth is rounded down to whole layers"
+    },
+    "print.z_layer_tol": {
+      "default": 0.02,
+      "unit": "mm",
+      "looser": "higher",
+      "measured_on": "decided: under a tenth of the thinnest layer in use",
+      "class": "limit",
+      "formula": null,
+      "description": "how far a height may be from a whole number of layers and still count as on a layer"
+    }
+  },
+  "rules": [
+    {
+      "id": "print.bed_face",
+      "title": "The bed face is chosen",
+      "statement": "The face on the bed and what faces down are named before export: ramps, bridge steps, pads, and every hole or tunnel that does not run along the print axis.",
+      "why": "A seat printed on its side sagged and the bearing did not go on. Holes that lay flat were closed by supports.",
+      "params": [],
+      "check": null,
+      "level": "attest",
+      "stage": "export",
+      "fix_order": [],
+      "attest": {
+        "question": "Which face of this part is on the bed, and what faces down (ramps, bridge steps, pads, holes and tunnels off the print axis)?",
+        "evidence": [
+          "label",
+          "shot"
+        ],
+        "per": "part",
+        "labels": [
+          "bed face is the modelled bottom; nothing faces down unsupported",
+          "bed face chosen in the project; the overhangs were looked at in the slice",
+          "bed face named in the build table; what faces down is listed in the report, a look at the sliced plate is owed after placement"
+        ]
+      },
+      "x_see": [
+        "print.orientation_first",
+        "print.overhang_angle",
+        "print.closed_channels",
+        "access.hole_supports"
+      ],
+      "note": "Asked at export, once per changed part. A new geometry is in no .3mf project at that moment: take the second label only when this geometry was sliced. The third label is the honest one before placement: the report lists it for the owner and the slice is looked at before the print."
+    },
+    {
+      "id": "print.z_layers",
+      "title": "A depth for a bought part is a whole number of layers",
+      "statement": "A depth along the print axis that a bought part must fit (a pocket depth) is a whole number of layers of {target.layer_height}, and its two faces lie where a layer ends: the first layer is {target.initial_layer_print_height} high, every later one {target.layer_height}, counted from the bed face of the part in its print orientation. Rounded down to whole layers it is still the height of the bought part plus {print.z_clearance}. A height within {print.z_layer_tol} of a layer counts as on it.",
+      "why": "A 1.7 mm pocket for a 1.59 mm magnet was printed in 0.3 mm layers. 1.7 is not a whole number of layers: it prints 1.5 or 1.8, and at 1.5 the magnet stands proud.",
+      "params": [
+        "target.layer_height",
+        "target.initial_layer_print_height",
+        "print.z_clearance",
+        "print.z_layer_tol",
+        "sensors.magnet_pocket_d",
+        "sensors.magnet_pocket_depth",
+        "sensors.magnet_h",
+        "inserts.ref_pattern",
+        "screws.ref_pattern"
+      ],
+      "check": {
+        "probe": "fusion_census",
+        "judge": "print_z_layers",
+        "needs": "fusion"
+      },
+      "level": "block",
+      "stage": "design",
+      "fix_order": [
+        "Make the depth the next whole number of layers above the bought part plus the clearance.",
+        "Put both faces of the pocket on a layer: move the floor, or the face the pocket opens in.",
+        "Or turn the part so the depth lies in the print plane, where a layer does not round it."
+      ],
+      "attest": null,
+      "note": "Built for pockets of the pockets table whose axis is the print axis. The bed face comes from the build table of a registered .3mf project and the pose of the part in the census; when neither says it, the rule is NOT_RUN. The layers are counted from the first layer height of the declared target; a target that does not say it leaves the rule NOT_RUN. A height-range modifier or a variable layer profile on single objects is not read: project.settings_match says NOT_RUN for a project that holds one."
+    },
+    {
+      "id": "print.orientation_first",
+      "title": "Orientation is decided first",
+      "statement": "Orientation is decided first: one flat bed face, nothing below it or hovering over it, every lobe reaches the bed, small features rise from the bed side. Then the load direction, then the shape. The orientation of an exported part changes only when the owner asks, and it is recorded in the build table.",
+      "why": "The foot of a mount floated 2.7 mm above the bed. Legs that were turned without being asked lost their strong direction. A cam started 1 mm above the bed.",
+      "params": [],
+      "check": null,
+      "level": "advice",
+      "stage": "design",
+      "fix_order": [],
+      "attest": null,
+      "note": "Asked through print.bed_face.",
+      "x_see": [
+        "print.bed_face"
+      ]
+    },
+    {
+      "id": "print.accurate_faces",
+      "title": "Accurate faces print on the bed or face up",
+      "statement": "A face that must be accurate prints on the bed or faces up. Fit holes, insert pockets and seats print with their axis vertical. A bed-face edge that mates gets a lead-in of {print.bed_face_lead_in}: the first layer spreads by about {print.first_layer_growth}.",
+      "why": "The locating pegs of a small cradle lay horizontal over air in the print orientation.",
+      "params": [
+        "print.bed_face_lead_in",
+        "print.first_layer_growth"
+      ],
+      "check": null,
+      "level": "advice",
+      "stage": "design",
+      "fix_order": [],
+      "attest": null
+    },
+    {
+      "id": "print.warp_flat_plates",
+      "title": "A large flat plate in a shrinking filament is ribbed",
+      "statement": "A large flat plate in a shrinking filament is ribbed over a thin floor and has a round outline. Against corner lift, cut the shrink of the upper layers (part fan, fewer walls, lower infill), not the brim.",
+      "why": "A flat plate of about 200 cm3 in a filled nylon warped 1.5 to 3 mm and was printed again as a ribbed round plate. A corner of another part lifted at high infill.",
+      "params": [],
+      "check": null,
+      "level": "advice",
+      "stage": "design",
+      "fix_order": [],
+      "attest": null
+    },
+    {
+      "id": "print.settings_by_role",
+      "title": "Print settings are a table that is compared with the project",
+      "statement": "Walls and infill follow the role of the part. Each decision is one row per part in a table that is compared with the built project on every build. For bending, add wall loops before infill. Shared settings are project-global; a per-object setting is an exception, keyed by the part name.",
+      "why": "A part printed for a week at the group default of 40 % infill while its decision said 15 %: more shrink and a lifted corner.",
+      "params": [],
+      "check": null,
+      "level": "advice",
+      "stage": "project",
+      "fix_order": [],
+      "attest": null
+    },
+    {
+      "id": "print.by_object",
+      "title": "Printing by object needs low parts that stand apart",
+      "statement": "Printing by object needs every part lower than the printer's rod clearance and the parts apart by its head clearance; both numbers are in the slicer's printer profile. One tiny part alone slows every layer to the minimum layer time: small parts go several to a row.",
+      "why": "No lost print is on record. The limits were learned while small parts were set up on one printer.",
+      "params": [],
+      "check": null,
+      "level": "advice",
+      "stage": "project",
+      "fix_order": [],
+      "attest": null
+    },
+    {
+      "id": "print.even_layer_times",
+      "title": "Even layer times on visible PLA walls",
+      "statement": "On PLA, layers that take very different times show as bands. Start floors on the bed, avoid a floor part-way up a visible wall, or raise the slow-down layer time. Not needed for PETG or a filled nylon.",
+      "why": "Bands showed on a printed PLA cube.",
+      "params": [],
+      "check": null,
+      "level": "advice",
+      "stage": "project",
+      "fix_order": [],
+      "attest": null
+    },
+    {
+      "id": "print.nylon_process",
+      "title": "A filled nylon needs its own process",
+      "statement": "A filled nylon needs dry filament, a purge before the part, a low part fan, a brim and a slow bed cool-down.",
+      "why": "Filled-nylon parts lifted at the edges while the brim stayed down.",
+      "params": [],
+      "check": null,
+      "level": "advice",
+      "stage": "project",
+      "fix_order": [],
+      "attest": null,
+      "x_see": [
+        "print.warp_flat_plates"
+      ]
+    },
+    {
+      "id": "print.first_layer_relief",
+      "title": "Fine relief on the first layer is a net",
+      "statement": "Thin raised lines printed face down are joined into a net (a union with a turned copy of the pattern), so that no line stands alone on the bed.",
+      "why": "Single lines peeled off the bed one by one.",
+      "params": [],
+      "check": null,
+      "level": "advice",
+      "stage": "design",
+      "fix_order": [],
+      "attest": null
+    },
+    {
+      "id": "print.overhang_angle",
+      "title": "No face hangs flatter than the overhang angle",
+      "statement": "No down-facing face is flatter than {overhang.max_angle} from vertical and nothing hangs: use a planar chamfer, a roof or a cone. The edge where two slopes meet is shallower than either face: check edges, not only faces. A groove that ends under a flange gets a roof that closes from every side. Where a round part meets a sharp one above it, both get the same corner radius.",
+      "why": "A cradle designed as support-free still got a support tree: the ridge between two 45 deg faces lay at about 11 deg. The owner found it in the slicer.",
+      "params": [
+        "overhang.max_angle"
+      ],
+      "check": null,
+      "level": "advice",
+      "stage": "design",
+      "fix_order": [
+        "Turn the face into a planar 45 deg chamfer or a cone.",
+        "Give the two parts the same corner radius.",
+        "Look at the edge between two slopes in the slice."
+      ],
+      "attest": null,
+      "note": "Asked through print.bed_face. The slicer is the judge, not the face angles: print.slice_support_growth (deferred).",
+      "x_see": [
+        "print.bed_face",
+        "print.slice_support_growth"
+      ]
+    },
+    {
+      "id": "print.bridges",
+      "title": "Bridges are short, and a bed-face counterbore is checked in the slice",
+      "statement": "A bridge spans at most {overhang.max_bridge}. A counterbore step that faces the bed gets bridge steps of {overhang.bridge_step}. With small-overhang supports on, the slicer may still support it: look at the slice, or keep counterbores off the bed face.",
+      "why": "Head pockets on a bed face with bridge layers still got support trees: the support line of the plate grew by half and the pockets were removed.",
+      "params": [
+        "overhang.max_bridge",
+        "overhang.bridge_step"
+      ],
+      "check": null,
+      "level": "advice",
+      "stage": "design",
+      "fix_order": [],
+      "attest": null,
+      "note": "Two practices met here: bridge layers under bed-face counterbores, and a slice that supported them anyway. The rule keeps the bridge layers and makes the slice the judge."
+    },
+    {
+      "id": "print.closed_channels",
+      "title": "No support inside a channel it cannot leave",
+      "statement": "Supports cannot be removed from a small closed channel. A tie tunnel or a window that lies flat gets a 45 deg gable roof. A round hole that lies flat gets a support blocker that reaches {overhang.blocker_past_roof} past its roof, or extra clearance. The result is proved in the sliced G-code. Fastener and fit holes run along the print axis where possible.",
+      "why": "Three clamp holes of a printed post were closed by supports and had to be drilled. Supports stuck in a tension tunnel twice and in the tie tunnels of a box. A cable holder was unusable.",
+      "params": [
+        "overhang.blocker_past_roof"
+      ],
+      "check": null,
+      "level": "advice",
+      "stage": "design",
+      "fix_order": [
+        "Turn the hole along the print axis.",
+        "Give the channel a 45 deg roof.",
+        "Add a support blocker that reaches past the roof, then slice the plate and look inside the hole."
+      ],
+      "attest": null,
+      "note": "Asked through print.bed_face. The check on the slice is deferred: access.hole_supports.",
+      "x_see": [
+        "print.bed_face",
+        "access.hole_supports",
+        "project.blockers_follow_holes"
+      ]
+    },
+    {
+      "id": "print.slice_support_growth",
+      "title": "Supports are judged by the slicer, against a baseline per part",
+      "statement": "Supports are judged by the slicer. Every changed plate is sliced and the support of each part is compared with its recorded baseline. It fails when the support line grew by more than a share of {overhang.support_growth_share} of its baseline or by more than {overhang.support_growth_abs}, when the support ends more than {overhang.support_top_growth} higher, or when there is any support where the baseline is zero. The baseline is keyed by part, not by plate number. Recording never overwrites a baseline that has just failed. Raising a baseline is the decision of the owner, shown with the reason and the grams. A new part declares the support it may need.",
+      "why": "A large pulley passed the geometry check with no overhang and the slicer supported its whole rim: the support line grew to about twenty times its baseline and the owner saw it in the slicer. A baseline keyed by plate number went off by one when a plate left the project.",
+      "params": [
+        "overhang.support_growth_share",
+        "overhang.support_growth_abs",
+        "overhang.support_top_growth"
+      ],
+      "check": null,
+      "level": "attest",
+      "stage": "project",
+      "fix_order": [],
+      "attest": {
+        "question": "Sliced plate of this part: did its support grow against the recorded baseline?",
+        "evidence": [
+          "label",
+          "shot",
+          "waiver"
+        ],
+        "per": "part",
+        "labels": [
+          "sliced: support within the baseline",
+          "sliced: no support at all",
+          "new part: the support it needs is in the report for the owner"
+        ]
+      },
+      "deferred": true,
+      "note": "Deferred: becomes a check on the sliced plate. An object that is switched off is not sliced: project.object_not_printable.",
+      "x_see": [
+        "project.object_not_printable",
+        "process.owner_sets_limits",
+        "process.keys_by_feature"
+      ]
+    },
+    {
+      "id": "print.printing_parts_keep_shape",
+      "title": "A part that already prints keeps its shape",
+      "statement": "A part that already prints is not redesigned for an overhang: switch the slicer supports on (tree, small overhangs kept). No teardrop holes unless asked. New designs are shaped for their orientation.",
+      "why": "Teardrop holes were added to a printing part after the owner had asked for supports.",
+      "params": [],
+      "check": null,
+      "level": "advice",
+      "stage": "export",
+      "fix_order": [],
+      "attest": null
+    },
+    {
+      "id": "print.edges",
+      "title": "Chamfer on the bed, round about the print axis",
+      "statement": "Edges on the bed are chamfered, never filleted. A horizontal edge that faces down is square or 45 deg. Rounding is allowed about the print axis: outer vertical corners and top edges may be round, and on tall parts in a shrinking filament they are, against warp.",
+      "why": "\"No rounded edges on big parts\" and \"round every part\" stood in one rulebook. A fillet on a bed edge prints as an overhang; a round corner in plan does not.",
+      "params": [],
+      "check": null,
+      "level": "advice",
+      "stage": "design",
+      "fix_order": [],
+      "attest": null,
+      "note": "Two accepted rules met here; this is one rule with the condition under which each holds."
+    },
+    {
+      "id": "print.added_material",
+      "title": "Added material follows the print orientation",
+      "statement": "Before material is added to a part, its bed face is looked up in the build table. A pad end that faces the bed gets its 45 deg ramp. A head seat that opens on the bed gets its bridge steps. A boss under a ledge takes the plane of the ledge's own underside.",
+      "why": "A cone about another axis under a ledge left 0.3 mm slivers and a support tree.",
+      "params": [],
+      "check": null,
+      "level": "advice",
+      "stage": "design",
+      "fix_order": [],
+      "attest": null,
+      "x_see": [
+        "print.bed_face",
+        "walls.thin_faces"
+      ]
+    },
+    {
+      "id": "print.lofts",
+      "title": "A loft is allowed where it stays printable and cuts no pocket",
+      "statement": "A loft or a taper gives one smooth surface under a rounded outline. It is allowed while its steepest line, usually at a corner, stays within {overhang.max_angle} from vertical and it crosses no insert pocket, seat or screw hole. Where a twisted face would cut into a pocket or a seat, use planar chamfers.",
+      "why": "Twisted loft faces cut into insert pockets. A pyramid of planar faces under a square corner printed worse at its ridge than a loft would have.",
+      "params": [
+        "overhang.max_angle"
+      ],
+      "check": null,
+      "level": "advice",
+      "stage": "design",
+      "fix_order": [],
+      "attest": null,
+      "note": "One source said \"no lofts\", another recommended them; this rule keeps both sides with the condition."
+    },
+    {
+      "id": "print.split_when_needed",
+      "title": "A part that cannot print in one piece is split",
+      "statement": "A part that cannot print without support, or that carries load in three directions, is split and bolted with screws and dowels.",
+      "why": "A frame printed in one piece stood upside down on the bed with its legs in tension across the layers; it was split.",
+      "params": [],
+      "check": null,
+      "level": "advice",
+      "stage": "design",
+      "fix_order": [],
+      "attest": null,
+      "x_see": [
+        "strength.layers_along_load"
+      ]
+    }
+  ]
+}

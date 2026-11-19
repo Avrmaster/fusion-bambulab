@@ -1,0 +1,141 @@
+{
+  "category": "fusion",
+  "params": {
+    "fusion.bought_hint_same_bodies": {
+      "default": 4,
+      "unit": "count",
+      "looser": null,
+      "measured_on": "decided, nobody measured it: rollers, balls and pins come as many equal bodies in one component",
+      "class": "geometry",
+      "formula": null,
+      "tag": "D",
+      "description": "bodies taken as printed parts that sit in one component and have the same volume, area and face count, from this many on, are named by the scan as probably bought"
+    }
+  },
+  "rules": [
+    {
+      "id": "fusion.bought_parts_named",
+      "title": "Bought parts are told from printed parts by their names",
+      "statement": "Every solid body is a printed part unless a name on its path matches a not-printed pattern of the project. A bought part without such a name is judged as a printed part: its holes, walls and seats give findings nobody can act on. The scan names what looks bought and never leaves it out by itself: a new body with at most {process.bought_hint_faces} faces (a plain cylinder, a washer, a tube), and {fusion.bought_hint_same_bodies} or more equal bodies in one component. The owner adds the pattern. A component saved in another document is listed with the name of that document: when that document is registered too, its parts are judged there and not a second time.",
+      "why": "On the first scan of a whole assembly the bearings, rollers, steel pins and the bodies of a motor model inside a linked document came out as printed parts, 157 in place of 40, until six name patterns were added by hand.",
+      "params": [
+        "process.bought_hint_faces",
+        "fusion.bought_hint_same_bodies"
+      ],
+      "check": null,
+      "level": "advice",
+      "stage": "design",
+      "fix_order": [
+        "Read the list the scan prints after a first scan and after a new linked document.",
+        "Add a not-printed pattern for each bought family (the owner's file), then scan again.",
+        "Give a printed part that is a plain box or ring its place: it stays a part, the hint is only a hint."
+      ],
+      "attest": null
+    },
+    {
+      "id": "fusion.light_touch",
+      "title": "Fusion is one shared process: short calls",
+      "statement": "Fusion is one shared process. Scripts are short, one component per call, each under the call budget. Never loop meshing or interference over the whole model. Compare bounding boxes before a sweep. When Fusion stops answering, stop calling it. Ask the owner to save before heavy work.",
+      "why": "A sweep over one joint hung Fusion for more than 20 minutes; a mesh calculation blocked it as long.",
+      "params": [],
+      "check": null,
+      "level": "advice",
+      "stage": "design",
+      "fix_order": [],
+      "attest": null
+    },
+    {
+      "id": "fusion.script_form",
+      "title": "Every script has one form",
+      "statement": "Every script does its work inside run(), can run twice with the same result, finds its document by name (never the active document), writes its result to a file instead of printing it, is read-only unless it must write, works in mm at its edges, and is committed.",
+      "why": "A cut vanished silently: a print on a broken output stream rolled the edit back. Fourteen components were built in the wrong document. An empty script ran the run() left by the one before.",
+      "params": [],
+      "check": null,
+      "level": "advice",
+      "stage": "design",
+      "fix_order": [],
+      "attest": null,
+      "note": "The units of the gate follow this form by construction; a project script has to follow it by hand."
+    },
+    {
+      "id": "fusion.timeline",
+      "title": "Append for a small change, rebuild when patches pile up",
+      "statement": "A small change appends features at the end: no roll-back, no edit of an old feature, no mass delete. Cuts and joins name their bodies. Solids first, cuts last. No body is deleted inside a base-feature edit. When patches pile up on one body, rebuild it cleanly and verify it again.",
+      "why": "Deleting inside a base-feature edit dropped the design to direct mode. One part carried about 80 patch features, and the owner asked why it had not been rebuilt properly.",
+      "params": [],
+      "check": null,
+      "level": "advice",
+      "stage": "design",
+      "fix_order": [],
+      "attest": null,
+      "note": "\"Append only\" and \"rebuild it properly\" were both asked for; the rule gives the boundary between them."
+    },
+    {
+      "id": "fusion.frames",
+      "title": "Geometry is built in the frame it is used in",
+      "statement": "Geometry built in document coordinates is transformed into the component's frame before a boolean. Occurrences are picked by their full path. A copy is verified in a separate call by its bounding box in the document. A sub-assembly emptied by moving its components out is never deleted.",
+      "why": "A tool body built in document coordinates landed 10 mm high on two parts. Copies meant for one joint landed on another because their transform was ignored.",
+      "params": [],
+      "check": null,
+      "level": "advice",
+      "stage": "design",
+      "fix_order": [],
+      "attest": null
+    },
+    {
+      "id": "fusion.exact_geometry",
+      "title": "Tools overlap, points are exact",
+      "statement": "A tool body overlaps its target and never shares a surface with it. Sketch points are computed exactly. A reference face is read from the body, not from a coarse sample. No face delete on a zero-area seam. No closed fitted spline with hundreds of points.",
+      "why": "A face delete ate 45 cm3 of a part. Fills built from a sampled face stood 0.3 mm proud. A closed spline hung Fusion twice.",
+      "params": [],
+      "check": null,
+      "level": "advice",
+      "stage": "design",
+      "fix_order": [],
+      "attest": null,
+      "x_see": [
+        "walls.thin_faces"
+      ]
+    },
+    {
+      "id": "fusion.read_back",
+      "title": "Every edit is read back",
+      "statement": "After every edit, read back the body count, the volume and the bounding boxes against what was expected. Scan the timeline for stray features and for features of another session. Compare the components that were not meant to change.",
+      "why": "A fix landed in a component nobody was editing. A restore from a backup lost features.",
+      "params": [],
+      "check": null,
+      "level": "advice",
+      "stage": "design",
+      "fix_order": [],
+      "attest": null,
+      "x_see": [
+        "regression.unintended",
+        "regression.feature_lost"
+      ]
+    },
+    {
+      "id": "fusion.edit_in_place",
+      "title": "Documents are changed in place",
+      "statement": "An existing document is changed in place: document versions and git keep the history. No copy under a new name unless asked. Names are clear English, without axis codes.",
+      "why": "No lost print is on record. A second copy of a document doubles every check and every reference body.",
+      "params": [],
+      "check": null,
+      "level": "advice",
+      "stage": "design",
+      "fix_order": [],
+      "attest": null
+    },
+    {
+      "id": "fusion.recovery",
+      "title": "Known ways back",
+      "statement": "After a hung quit, clear the shader cache. After a kill the document opens read-only and the owner makes it editable. A design that dropped to direct mode is reopened at its last saved version. Opening an older version replaces the open document.",
+      "why": "Each of these cost a session before it was written down.",
+      "params": [],
+      "check": null,
+      "level": "advice",
+      "stage": "design",
+      "fix_order": [],
+      "attest": null
+    }
+  ]
+}

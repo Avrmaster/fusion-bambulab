@@ -1,0 +1,312 @@
+{
+ "judge": "walls_thin_faces",
+ "case": "six flats of a faceted tooth profile 0.12 mm wide and a 0.42 mm chamfer strip: narrow faces by design, one informational row",
+ "incident": "2356 rows on one toothed pulley on the first run over a real assembly",
+ "facts": {
+  "width_cap": 2.0,
+  "lumps": 1,
+  "shells": 1,
+  "n_faces": 40,
+  "non_manifold_edges": 0,
+  "seam_edges": 0,
+  "faces": [
+   {
+    "anchor": {
+     "kind": "face",
+     "axis": [
+      1,
+      0,
+      0
+     ],
+     "point": [
+      30.0,
+      5.0,
+      4.0
+     ]
+    },
+    "width": 0.12,
+    "area": 0.7,
+    "shape": "strip",
+    "id": 20,
+    "sides": [
+     [
+      6.0,
+      12.0,
+      19
+     ],
+     [
+      6.0,
+      12.0,
+      21
+     ],
+     [
+      0.12,
+      90.0,
+      2
+     ],
+     [
+      0.12,
+      90.0,
+      1
+     ]
+    ]
+   },
+   {
+    "anchor": {
+     "kind": "face",
+     "axis": [
+      1,
+      0,
+      0
+     ],
+     "point": [
+      30.1,
+      5.0,
+      4.0
+     ]
+    },
+    "width": 0.12,
+    "area": 0.7,
+    "shape": "strip",
+    "id": 21,
+    "sides": [
+     [
+      6.0,
+      12.0,
+      20
+     ],
+     [
+      6.0,
+      46.0,
+      22
+     ],
+     [
+      0.12,
+      90.0,
+      2
+     ],
+     [
+      0.12,
+      90.0,
+      1
+     ]
+    ]
+   },
+   {
+    "anchor": {
+     "kind": "face",
+     "axis": [
+      1,
+      0,
+      0
+     ],
+     "point": [
+      30.2,
+      5.0,
+      4.0
+     ]
+    },
+    "width": 0.12,
+    "area": 0.7,
+    "shape": "strip",
+    "id": 22,
+    "sides": [
+     [
+      6.0,
+      46.0,
+      21
+     ],
+     [
+      6.0,
+      40.0,
+      23
+     ],
+     [
+      0.12,
+      90.0,
+      2
+     ],
+     [
+      0.12,
+      90.0,
+      1
+     ]
+    ]
+   },
+   {
+    "anchor": {
+     "kind": "face",
+     "axis": [
+      1,
+      0,
+      0
+     ],
+     "point": [
+      30.3,
+      5.0,
+      4.0
+     ]
+    },
+    "width": 0.12,
+    "area": 0.7,
+    "shape": "strip",
+    "id": 23,
+    "sides": [
+     [
+      6.0,
+      40.0,
+      22
+     ],
+     [
+      6.0,
+      -8.0,
+      24
+     ],
+     [
+      0.12,
+      90.0,
+      2
+     ],
+     [
+      0.12,
+      90.0,
+      1
+     ]
+    ]
+   },
+   {
+    "anchor": {
+     "kind": "face",
+     "axis": [
+      1,
+      0,
+      0
+     ],
+     "point": [
+      30.4,
+      5.0,
+      4.0
+     ]
+    },
+    "width": 0.12,
+    "area": 0.7,
+    "shape": "strip",
+    "id": 24,
+    "sides": [
+     [
+      6.0,
+      -8.0,
+      23
+     ],
+     [
+      6.0,
+      -14.0,
+      25
+     ],
+     [
+      0.12,
+      90.0,
+      2
+     ],
+     [
+      0.12,
+      90.0,
+      1
+     ]
+    ]
+   },
+   {
+    "anchor": {
+     "kind": "face",
+     "axis": [
+      1,
+      0,
+      0
+     ],
+     "point": [
+      30.5,
+      5.0,
+      4.0
+     ]
+    },
+    "width": 0.12,
+    "area": 0.7,
+    "shape": "strip",
+    "id": 25,
+    "sides": [
+     [
+      6.0,
+      -14.0,
+      24
+     ],
+     [
+      6.0,
+      -14.0,
+      26
+     ],
+     [
+      0.12,
+      90.0,
+      2
+     ],
+     [
+      0.12,
+      90.0,
+      1
+     ]
+    ]
+   },
+   {
+    "anchor": {
+     "kind": "face",
+     "axis": [
+      0,
+      -0.7071,
+      0.7071
+     ],
+     "point": [
+      5.0,
+      0.2,
+      9.8
+     ]
+    },
+    "width": 0.42,
+    "area": 16.8,
+    "shape": "strip",
+    "id": 40,
+    "sides": [
+     [
+      40.0,
+      45.0,
+      1
+     ],
+     [
+      40.0,
+      45.0,
+      2
+     ],
+     [
+      0.42,
+      45.0,
+      41
+     ],
+     [
+      0.42,
+      45.0,
+      42
+     ]
+    ]
+   }
+  ]
+ },
+ "params": {
+  "walls.min_face_width": 1.2,
+  "walls.strip_turn_max": 60,
+  "overhang.bridge_step": 0.3
+ },
+ "expect": [
+  {
+   "verdict": "INFO"
+  }
+ ]
+}

@@ -1,0 +1,236 @@
+{
+ "judge": "screws_shell_bears",
+ "case": "the same six screws after local pads: plastic on plastic",
+ "facts": {
+  "screws": [
+   {
+    "ref": "ref screw M3x12 cap (1)",
+    "size": "M3",
+    "length": 12.0,
+    "head": "cap",
+    "anchor": {
+     "kind": "screw",
+     "axis": [
+      0,
+      0,
+      1
+     ],
+     "point": [
+      40,
+      30,
+      12.0
+     ]
+    },
+    "role": "head",
+    "under_head": 6.0,
+    "seat": {
+     "kind": "flat",
+     "d": 5.5,
+     "recess": -3.0,
+     "share": 1.0
+    },
+    "engagement": null,
+    "into": null,
+    "tip_room": null,
+    "air_gap": 0.0,
+    "in_solid": {
+     "len": 0.0,
+     "name": null,
+     "part": null
+    },
+    "washer": null
+   },
+   {
+    "ref": "ref screw M3x12 cap (2)",
+    "size": "M3",
+    "length": 12.0,
+    "head": "cap",
+    "anchor": {
+     "kind": "screw",
+     "axis": [
+      0,
+      0,
+      1
+     ],
+     "point": [
+      0,
+      30,
+      12.0
+     ]
+    },
+    "role": "head",
+    "under_head": 6.0,
+    "seat": {
+     "kind": "flat",
+     "d": 5.5,
+     "recess": -3.0,
+     "share": 1.0
+    },
+    "engagement": null,
+    "into": null,
+    "tip_room": null,
+    "air_gap": 0.0,
+    "in_solid": {
+     "len": 0.0,
+     "name": null,
+     "part": null
+    },
+    "washer": null
+   },
+   {
+    "ref": "ref screw M3x12 cap (3)",
+    "size": "M3",
+    "length": 12.0,
+    "head": "cap",
+    "anchor": {
+     "kind": "screw",
+     "axis": [
+      0,
+      0,
+      1
+     ],
+     "point": [
+      -40,
+      30,
+      12.0
+     ]
+    },
+    "role": "head",
+    "under_head": 6.0,
+    "seat": {
+     "kind": "flat",
+     "d": 5.5,
+     "recess": -3.0,
+     "share": 1.0
+    },
+    "engagement": null,
+    "into": null,
+    "tip_room": null,
+    "air_gap": 0.0,
+    "in_solid": {
+     "len": 0.0,
+     "name": null,
+     "part": null
+    },
+    "washer": null
+   },
+   {
+    "ref": "ref screw M3x12 cap (4)",
+    "size": "M3",
+    "length": 12.0,
+    "head": "cap",
+    "anchor": {
+     "kind": "screw",
+     "axis": [
+      0,
+      0,
+      1
+     ],
+     "point": [
+      -40,
+      -30,
+      12.0
+     ]
+    },
+    "role": "head",
+    "under_head": 6.0,
+    "seat": {
+     "kind": "flat",
+     "d": 5.5,
+     "recess": -3.0,
+     "share": 1.0
+    },
+    "engagement": null,
+    "into": null,
+    "tip_room": null,
+    "air_gap": 0.0,
+    "in_solid": {
+     "len": 0.0,
+     "name": null,
+     "part": null
+    },
+    "washer": null
+   },
+   {
+    "ref": "ref screw M3x12 cap (5)",
+    "size": "M3",
+    "length": 12.0,
+    "head": "cap",
+    "anchor": {
+     "kind": "screw",
+     "axis": [
+      0,
+      0,
+      1
+     ],
+     "point": [
+      0,
+      -30,
+      12.0
+     ]
+    },
+    "role": "head",
+    "under_head": 6.0,
+    "seat": {
+     "kind": "flat",
+     "d": 5.5,
+     "recess": -3.0,
+     "share": 1.0
+    },
+    "engagement": null,
+    "into": null,
+    "tip_room": null,
+    "air_gap": 0.0,
+    "in_solid": {
+     "len": 0.0,
+     "name": null,
+     "part": null
+    },
+    "washer": null
+   },
+   {
+    "ref": "ref screw M3x12 cap (6)",
+    "size": "M3",
+    "length": 12.0,
+    "head": "cap",
+    "anchor": {
+     "kind": "screw",
+     "axis": [
+      0,
+      0,
+      1
+     ],
+     "point": [
+      40,
+      -30,
+      12.0
+     ]
+    },
+    "role": "head",
+    "under_head": 6.0,
+    "seat": {
+     "kind": "flat",
+     "d": 5.5,
+     "recess": -3.0,
+     "share": 1.0
+    },
+    "engagement": null,
+    "into": null,
+    "tip_room": null,
+    "air_gap": 0.0,
+    "in_solid": {
+     "len": 0.0,
+     "name": null,
+     "part": null
+    },
+    "washer": null
+   }
+  ],
+  "washers": []
+ },
+ "params": {
+  "screws.air_gap_max": 0.05,
+  "screws.local_wall_min": 3.0
+ },
+ "expect": []
+}

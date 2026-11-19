@@ -1,0 +1,68 @@
+{
+ "judge": "walls_thin_faces",
+ "case": "the top of a rib 0.3 mm wide: both long sides fall away by 90 degrees, the material is as narrow as the face",
+ "incident": "a tooth land of 0.3 mm was half a bead on a 0.6 nozzle",
+ "facts": {
+  "width_cap": 2.0,
+  "lumps": 1,
+  "shells": 1,
+  "n_faces": 40,
+  "non_manifold_edges": 0,
+  "seam_edges": 0,
+  "faces": [
+   {
+    "anchor": {
+     "kind": "face",
+     "axis": [
+      0,
+      0,
+      1
+     ],
+     "point": [
+      10.0,
+      10.0,
+      8.0
+     ]
+    },
+    "width": 0.3,
+    "area": 6.0,
+    "shape": "strip",
+    "id": 60,
+    "sides": [
+     [
+      20.0,
+      90.0,
+      1
+     ],
+     [
+      20.0,
+      90.0,
+      2
+     ],
+     [
+      0.3,
+      90.0,
+      3
+     ],
+     [
+      0.3,
+      90.0,
+      4
+     ]
+    ]
+   }
+  ]
+ },
+ "params": {
+  "walls.min_face_width": 1.2,
+  "walls.strip_turn_max": 60,
+  "overhang.bridge_step": 0.3
+ },
+ "expect": [
+  {
+   "verdict": "FAIL",
+   "measure": 0.3,
+   "limit": 1.2
+  }
+ ]
+}

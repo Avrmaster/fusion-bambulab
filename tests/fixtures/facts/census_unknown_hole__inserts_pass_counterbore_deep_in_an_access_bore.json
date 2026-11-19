@@ -1,0 +1,72 @@
+{
+ "judge": "census_unknown_hole",
+ "case": "a D7 x 12 bore for the head and the key, then the D6.5 counterbore and the D3.4 hole of an M3 cap screw: that screw hole, known",
+ "facts": {
+  "holes": [
+   {
+    "id": "h1",
+    "anchor": {
+     "kind": "hole",
+     "axis": [
+      0,
+      1,
+      0
+     ],
+     "point": [
+      20,
+      30,
+      40
+     ]
+    },
+    "segments": [
+     {
+      "d": 7.0,
+      "len": 12.0
+     },
+     {
+      "d": 6.5,
+      "len": 3.5
+     },
+     {
+      "d": 3.4,
+      "len": 1.0
+     }
+    ],
+    "depth": 16.5,
+    "through": true,
+    "floor": null,
+    "exit": {
+     "kind": "hole",
+     "axis": [
+      0,
+      -1,
+      0
+     ],
+     "point": [
+      20.0,
+      13.5,
+      40.0
+     ]
+    },
+    "class": {
+     "table": "screws",
+     "kind": "M3",
+     "role": "counterbore",
+     "match": "exact"
+    },
+    "coaxial": [],
+    "arc": 1.0
+   }
+  ],
+  "openings": [],
+  "counts": {}
+ },
+ "params": {
+  "screws.ref_pattern": "(?i)screw|bolt",
+  "sensors.magnet_pocket_d": 5.2,
+  "sensors.magnet_pocket_depth": 2.1,
+  "sensors.magnet_pocket_d#tag": "D",
+  "sensors.magnet_pocket_depth#tag": "D"
+ },
+ "expect": []
+}

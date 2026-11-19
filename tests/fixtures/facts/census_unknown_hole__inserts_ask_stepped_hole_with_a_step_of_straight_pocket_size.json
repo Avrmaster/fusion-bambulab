@@ -1,0 +1,68 @@
+{
+ "judge": "census_unknown_hole",
+ "case": "D4.4 x 7 then D3.2 through, nothing on its axis: no row fits. The question names that D4.4 is the diameter of a straight insert pocket",
+ "facts": {
+  "holes": [
+   {
+    "id": "h1",
+    "anchor": {
+     "kind": "hole",
+     "axis": [
+      0,
+      0,
+      1
+     ],
+     "point": [
+      0,
+      50,
+      20
+     ]
+    },
+    "segments": [
+     {
+      "d": 4.4,
+      "len": 7.0
+     },
+     {
+      "d": 3.2,
+      "len": 3.0
+     }
+    ],
+    "depth": 10.0,
+    "through": true,
+    "floor": null,
+    "exit": {
+     "kind": "hole",
+     "axis": [
+      0,
+      0,
+      -1
+     ],
+     "point": [
+      0.0,
+      50.0,
+      10.0
+     ]
+    },
+    "class": null,
+    "coaxial": [],
+    "arc": 1.0
+   }
+  ],
+  "openings": [],
+  "counts": {}
+ },
+ "params": {
+  "screws.ref_pattern": "(?i)screw|bolt",
+  "sensors.magnet_pocket_d": 5.2,
+  "sensors.magnet_pocket_depth": 2.1,
+  "sensors.magnet_pocket_d#tag": "D",
+  "sensors.magnet_pocket_depth#tag": "D"
+ },
+ "expect": [
+  {
+   "verdict": "INFO",
+   "ask": "census.unknown_hole"
+  }
+ ]
+}

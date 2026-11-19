@@ -1,0 +1,109 @@
+{
+ "judge": "bearings_holding",
+ "case": "the model of a bought 608 is drawn 7.3 wide, so the bearing is known by its name only and its measures are off its table row in one of three. Its outer ring face is open. A ring that nobody judged is NOT_RUN, never \"not a bearing\"",
+ "facts": {
+  "bearings": [
+   {
+    "ref": "ref roller axle / ball bearing 608",
+    "designation": "608",
+    "by": "name",
+    "d": 8.0,
+    "D": 22.0,
+    "B": 7.3,
+    "anchor": {
+     "kind": "bearing",
+     "axis": [
+      0,
+      0,
+      1
+     ],
+     "point": [
+      0,
+      0,
+      3.5
+     ]
+    },
+    "rings": {
+     "inner": {
+      "faces": [
+       {
+        "side": "+",
+        "covered": [
+         {
+          "name": "ref roller axle / sleeve",
+          "kind": "hardware",
+          "part": null,
+          "share": 1.0,
+          "points": 1,
+          "gap": 0.0,
+          "touches_other_ring": false
+         }
+        ]
+       },
+       {
+        "side": "-",
+        "covered": [
+         {
+          "name": "ref roller axle / sleeve",
+          "kind": "hardware",
+          "part": null,
+          "share": 1.0,
+          "points": 1,
+          "gap": 0.0,
+          "touches_other_ring": false
+         }
+        ]
+       }
+      ]
+     },
+     "outer": {
+      "faces": [
+       {
+        "side": "+",
+        "covered": []
+       },
+       {
+        "side": "-",
+        "covered": [
+         {
+          "name": "Roller plate",
+          "kind": "printed",
+          "part": "demo/roller_plate",
+          "share": 1.0,
+          "points": 1,
+          "gap": 0.0,
+          "touches_other_ring": false
+         }
+        ]
+       }
+      ]
+     }
+    },
+    "clamps": [],
+    "seat": {
+     "inner": null,
+     "outer": {
+      "d": 22.25,
+      "part": "demo/roller_plate",
+      "len": 7.0,
+      "entry_d": 24.0
+     }
+    }
+   }
+  ],
+  "seats_without_bearing": []
+ },
+ "ctx": {
+  "part": "demo/roller_plate"
+ },
+ "expect": [
+  {
+   "verdict": "NOT_RUN"
+  }
+ ],
+ "params": {
+  "bearings.cover_share_min": 0.5,
+  "bearings.clamp_points_min": 4,
+  "bearings.contact_gap_max": 0.05
+ }
+}

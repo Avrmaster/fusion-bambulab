@@ -1,0 +1,111 @@
+{
+ "judge": "bearings_clamp_room",
+ "case": "the same cap with the room 8.0 long: it can close 1.0 past the ring face",
+ "facts": {
+  "bearings": [
+   {
+    "ref": "ref drive unit / 6904 input",
+    "designation": "6904",
+    "by": "geometry",
+    "d": 20.0,
+    "D": 37.0,
+    "B": 9.0,
+    "anchor": {
+     "kind": "bearing",
+     "axis": [
+      0,
+      0,
+      1
+     ],
+     "point": [
+      0,
+      0,
+      4.5
+     ]
+    },
+    "rings": {
+     "inner": {
+      "faces": [
+       {
+        "side": "+",
+        "covered": [
+         {
+          "name": "End cap",
+          "kind": "printed",
+          "part": "demo/end_cap",
+          "share": 0.68,
+          "points": 1,
+          "gap": 0.0,
+          "touches_other_ring": false
+         }
+        ]
+       },
+       {
+        "side": "-",
+        "covered": [
+         {
+          "name": "Spindle",
+          "kind": "printed",
+          "part": "demo/spindle",
+          "share": 0.68,
+          "points": 1,
+          "gap": 0.0,
+          "touches_other_ring": false
+         }
+        ]
+       }
+      ]
+     },
+     "outer": {
+      "faces": [
+       {
+        "side": "+",
+        "covered": []
+       },
+       {
+        "side": "-",
+        "covered": []
+       }
+      ]
+     }
+    },
+    "clamps": [
+     {
+      "ring": "inner",
+      "side": "+",
+      "by": "printed",
+      "name": "End cap",
+      "part": "demo/end_cap",
+      "gap": 0.0,
+      "stop_gap": 0.0,
+      "stop_part": "demo/spindle",
+      "room": 8.0,
+      "ring_width": 9.0,
+      "travel": 1.0,
+      "travel_capped": false,
+      "lands_on": "Spindle",
+      "against": "Spindle"
+     }
+    ],
+    "seat": {
+     "inner": {
+      "d": 19.95,
+      "part": "demo/spindle",
+      "len": 9.0,
+      "entry_d": 18.0
+     },
+     "outer": null
+    }
+   }
+  ],
+  "seats_without_bearing": []
+ },
+ "params": {
+  "bearings.clamp_room": 1.0,
+  "bearings.contact_gap_max": 0.05
+ },
+ "ctx": {
+  "part": "demo/spindle"
+ },
+ "expect": []
+}

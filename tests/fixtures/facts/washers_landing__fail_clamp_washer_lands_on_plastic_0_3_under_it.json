@@ -1,0 +1,78 @@
+{
+ "judge": "washers_landing",
+ "case": "the same washer with the plastic only 0.3 below its face: print shrink uses that up and the washer lands beside the ring",
+ "incident": "six clamp washers landed on plastic beside the ring they were meant to clamp",
+ "facts": {
+  "screws": [],
+  "washers": [
+   {
+    "id": "w1",
+    "ref": "ref washer M3 wide",
+    "od": 12.0,
+    "id_d": 3.2,
+    "t": 1.5,
+    "anchor": {
+     "kind": "face",
+     "axis": [
+      0,
+      0,
+      1
+     ],
+     "point": [
+      52.0,
+      0.0,
+      44.0
+     ]
+    },
+    "landing": {
+     "share": 0.2,
+     "share_all": 0.1,
+     "gap": 0.0,
+     "on": "ref bearing 6810",
+     "on_bearing": "ref bearing 6810",
+     "open_d": null,
+     "look": 2.0,
+     "spot_face_d": null,
+     "covers": [
+      {
+       "name": "ref bearing 6810",
+       "kind": "hardware",
+       "part": null,
+       "share": 0.2,
+       "gap": 0.0,
+       "bearing": true
+      },
+      {
+       "name": "Column tube",
+       "kind": "printed",
+       "part": "demo/column_tube",
+       "share": 0.0,
+       "gap": 0.3,
+       "bearing": false
+      }
+     ]
+    },
+    "proud": {
+     "height": 3.15,
+     "nearest": null
+    }
+   }
+  ]
+ },
+ "params": {
+  "bearings.clamp_room": 1.0,
+  "washers.landing_gap_max": 0.05,
+  "washers.landing_share_min": 0.95,
+  "washers.spot_face_clearance": 1.2
+ },
+ "expect": [
+  {
+   "verdict": "FAIL",
+   "measure": 0.3,
+   "limit": 1.0,
+   "by": [
+    "demo/column_tube"
+   ]
+  }
+ ]
+}

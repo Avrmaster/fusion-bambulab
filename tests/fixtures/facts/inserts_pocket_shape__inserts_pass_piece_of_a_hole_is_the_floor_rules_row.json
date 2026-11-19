@@ -1,0 +1,69 @@
+{
+ "judge": "inserts_pocket_shape",
+ "case": "the piece of a radial pocket (D4.4 x 0.7, open wall, an insert ref on its axis): too short for any insert, so inserts.floor has its one row",
+ "facts": {
+  "holes": [
+   {
+    "id": "h4",
+    "anchor": {
+     "kind": "insert_pocket",
+     "axis": [
+      1,
+      0,
+      0
+     ],
+     "point": [
+      5.0,
+      0,
+      -9.0
+     ]
+    },
+    "segments": [
+     {
+      "d": 4.4,
+      "len": 0.7
+     }
+    ],
+    "depth": 0.7,
+    "through": true,
+    "floor": null,
+    "exit": {
+     "kind": "hole",
+     "axis": [
+      -1,
+      0,
+      0
+     ],
+     "point": [
+      4.3,
+      0.0,
+      -9.0
+     ]
+    },
+    "class": {
+     "table": "screws",
+     "kind": "M4",
+     "role": "clearance",
+     "match": "exact"
+    },
+    "coaxial": [
+     {
+      "name": "HW (ref) / insert M3x4x5 (1)",
+      "kind": "hardware",
+      "part": null
+     }
+    ],
+    "arc": 0.812
+   }
+  ],
+  "openings": [],
+  "counts": {}
+ },
+ "params": {
+  "sensors.magnet_pocket_d": 5.2,
+  "sensors.magnet_pocket_depth": 2.1,
+  "sensors.magnet_pocket_d#tag": "D",
+  "sensors.magnet_pocket_depth#tag": "D"
+ },
+ "expect": []
+}

@@ -1,0 +1,74 @@
+{
+  "category": "mesh",
+  "params": {},
+  "rules": [
+    {
+      "id": "mesh.closed",
+      "title": "The STL is closed",
+      "statement": "The exported STL has no open and no non-manifold edge.",
+      "why": "A seam of a revolved face was never welded: the slicer showed open edges on a finished plate.",
+      "params": [],
+      "check": {
+        "probe": "stl_mesh",
+        "judge": "mesh_closed",
+        "needs": "stl"
+      },
+      "level": "block",
+      "stage": "export",
+      "fix_order": [
+        "Export again; if the edge stays, find the face pair that touches along an arc."
+      ],
+      "attest": null
+    },
+    {
+      "id": "mesh.one_shell",
+      "title": "The STL is one shell",
+      "statement": "The exported STL is one connected shell.",
+      "why": "A part exported as two shells printed as two loose pieces.",
+      "params": [],
+      "check": {
+        "probe": "stl_mesh",
+        "judge": "mesh_one_shell",
+        "needs": "stl"
+      },
+      "level": "block",
+      "stage": "export",
+      "fix_order": [
+        "Join the bodies in the model.",
+        "If two bodies are meant: two parts, two STLs."
+      ],
+      "attest": null
+    },
+    {
+      "id": "mesh.matches_body",
+      "title": "The mesh equals its body",
+      "statement": "The mesh is made from a copy of the body, never from an occurrence proxy, and equals it: volume within 1 %, the same bounding box. A body that cannot be meshed fails loudly. A mesh that fails is not written.",
+      "why": "A small cradle was exported torn: 41 open edges and 6 % more volume. An export call wrote nothing and said nothing.",
+      "params": [],
+      "check": null,
+      "level": "advice",
+      "stage": "export",
+      "fix_order": [],
+      "attest": null,
+      "note": "Kept by the fusion_export probe before the STL is written. Its 1 % is inside the probe, not a parameter."
+    },
+    {
+      "id": "mesh.saved_version",
+      "title": "An STL names the version it came from",
+      "statement": "Each STL names the saved version of its document in its header, and its stamp ties it to the signature of the body and the hash of the mesh. The slicer project shows which version every mesh came from.",
+      "why": "Overlapping sessions produced an export set from mixed versions. The version in the STL header had no reader and was dropped on the way into the project.",
+      "params": [],
+      "check": null,
+      "level": "advice",
+      "stage": "export",
+      "fix_order": [],
+      "attest": null,
+      "note": "Kept by the stamp and by the write events of the ledger.",
+      "x_see": [
+        "project.mesh_stale",
+        "project.mesh_unstamped",
+        "project.stl_without_stamp"
+      ]
+    }
+  ]
+}

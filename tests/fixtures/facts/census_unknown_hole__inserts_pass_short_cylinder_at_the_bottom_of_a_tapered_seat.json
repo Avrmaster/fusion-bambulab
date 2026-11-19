@@ -1,0 +1,122 @@
+{
+ "judge": "census_unknown_hole",
+ "case": "a tapered bearing seat D22.25 > 22 x 7 with a D12 passage, and the D22 x 0.12 cylinder at its bottom that the census lists as a hole of its own: the same surface, not asked",
+ "facts": {
+  "holes": [
+   {
+    "id": "h6",
+    "anchor": {
+     "kind": "hole",
+     "axis": [
+      0,
+      -1,
+      0
+     ],
+     "point": [
+      0,
+      20,
+      30
+     ]
+    },
+    "segments": [
+     {
+      "d": 22.25,
+      "len": 7.0,
+      "d2": 22.0
+     },
+     {
+      "d": 12.0,
+      "len": 2.0
+     }
+    ],
+    "depth": 9.0,
+    "through": true,
+    "floor": null,
+    "exit": {
+     "kind": "hole",
+     "axis": [
+      0,
+      1,
+      0
+     ],
+     "point": [
+      0.0,
+      29.0,
+      30.0
+     ]
+    },
+    "class": {
+     "table": "bearings",
+     "kind": "608",
+     "role": "bearing_seat",
+     "match": "exact"
+    },
+    "coaxial": [
+     {
+      "name": "ref bearing 608",
+      "kind": "hardware",
+      "part": null
+     }
+    ],
+    "arc": 1.0
+   },
+   {
+    "id": "h7",
+    "anchor": {
+     "kind": "hole",
+     "axis": [
+      0,
+      1,
+      0
+     ],
+     "point": [
+      0,
+      27,
+      30
+     ]
+    },
+    "segments": [
+     {
+      "d": 22.0,
+      "len": 0.12
+     }
+    ],
+    "depth": 0.12,
+    "through": true,
+    "floor": null,
+    "exit": {
+     "kind": "hole",
+     "axis": [
+      0,
+      -1,
+      0
+     ],
+     "point": [
+      0.0,
+      26.88,
+      30.0
+     ]
+    },
+    "class": null,
+    "coaxial": [
+     {
+      "name": "ref bearing 608",
+      "kind": "hardware",
+      "part": null
+     }
+    ],
+    "arc": 1.0
+   }
+  ],
+  "openings": [],
+  "counts": {}
+ },
+ "params": {
+  "screws.ref_pattern": "(?i)screw|bolt",
+  "sensors.magnet_pocket_d": 5.2,
+  "sensors.magnet_pocket_depth": 2.1,
+  "sensors.magnet_pocket_d#tag": "D",
+  "sensors.magnet_pocket_depth#tag": "D"
+ },
+ "expect": []
+}

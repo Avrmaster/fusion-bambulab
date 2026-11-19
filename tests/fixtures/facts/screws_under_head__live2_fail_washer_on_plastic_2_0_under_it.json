@@ -1,0 +1,129 @@
+{
+ "judge": "screws_under_head",
+ "case": "a head on a washer that lies on the printed part with 2.0 mm of plastic under it: a washer does not excuse a thin plate",
+ "facts": {
+  "screws": [
+   {
+    "ref": "ref axle / M4x10 cap screw",
+    "size": "M4",
+    "length": 10.0,
+    "named_length": 10.0,
+    "named_size": "M4",
+    "head": "cap",
+    "head_d": 7.0,
+    "head_h": 4.0,
+    "thread_d": 4.0,
+    "anchor": {
+     "kind": "screw",
+     "axis": [
+      0.0,
+      1.0,
+      0.0
+     ],
+     "point": [
+      10.0,
+      4.0,
+      20.0
+     ]
+    },
+    "role": "both",
+    "under_head": 2.0,
+    "under_head_min": 0.0,
+    "seat": {
+     "kind": "flat",
+     "d": 5.5,
+     "recess": -3.5,
+     "share": 0.0
+    },
+    "engagement": 3.4,
+    "into": {
+     "kind": "insert",
+     "name": "ref roller pair / insert M4x8x6"
+    },
+    "tip_room": 2.8,
+    "tip_room_capped": false,
+    "air_gap": 0.0,
+    "in_solid": {
+     "len": 0.0,
+     "name": null,
+     "part": null,
+     "at": null
+    },
+    "washer": "w1"
+   }
+  ],
+  "washers": [
+   {
+    "id": "w1",
+    "ref": "ref axle / washer M4",
+    "od": 9.0,
+    "id_d": 4.3,
+    "t": 0.8,
+    "anchor": {
+     "kind": "face",
+     "axis": [
+      0.0,
+      1.0,
+      0.0
+     ],
+     "point": [
+      10.0,
+      3.5,
+      20.0
+     ]
+    },
+    "landing": {
+     "share": 1.0,
+     "share_all": 0.17,
+     "gap": 0.0,
+     "open_d": 7.0,
+     "ring_shares": [
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      1.0
+     ],
+     "on_bearing": null,
+     "look": 2.0,
+     "on": "demo/carriage",
+     "spot_face_d": null,
+     "wall_angles": 0,
+     "covers": [
+      {
+       "name": "Carriage",
+       "kind": "printed",
+       "part": "demo/carriage",
+       "share": 1.0,
+       "gap": 0.0,
+       "bearing": false
+      }
+     ]
+    },
+    "proud": {
+     "height": 3.5,
+     "nearest": null
+    },
+    "screw": "ref roller pair / M4x16 cap screw"
+   }
+  ],
+  "passing": [],
+  "n_screws": 1,
+  "n_washers": 1
+ },
+ "params": {
+  "screws.min_under_head": 5.0,
+  "washers.landing_gap_max": 0.05
+ },
+ "ctx": {
+  "part": "demo/carriage"
+ },
+ "expect": [
+  {
+   "verdict": "FAIL",
+   "measure": 2.0,
+   "limit": 5.0
+  }
+ ]
+}

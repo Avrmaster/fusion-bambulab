@@ -1,0 +1,49 @@
+{
+ "judge": "inserts_floor",
+ "case": "a 4.0 mm insert in a pocket through a 3.0 mm plate",
+ "incident": "an insert is never longer than the material it sits in",
+ "facts": {
+  "pockets": [
+   {
+    "hole": "h1",
+    "anchor": {
+     "kind": "insert_pocket",
+     "axis": [0, 0, 1],
+     "point": [14.0, 14.0, 3.0]
+    },
+    "kind": "M3x4x5",
+    "segments": [
+     {"d": 4.4, "len": 1.5},
+     {"d": 3.6, "len": 1.5}
+    ],
+    "relief": null,
+    "relief_room": [
+     {"d": 7.5, "wall": 2.45},
+     {"d": 6.5, "wall": 2.95},
+     {"d": 5.9, "wall": 3.25}
+    ],
+    "walls": {
+     "lead_in": {
+      "min": 4.0,
+      "dir": [1, 0, 0],
+      "free_arc_deg": 360,
+      "blocked_by": []
+     },
+     "insert": {
+      "min": 4.0,
+      "dir": [1, 0, 0],
+      "free_arc_deg": 360,
+      "blocked_by": []
+     },
+     "relief": null
+    },
+    "floor": null,
+    "ray": {"n": 48, "step": 0.1, "max": 8.0}
+   }
+  ]
+ },
+ "params": {"inserts.floor_min": 0.6},
+ "expect": [
+  {"verdict": "FAIL", "measure": 3.0, "limit": 4.0}
+ ]
+}

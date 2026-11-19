@@ -1,0 +1,212 @@
+{
+ "judge": "bearings_holding",
+ "case": "the same pair in facts of an older probe: the cover carries the ref of the other bearing of the list, with the same bore and outer diameter",
+ "facts": {
+  "bearings": [
+   {
+    "ref": "ref roller pair / bearing 686 (1)",
+    "designation": "686ZZ",
+    "by": "geometry",
+    "d": 6.0,
+    "D": 13.0,
+    "B": 5.0,
+    "anchor": {
+     "kind": "bearing",
+     "axis": [
+      0,
+      0,
+      1
+     ],
+     "point": [
+      0,
+      0,
+      2.5
+     ]
+    },
+    "rings": {
+     "inner": {
+      "faces": [
+       {
+        "side": "+",
+        "covered": [
+         {
+          "name": "ref roller pair / bearing 686",
+          "kind": "hardware",
+          "part": null,
+          "share": 1.0,
+          "points": 1,
+          "gap": 0.0,
+          "touches_other_ring": true
+         }
+        ]
+       },
+       {
+        "side": "-",
+        "covered": [
+         {
+          "name": "Carriage",
+          "kind": "printed",
+          "part": "demo/carriage",
+          "share": 1.0,
+          "points": 1,
+          "gap": 0.0,
+          "touches_other_ring": false
+         }
+        ]
+       }
+      ]
+     },
+     "outer": {
+      "faces": [
+       {
+        "side": "+",
+        "covered": [
+         {
+          "name": "ref roller pair / bearing 686",
+          "kind": "hardware",
+          "part": null,
+          "share": 1.0,
+          "points": 1,
+          "gap": 0.0,
+          "touches_other_ring": true
+         }
+        ]
+       },
+       {
+        "side": "-",
+        "covered": [
+         {
+          "name": "Carriage",
+          "kind": "printed",
+          "part": "demo/carriage",
+          "share": 1.0,
+          "points": 1,
+          "gap": 0.0,
+          "touches_other_ring": false
+         }
+        ]
+       }
+      ]
+     }
+    },
+    "clamps": [],
+    "seat": {
+     "inner": {
+      "d": 6.1,
+      "part": "demo/carriage",
+      "len": 5.0,
+      "entry_d": 6.1
+     },
+     "outer": null
+    }
+   },
+   {
+    "ref": "ref roller pair / bearing 686 (2)",
+    "designation": "686ZZ",
+    "by": "geometry",
+    "d": 6.0,
+    "D": 13.0,
+    "B": 5.0,
+    "anchor": {
+     "kind": "bearing",
+     "axis": [
+      0,
+      0,
+      1
+     ],
+     "point": [
+      0,
+      0,
+      7.5
+     ]
+    },
+    "rings": {
+     "inner": {
+      "faces": [
+       {
+        "side": "+",
+        "covered": [
+         {
+          "name": "ref roller pair / washer M3",
+          "kind": "hardware",
+          "part": null,
+          "share": 1.0,
+          "points": 1,
+          "gap": 0.0,
+          "touches_other_ring": false
+         }
+        ]
+       },
+       {
+        "side": "-",
+        "covered": [
+         {
+          "name": "ref roller pair / bearing 686",
+          "kind": "hardware",
+          "part": null,
+          "share": 1.0,
+          "points": 1,
+          "gap": 0.0,
+          "touches_other_ring": true
+         }
+        ]
+       }
+      ]
+     },
+     "outer": {
+      "faces": [
+       {
+        "side": "+",
+        "covered": [
+         {
+          "name": "Cap",
+          "kind": "printed",
+          "part": "demo/carriage",
+          "share": 1.0,
+          "points": 1,
+          "gap": 0.0,
+          "touches_other_ring": false
+         }
+        ]
+       },
+       {
+        "side": "-",
+        "covered": [
+         {
+          "name": "ref roller pair / bearing 686",
+          "kind": "hardware",
+          "part": null,
+          "share": 1.0,
+          "points": 1,
+          "gap": 0.0,
+          "touches_other_ring": true
+         }
+        ]
+       }
+      ]
+     }
+    },
+    "clamps": [],
+    "seat": {
+     "inner": {
+      "d": 6.1,
+      "part": "demo/carriage",
+      "len": 5.0,
+      "entry_d": 6.1
+     },
+     "outer": null
+    }
+   }
+  ],
+  "seats_without_bearing": []
+ },
+ "params": {
+  "bearings.cover_share_min": 0.5,
+  "bearings.clamp_points_min": 4,
+  "bearings.contact_gap_max": 0.05
+ },
+ "ctx": {
+  "part": "demo/carriage"
+ },
+ "expect": []
+}

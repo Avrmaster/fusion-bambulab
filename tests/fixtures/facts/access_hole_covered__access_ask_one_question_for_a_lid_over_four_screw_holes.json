@@ -1,0 +1,294 @@
+{
+ "judge": "access_hole_covered",
+ "case": "four blind screw holes with one lid 16 mm over them: one question about the lid, not four findings",
+ "facts": {
+  "openings": [
+   {
+    "feature": "h1",
+    "of": "hole",
+    "anchor": {
+     "kind": "hole",
+     "axis": [
+      0,
+      0,
+      1
+     ],
+     "point": [
+      10,
+      10,
+      10.0
+     ]
+    },
+    "end": "mouth",
+    "paths": {
+     "own": {
+      "r": 1.25,
+      "reach": 60.0,
+      "free": 16.0,
+      "hits": [
+       {
+        "name": "Lid",
+        "kind": "printed",
+        "part": "demo/lid",
+        "at": 16.0,
+        "share": 1.0,
+        "approx": false,
+        "expected": false
+       }
+      ]
+     }
+    }
+   },
+   {
+    "feature": "h2",
+    "of": "hole",
+    "anchor": {
+     "kind": "hole",
+     "axis": [
+      0,
+      0,
+      1
+     ],
+     "point": [
+      30,
+      10,
+      10.0
+     ]
+    },
+    "end": "mouth",
+    "paths": {
+     "own": {
+      "r": 1.25,
+      "reach": 60.0,
+      "free": 16.0,
+      "hits": [
+       {
+        "name": "Lid",
+        "kind": "printed",
+        "part": "demo/lid",
+        "at": 16.0,
+        "share": 1.0,
+        "approx": false,
+        "expected": false
+       }
+      ]
+     }
+    }
+   },
+   {
+    "feature": "h3",
+    "of": "hole",
+    "anchor": {
+     "kind": "hole",
+     "axis": [
+      0,
+      0,
+      1
+     ],
+     "point": [
+      10,
+      30,
+      10.0
+     ]
+    },
+    "end": "mouth",
+    "paths": {
+     "own": {
+      "r": 1.25,
+      "reach": 60.0,
+      "free": 16.0,
+      "hits": [
+       {
+        "name": "Lid",
+        "kind": "printed",
+        "part": "demo/lid",
+        "at": 16.0,
+        "share": 1.0,
+        "approx": false,
+        "expected": false
+       }
+      ]
+     }
+    }
+   },
+   {
+    "feature": "h4",
+    "of": "hole",
+    "anchor": {
+     "kind": "hole",
+     "axis": [
+      0,
+      0,
+      1
+     ],
+     "point": [
+      30,
+      30,
+      10.0
+     ]
+    },
+    "end": "mouth",
+    "paths": {
+     "own": {
+      "r": 1.25,
+      "reach": 60.0,
+      "free": 16.0,
+      "hits": [
+       {
+        "name": "Lid",
+        "kind": "printed",
+        "part": "demo/lid",
+        "at": 16.0,
+        "share": 1.0,
+        "approx": false,
+        "expected": false
+       }
+      ]
+     }
+    }
+   }
+  ],
+  "closed": []
+ },
+ "params": {
+  "access.reach": 60.0,
+  "access.min_blocked_share": 0.02,
+  "access.seal_gap": 0.2,
+  "access.cap_max": 2.0,
+  "sensors.magnet_pocket_d": 4.2,
+  "sensors.magnet_pocket_depth": 2.1
+ },
+ "expect": [
+  {
+   "verdict": "FAIL",
+   "measure": 16.0,
+   "limit": 60.0,
+   "by": [
+    "Lid"
+   ],
+   "ask": "assembly.order"
+  }
+ ],
+ "ctx": {
+  "part": "demo/bracket",
+  "census": {
+   "holes": [
+    {
+     "id": "h1",
+     "anchor": {
+      "kind": "hole",
+      "axis": [
+       0,
+       0,
+       1
+      ],
+      "point": [
+       10,
+       10,
+       10.0
+      ]
+     },
+     "segments": [
+      {
+       "d": 2.5,
+       "len": 8.0
+      }
+     ],
+     "depth": 8.0,
+     "through": false,
+     "floor": 5.0,
+     "exit": null,
+     "class": null,
+     "coaxial": []
+    },
+    {
+     "id": "h2",
+     "anchor": {
+      "kind": "hole",
+      "axis": [
+       0,
+       0,
+       1
+      ],
+      "point": [
+       30,
+       10,
+       10.0
+      ]
+     },
+     "segments": [
+      {
+       "d": 2.5,
+       "len": 8.0
+      }
+     ],
+     "depth": 8.0,
+     "through": false,
+     "floor": 5.0,
+     "exit": null,
+     "class": null,
+     "coaxial": []
+    },
+    {
+     "id": "h3",
+     "anchor": {
+      "kind": "hole",
+      "axis": [
+       0,
+       0,
+       1
+      ],
+      "point": [
+       10,
+       30,
+       10.0
+      ]
+     },
+     "segments": [
+      {
+       "d": 2.5,
+       "len": 8.0
+      }
+     ],
+     "depth": 8.0,
+     "through": false,
+     "floor": 5.0,
+     "exit": null,
+     "class": null,
+     "coaxial": []
+    },
+    {
+     "id": "h4",
+     "anchor": {
+      "kind": "hole",
+      "axis": [
+       0,
+       0,
+       1
+      ],
+      "point": [
+       30,
+       30,
+       10.0
+      ]
+     },
+     "segments": [
+      {
+       "d": 2.5,
+       "len": 8.0
+      }
+     ],
+     "depth": 8.0,
+     "through": false,
+     "floor": 5.0,
+     "exit": null,
+     "class": null,
+     "coaxial": []
+    }
+   ],
+   "openings": [],
+   "partial": [],
+   "counts": {}
+  }
+ }
+}

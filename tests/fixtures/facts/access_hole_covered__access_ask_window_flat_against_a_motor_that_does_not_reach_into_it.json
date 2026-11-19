@@ -1,0 +1,75 @@
+{
+ "judge": "access_hole_covered",
+ "case": "a cable window with a motor body flat on its mouth and nothing in the opening itself: a cover, asked like any other",
+ "facts": {
+  "openings": [
+   {
+    "feature": "o1",
+    "of": "window",
+    "anchor": {
+     "kind": "face",
+     "axis": [
+      1,
+      0,
+      0
+     ],
+     "point": [
+      20.0,
+      0.0,
+      30.0
+     ]
+    },
+    "end": "mouth",
+    "paths": {
+     "own": {
+      "r": 14.0,
+      "reach": 60.0,
+      "free": 0.05,
+      "hits": [
+       {
+        "name": "ref motor 42 / body",
+        "kind": "bought",
+        "part": null,
+        "at": 0.05,
+        "share": 0.9,
+        "approx": false,
+        "expected": false
+       }
+      ]
+     }
+    },
+    "inside": [],
+    "section": "inscribed circle"
+   }
+  ],
+  "closed": []
+ },
+ "params": {
+  "access.reach": 60.0,
+  "access.min_blocked_share": 0.02,
+  "access.seal_gap": 0.2,
+  "access.cap_max": 2.0,
+  "sensors.magnet_pocket_d": 4.2,
+  "sensors.magnet_pocket_depth": 2.1
+ },
+ "expect": [
+  {
+   "verdict": "FAIL",
+   "measure": 0.05,
+   "limit": 60.0,
+   "by": [
+    "ref motor 42"
+   ],
+   "ask": "assembly.order"
+  }
+ ],
+ "ctx": {
+  "part": "demo/bracket",
+  "census": {
+   "holes": [],
+   "openings": [],
+   "partial": [],
+   "counts": {}
+  }
+ }
+}

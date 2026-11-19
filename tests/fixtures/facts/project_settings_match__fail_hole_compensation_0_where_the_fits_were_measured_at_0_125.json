@@ -1,0 +1,61 @@
+{
+ "judge": "project_settings_match",
+ "case": "the incident: a tool write left the X-Y hole compensation of the project at 0; every fit was measured at 0.125, so each hole prints about 0.25 smaller in diameter",
+ "facts": {
+  "project": "main",
+  "file": "bambulab/Demo.3mf",
+  "exists": true,
+  "target_declared": {
+   "nozzle": 0.4,
+   "line_width": 0.45,
+   "material": "PETG",
+   "layer_height": 0.3,
+   "initial_layer_print_height": 0.2,
+   "xy_hole_compensation": 0.125,
+   "xy_contour_compensation": 0.0,
+   "elefant_foot_compensation": 0.15,
+   "wall_generator": "classic"
+  },
+  "fit_settings": {
+   "keys": [
+    "nozzle_diameter",
+    "line_width",
+    "layer_height",
+    "initial_layer_print_height",
+    "xy_hole_compensation",
+    "xy_contour_compensation",
+    "elefant_foot_compensation",
+    "wall_generator"
+   ],
+   "global": {
+    "nozzle_diameter": 0.4,
+    "line_width": 0.45,
+    "layer_height": 0.3,
+    "initial_layer_print_height": 0.2,
+    "xy_hole_compensation": 0.0,
+    "xy_contour_compensation": 0.0,
+    "elefant_foot_compensation": 0.15,
+    "wall_generator": "classic"
+   },
+   "objects": [],
+   "objects_read": 3,
+   "object_names": [
+    "lever",
+    "cap",
+    "base plate"
+   ]
+  },
+  "settings_write": null,
+  "objects": [],
+  "stls": [],
+  "build_table": null
+ },
+ "expect": [
+  {
+   "verdict": "FAIL",
+   "part": "main:Demo.3mf",
+   "measure": 0.0,
+   "limit": 0.125
+  }
+ ]
+}

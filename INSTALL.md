@@ -64,7 +64,9 @@ claude plugin update fusion-bambulab@fusion-bambulab
 
 Auto-update is off by default for third-party marketplaces. Turn it on under `/plugin` > Marketplaces.
 
-Existing projects keep their copy of the tools until you refresh them. Ask Claude to refresh them with `setup-project`, and review `git diff` afterwards.
+Existing projects keep their copy of the tools until you refresh them, but the skills update at once. After updating to 0.2.0 refresh every project: `python3 <plugin>/tools/setup_project.py <dir> --update-tools` (or ask Claude to do it with `setup-project`), and review `git diff` afterwards. Until then `print-design` describes the 0.2.0 insert checks (every wall under 4.0 is a row, a melt relief only where 2.45 mm stays beside it) while a 0.1.x `fusion/tools/insert_pockets.py` still passes 3.8 and cuts reliefs where 1.2 stays. The refresh also adds `ledger.py`, `ledger_cache.py`, `ledger_mesh.py` and `meshid.py` to `bambulab/tools/`: the print ledger does nothing until `bambulab/ledger/` exists (`ledger.py init`), and its slicer-cache reader stays off until you switch it on.
+
+What each version changes, the changed defaults of `insert_pockets.py` included, is in [CHANGELOG.md](CHANGELOG.md): read its section before the refresh.
 
 ## Uninstall
 

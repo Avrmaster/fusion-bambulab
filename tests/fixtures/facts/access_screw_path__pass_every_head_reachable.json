@@ -1,0 +1,144 @@
+{
+ "judge": "access_screw_path",
+ "case": "four heads with a free tool path",
+ "facts": {
+  "openings": [
+   {
+    "feature": "s1",
+    "of": "screw_head",
+    "anchor": {
+     "kind": "screw",
+     "axis": [
+      0,
+      0,
+      1
+     ],
+     "point": [
+      -15.5,
+      -15.5,
+      22.0
+     ]
+    },
+    "end": "mouth",
+    "paths": {
+     "own": {
+      "r": 2.75,
+      "reach": 60.0,
+      "free": 60.0,
+      "hits": []
+     },
+     "tool": {
+      "r": 3.25,
+      "reach": 60.0,
+      "free": 60.0,
+      "hits": []
+     }
+    }
+   },
+   {
+    "feature": "s2",
+    "of": "screw_head",
+    "anchor": {
+     "kind": "screw",
+     "axis": [
+      0,
+      0,
+      1
+     ],
+     "point": [
+      15.5,
+      -15.5,
+      22.0
+     ]
+    },
+    "end": "mouth",
+    "paths": {
+     "own": {
+      "r": 2.75,
+      "reach": 60.0,
+      "free": 60.0,
+      "hits": []
+     },
+     "tool": {
+      "r": 3.25,
+      "reach": 60.0,
+      "free": 60.0,
+      "hits": []
+     }
+    }
+   },
+   {
+    "feature": "s3",
+    "of": "screw_head",
+    "anchor": {
+     "kind": "screw",
+     "axis": [
+      0,
+      0,
+      1
+     ],
+     "point": [
+      -15.5,
+      15.5,
+      22.0
+     ]
+    },
+    "end": "mouth",
+    "paths": {
+     "own": {
+      "r": 2.75,
+      "reach": 60.0,
+      "free": 60.0,
+      "hits": []
+     },
+     "tool": {
+      "r": 3.25,
+      "reach": 60.0,
+      "free": 60.0,
+      "hits": []
+     }
+    }
+   },
+   {
+    "feature": "s4",
+    "of": "screw_head",
+    "anchor": {
+     "kind": "screw",
+     "axis": [
+      0,
+      0,
+      1
+     ],
+     "point": [
+      15.5,
+      15.5,
+      22.0
+     ]
+    },
+    "end": "mouth",
+    "paths": {
+     "own": {
+      "r": 2.75,
+      "reach": 60.0,
+      "free": 60.0,
+      "hits": []
+     },
+     "tool": {
+      "r": 3.25,
+      "reach": 60.0,
+      "free": 60.0,
+      "hits": []
+     }
+    }
+   }
+  ],
+  "closed": []
+ },
+ "params": {
+  "access.reach": 60.0,
+  "access.tool_clearance": 1.0,
+  "access.min_blocked_share": 0.02,
+  "access.seal_gap": 0.2
+ },
+ "expect": []
+}

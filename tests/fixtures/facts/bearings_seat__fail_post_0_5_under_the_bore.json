@@ -1,0 +1,124 @@
+{
+ "judge": "bearings_seat",
+ "case": "a post drawn 69.5 mm for the 80 mm bore of the bearing: the bearing rocks on it",
+ "facts": {
+  "bearings": [
+   {
+    "ref": "ref bearing 6814 lower",
+    "designation": "6814",
+    "by": "geometry",
+    "d": 70.0,
+    "D": 90.0,
+    "B": 10.0,
+    "anchor": {
+     "kind": "bearing",
+     "axis": [
+      0,
+      0,
+      1
+     ],
+     "point": [
+      0.0,
+      0.0,
+      34.0
+     ]
+    },
+    "rings": {
+     "inner": {
+      "faces": [
+       {
+        "side": "+",
+        "covered": [
+         {
+          "name": "Base",
+          "kind": "printed",
+          "part": "demo/base",
+          "share": 1.0,
+          "points": 1,
+          "gap": 0.0,
+          "touches_other_ring": false
+         }
+        ]
+       },
+       {
+        "side": "-",
+        "covered": [
+         {
+          "name": "Base",
+          "kind": "printed",
+          "part": "demo/base",
+          "share": 1.0,
+          "points": 1,
+          "gap": 0.0,
+          "touches_other_ring": false
+         }
+        ]
+       }
+      ]
+     },
+     "outer": {
+      "faces": [
+       {
+        "side": "+",
+        "covered": [
+         {
+          "name": "ref washer M3 large (x6)",
+          "kind": "hardware",
+          "part": null,
+          "share": 0.22,
+          "points": 6,
+          "gap": 0.0,
+          "touches_other_ring": false
+         }
+        ]
+       },
+       {
+        "side": "-",
+        "covered": [
+         {
+          "name": "Column tube",
+          "kind": "printed",
+          "part": "demo/column_tube",
+          "share": 1.0,
+          "points": 1,
+          "gap": 0.0,
+          "touches_other_ring": false
+         }
+        ]
+       }
+      ]
+     }
+    },
+    "clamps": [],
+    "seat": {
+     "inner": {
+      "d": 69.5,
+      "part": "demo/base",
+      "len": 10.0,
+      "entry_d": 69.5
+     },
+     "outer": {
+      "d": 90.0,
+      "part": "demo/column_tube",
+      "len": 10.0,
+      "entry_d": 90.25
+     }
+    }
+   }
+  ],
+  "seats_without_bearing": []
+ },
+ "params": {
+  "bearings.seat_d_tol": 0.3
+ },
+ "ctx": {
+  "part": "demo/base"
+ },
+ "expect": [
+  {
+   "verdict": "FAIL",
+   "measure": 69.5,
+   "limit": 70.0
+  }
+ ]
+}

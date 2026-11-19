@@ -1,0 +1,10 @@
+{
+ "test": "no_motor_near",
+ "case": "no facts of the near unit: \"no motor\" is not proven, the question is asked",
+ "probes": {},
+ "params": {
+  "motors.ref_pattern": "(?i)motor|nema"
+ },
+ "expect": null,
+ "says": "the unit fusion_near has no facts"
+}

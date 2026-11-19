@@ -1,0 +1,72 @@
+{
+ "judge": "fits_bought_pocket",
+ "case": "a D22 x 0.12 hole through a thin lip with a bearing on its axis and no other hole round it: asked once what goes in",
+ "facts": {
+  "holes": [
+   {
+    "id": "h7",
+    "anchor": {
+     "kind": "hole",
+     "axis": [
+      0,
+      1,
+      0
+     ],
+     "point": [
+      0,
+      27,
+      30
+     ]
+    },
+    "segments": [
+     {
+      "d": 22.0,
+      "len": 0.12
+     }
+    ],
+    "depth": 0.12,
+    "through": true,
+    "floor": null,
+    "exit": {
+     "kind": "hole",
+     "axis": [
+      0,
+      -1,
+      0
+     ],
+     "point": [
+      0.0,
+      26.88,
+      30.0
+     ]
+    },
+    "class": null,
+    "coaxial": [
+     {
+      "name": "ref bearing 608",
+      "kind": "hardware",
+      "part": null
+     }
+    ],
+    "arc": 1.0
+   }
+  ],
+  "openings": [],
+  "counts": {}
+ },
+ "params": {
+  "sensors.magnet_pocket_d": 5.2,
+  "sensors.magnet_pocket_depth": 2.1,
+  "sensors.magnet_pocket_d#tag": "D",
+  "sensors.magnet_pocket_depth#tag": "D"
+ },
+ "expect": [
+  {
+   "verdict": "INFO",
+   "ask": "fits.pocket_content",
+   "by": [
+    "ref bearing 608"
+   ]
+  }
+ ]
+}

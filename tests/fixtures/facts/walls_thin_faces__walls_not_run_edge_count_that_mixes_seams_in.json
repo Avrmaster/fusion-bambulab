@@ -1,0 +1,22 @@
+{
+ "judge": "walls_thin_faces",
+ "case": "facts written before the probe told seams from edges with more than two faces: 2 edges of either kind",
+ "facts": {
+  "width_cap": 2.0,
+  "lumps": 1,
+  "shells": 1,
+  "n_faces": 40,
+  "non_manifold_edges": 2,
+  "faces": []
+ },
+ "params": {
+  "walls.min_face_width": 1.2,
+  "walls.strip_turn_max": 60,
+  "overhang.bridge_step": 0.3
+ },
+ "expect": [
+  {
+   "verdict": "NOT_RUN"
+  }
+ ]
+}

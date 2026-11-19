@@ -1,0 +1,1308 @@
+"""The plan of a run: which units to run on which parts, where each one stopped, and the sum of what they found.
+
+One unit = one probe on one part (fusion_scan: on one document). A plan is a file, gate/run/<run>/plan.json, so a run
+can stop after `--wall` seconds (exit 3, `NEXT n/m`) and the next call goes on where it stopped:
+
+    {"run": "20310203T101207Z-3fa2", "command": "run" | "scan" | "export", "created": "...", "audit": false,
+     "intent": ["demo/motor_plate"] or null, "parts": ["demo/motor_plate", ...],
+     "units": [{"id": "u-0001", "doc": "demo", "part": "demo/motor_plate" or null, "sig": "..." or null,
+                "probe": "fusion_census", "state": "todo" | "partial" | "done" | "error" | "skipped",
+                "cursor": null, "attempts": 0, "budget_s": 20, "error": null,
+                "out": "gate/run/<run>/units/u-0001.json"}]}
+
+gate/run/current.json = {"run": id} names the plan a call without arguments continues. gate/run/lock = {"pid", "time"}
+is held while units run: one run at a time per project.
+
+Order of the units of one part: PROBE_ORDER. fusion_census comes first: the units after it get its holes and openings in
+JOB["features"]. A unit whose probe ended in an error, or never ran, leaves its rules NOT_RUN: not passed.
+
+The verdict of a part is never read from one call's output. It is computed from the stored facts of ALL its units at the
+part's current signature (gate/facts/<doc>/<part>/<sig12>.json), judged with today's judges and parameters, minus the
+valid waivers, minus the findings an attest answer closes.
+
+What this file adds to the plan beyond the keys above (all optional for a reader):
+    plan      "request" (what the command line asked for: a later call with the same request continues the plan),
+              "unreachable" (document keys that were not open), "changed_under_run" (part ids whose body changed
+              between the scan and a unit)
+    unit      "failures" (calls in a row that ended in an error or made no progress; MAX_ATTEMPTS of them end the unit)
+Files of a run besides plan.json: units/<id>.json (the envelope of the unit's last call) and units/<id>.partial.json
+(the merged facts of a unit that needs more calls). gate/run/scan.json names the plan `scan` continues.
+
+A new `run` scans first (signatures are read from Fusion, not from an old census), so "changed" always means: the body in
+the open document differs from the newest stamp. `--no-scan` uses the census as it is."""
+import json, os, time
+import gate_common, gate_fusion_rpc, gate_params, gate_registry
+from gate_common import (GateError, EXIT_PASS, EXIT_BLOCK, EXIT_ATTEST, EXIT_MORE, EXIT_INFRA, gate_path, load_census, load_facts,
+                         load_layout, load_project, read_json, write_json)
+
+PROBE_ORDER = ('fusion_census', 'fusion_inserts', 'fusion_openings', 'fusion_screws', 'fusion_bearings', 'fusion_gap', 'fusion_thin', 'fusion_near')
+STATES = ('todo', 'partial', 'done', 'error', 'skipped')
+MAX_ATTEMPTS = 2
+NEEDS_CENSUS = ('fusion_inserts', 'fusion_openings', 'fusion_screws', 'fusion_bearings')    # probes that read JOB["features"]
+WALL_GRACE_S = 0.5              # a unit still starts when this little of its budget is missing from the wall time
+LOCK_MAX_AGE_S = 600
+NOT_OPEN = 'document not open'
+
+_clock = time.monotonic         # the tests replace it with the clock of the fake Fusion
+_LOCKS = {}                     # lock path -> how often this process took it
+
+
+# ---- the lock ------------------------------------------------------------------------------------------------------------
+
+def _lock_path(root):
+    return gate_path(root, 'run', 'lock')
+
+
+def _pid_alive(pid):
+    if os.name == 'nt':                     # os.kill(pid, 0) ends the process on Windows: only the age rule applies there
+        return True
+    try:
+        os.kill(int(pid), 0)
+    except ProcessLookupError:
+        return False
+    except (OSError, ValueError, TypeError):
+        return True
+    return True
+
+
+def acquire_lock(root):
+    """Take gate/run/lock for this process. GateError when another live process holds it (a lock of a dead pid, or one
+    older than 10 minutes, is taken over)."""
+    path = _lock_path(root)
+    if _LOCKS.get(path):
+        _LOCKS[path] += 1
+        return path
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    for _ in range(3):
+        try:
+            fd = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+        except FileExistsError:
+            try:
+                with open(path, encoding='utf-8') as f:
+                    held = json.load(f)
+                age = time.time() - os.path.getmtime(path)
+            except (ValueError, OSError):
+                held, age = {}, LOCK_MAX_AGE_S + 1
+            pid = held.get('pid') if isinstance(held, dict) else None
+            if pid is not None and pid != os.getpid() and age <= LOCK_MAX_AGE_S and _pid_alive(pid):
+                raise GateError('another gate run holds gate/run/lock (pid %s since %s): one run at a time per project' % (pid, held.get('time')))
+            try:
+                os.remove(path)
+            except OSError:
+                pass
+            continue
+        with os.fdopen(fd, 'w', encoding='utf-8') as f:
+            json.dump({'pid': os.getpid(), 'time': gate_common.now()}, f)
+        _LOCKS[path] = 1
+        return path
+    raise GateError('cannot take gate/run/lock')
+
+
+def release_lock(root):
+    """Give the lock back when this process holds it."""
+    path = _lock_path(root)
+    if not _LOCKS.get(path):
+        return
+    _LOCKS[path] -= 1
+    if _LOCKS[path] > 0:
+        return
+    del _LOCKS[path]
+    try:
+        with open(path, encoding='utf-8') as f:
+            held = json.load(f)
+        if held.get('pid') == os.getpid():
+            os.remove(path)
+    except (ValueError, OSError, AttributeError):
+        pass
+
+
+def _beat(root):
+    """Renew the age of the lock: a long run in the background stays the holder."""
+    try:
+        os.utime(_lock_path(root), None)
+    except OSError:
+        pass
+
+
+# ---- plans ---------------------------------------------------------------------------------------------------------------
+
+def _finished(unit):
+    return unit['state'] in ('done', 'error', 'skipped')
+
+
+def progress(plan):
+    """(n, m): units that are finished (done, error after MAX_ATTEMPTS, skipped) and all units."""
+    units = plan.get('units') or []
+    return sum(1 for u in units if _finished(u)), len(units)
+
+
+def save_plan(root, plan):
+    """Write gate/run/<run>/plan.json. Returns the path."""
+    return write_json(os.path.join(gate_common.run_dir(root, plan['run']), 'plan.json'), plan)
+
+
+def load_plan(root, run=None):
+    """The plan of that run; with no run, the one gate/run/current.json names. None when there is none."""
+    if run is None:
+        run = (read_json(gate_path(root, 'run', 'current.json'), None) or {}).get('run')
+        if not run:
+            return None
+    return read_json(os.path.join(gate_common.run_dir(root, run), 'plan.json'), None)
+
+
+def _rule_budget(reg, probe):
+    """The largest budget_s a rule sets for this probe in its check, or None."""
+    got = [r['check']['budget_s'] for r in reg['rules'].values() if isinstance(r.get('check'), dict)
+           and r['check'].get('probe') == probe and r['check'].get('budget_s')]
+    return max(got) if got else None
+
+
+def _stage_rules(reg, stage, source):
+    """Rules of one stage that have a judge, are not deferred and apply to a part of that source, sorted by id."""
+    return [r for r in gate_registry.rules(reg, stage=stage, deferred=False)
+            if isinstance(r.get('check'), dict) and r['check'].get('judge') and gate_registry.applies_to(r, source)]
+
+
+def _question_probes(reg, source):
+    """Fusion probes a standing question reads: the probes behind the fact tests (gate_attest.TEST_PROBES) that the
+    "auto" of a design-stage attest rule names. Their facts let the gate answer a question itself where it cannot
+    apply (gate_attest.fact_answer). Most are units a judge needs anyway; one that only a question reads is planned
+    because of this. Such a unit that fails stops nothing: the question is asked."""
+    import gate_attest
+    out = set()
+    if source != 'fusion':
+        return out
+    for r in gate_registry.rules(reg, stage='design', level='attest', deferred=False):
+        a = r.get('attest') or {}
+        if a.get('per') == 'part' and gate_registry.applies_to(r, source):
+            for entry in a.get('auto') or []:
+                for test in entry.get('when') or []:
+                    out.update(gate_attest.TEST_PROBES.get(test) or ())
+    return out
+
+
+def _units(reg, part, entry, default_budget):
+    source = entry.get('source', 'fusion')
+    if source != 'fusion':
+        return []
+    probes = {r['check']['probe'] for r in _stage_rules(reg, 'design', source) if r['check'].get('needs') == 'fusion'}
+    probes |= _question_probes(reg, source)
+    probes.discard('fusion_scan')
+    order = [p for p in PROBE_ORDER if p in probes] + sorted(probes - set(PROBE_ORDER))
+    return [{'doc': entry['doc'], 'part': part, 'sig': entry.get('sig'), 'probe': p, 'state': 'todo', 'cursor': None, 'attempts': 0,
+             'budget_s': min(float(_rule_budget(reg, p) or default_budget), gate_fusion_rpc.MAX_BUDGET_S), 'error': None} for p in order]
+
+
+def units_for_part(reg, part, entry):
+    """The Fusion units one part needs at the design stage: one per probe that a rule with a judge names (stage design,
+    needs fusion, the rule applies to the part's source), and one per probe a standing question reads
+    (_question_probes), in PROBE_ORDER. fusion_scan is not a part unit.
+
+    reg    gate_registry.load()      part   part id      entry  the part's census entry
+    Returns [{"doc", "part", "sig", "probe", "state": "todo", "cursor": None, "attempts": 0, "budget_s", "error": None}]
+    without "id" and "out" (new_plan sets them). A generated part gets no Fusion unit: []."""
+    return _units(reg, part, entry, gate_common.LAYOUT_DEFAULTS['fusion']['budget_s'])
+
+
+def _number(root, plan):
+    for i, u in enumerate(plan['units']):
+        u['id'] = 'u-%04d' % (i + 1)
+        u['out'] = gate_common.rel(root, os.path.join(gate_common.run_dir(root, plan['run']), 'units', u['id'] + '.json'))
+    return plan
+
+
+def new_plan(root, reg, parts, command='run', intent=None, audit=False):
+    """Make and save a plan for these parts (units_for_part each), name it in gate/run/current.json and return it."""
+    census, budget = load_census(root), gate_fusion_rpc.budget(load_layout(root))
+    unknown = [p for p in parts if p not in census['parts']]
+    if unknown:
+        raise GateError('not in gate/census.json: %s (run gate.py scan; parts are discovered, not typed)' % ', '.join(unknown))
+    plan = {'run': gate_common.new_run_id(), 'command': command, 'created': gate_common.now(), 'audit': bool(audit),
+            'intent': list(intent) if intent is not None else None, 'parts': list(parts), 'units': [],
+            'unreachable': [], 'changed_under_run': []}
+    for p in parts:
+        plan['units'] += _units(reg, p, census['parts'][p], budget)
+    _number(root, plan)
+    save_plan(root, plan)
+    write_json(gate_path(root, 'run', 'current.json'), {'run': plan['run']})
+    return plan
+
+
+# ---- running units -------------------------------------------------------------------------------------------------------
+
+def _abs(root, relative):
+    return os.path.join(os.path.abspath(root), *relative.split('/'))
+
+
+def _partial_path(root, unit):
+    return _abs(root, unit['out'])[:-len('.json')] + '.partial.json'
+
+
+def _not_open(env, job):
+    text = env.get('error') or ''
+    if 'is not open' in text:
+        return True
+    docs = env.get('open_documents') or []
+    return bool(docs) and job['doc'] not in docs and env.get('doc_version') is None and 'document' in text
+
+
+def _first_line(text, n=300):
+    return (str(text).strip().splitlines() or [''])[0][:n]
+
+
+def _skip_doc(plan, doc_key, why=NOT_OPEN):
+    if doc_key not in plan.setdefault('unreachable', []):
+        plan['unreachable'].append(doc_key)
+    for u in plan['units']:
+        if u['doc'] == doc_key and not _finished(u):
+            u['state'], u['error'] = 'skipped', why
+
+
+def _loop(root, plan, wall_s, transport, pinger, job_for, on_done, on_fail):
+    """Run the unfinished units of a plan in order. See run_units() for the rules. Returns True when units are left."""
+    url = gate_fusion_rpc.endpoint(load_layout(root))
+    t0 = _clock()
+    acquire_lock(root)
+    try:
+        for u in plan['units']:
+            while not _finished(u):
+                if u['doc'] in plan.get('unreachable', []):
+                    _skip_doc(plan, u['doc'])
+                    break
+                if wall_s - (_clock() - t0) + WALL_GRACE_S < u['budget_s']:
+                    save_plan(root, plan)
+                    return True                                     # less than its budget is left: do not start it
+                job = job_for(u)
+                try:
+                    env = gate_fusion_rpc.run_unit(job, url, transport, pinger)
+                except gate_fusion_rpc.FusionDown as e:
+                    u['attempts'] += 1
+                    u['error'] = _first_line(e)
+                    save_plan(root, plan)                           # the plan is saved first; nothing else is sent
+                    raise
+                u['attempts'] += 1
+                _beat(root)
+                if env.get('error'):
+                    if _not_open(env, job):
+                        _skip_doc(plan, u['doc'])
+                    else:
+                        u['error'] = _first_line(env['error'])
+                        u['failures'] = u.get('failures', 0) + 1
+                        if u['failures'] >= MAX_ATTEMPTS:
+                            u['state'] = 'error'
+                            on_fail(u, env)
+                    save_plan(root, plan)
+                    continue
+                if u.get('part') and u.get('sig') and env.get('sig') and env['sig'] != u['sig']:
+                    if u['part'] not in plan.setdefault('changed_under_run', []):
+                        plan['changed_under_run'].append(u['part'])
+                    for other in plan['units']:
+                        if other.get('part') == u['part'] and not _finished(other):
+                            other['state'], other['error'] = 'skipped', 'the part changed under the run: scan again'
+                    save_plan(root, plan)
+                    continue
+                partial = read_json(_partial_path(root, u), None) if u['state'] == 'partial' else None
+                got = dict(env.get('facts') or {})
+                signing = got.pop('signing', None)                  # "the body is still being signed": progress, never a fact of the part
+                merged = gate_fusion_rpc.merge_facts(partial, got)
+                if not env.get('done'):
+                    if isinstance(signing, dict):                   # such a call moves on when more faces are in than the call before reported
+                        n = signing.get('faces_done')
+                        n = n if isinstance(n, (int, float)) and not isinstance(n, bool) else 0
+                        stalled = n <= (u.get('signed') or 0)
+                        u['signed'] = max(n, u.get('signed') or 0)
+                    else:
+                        stalled = env.get('cursor') == u['cursor'] and not got
+                    u['failures'] = u.get('failures', 0) + 1 if stalled else 0
+                    u['state'], u['cursor'] = 'partial', env.get('cursor')
+                    write_json(_partial_path(root, u), merged)
+                    if u['failures'] >= MAX_ATTEMPTS:
+                        u['state'], u['error'] = 'error', ('no progress: the signature of the body did not move on (%s of %s faces)' % (signing.get('faces_done'), signing.get('faces'))
+                                                           if isinstance(signing, dict) else 'no progress: the probe returned the same cursor and no facts')
+                        on_fail(u, dict(env, error=u['error']))
+                else:
+                    u['state'], u['cursor'], u['error'], u['failures'] = 'done', None, None, 0
+                    on_done(u, dict(env, facts=merged, done=True, cursor=None))
+                    if os.path.exists(_partial_path(root, u)):
+                        os.remove(_partial_path(root, u))
+                save_plan(root, plan)
+        save_plan(root, plan)
+        return False
+    finally:
+        release_lock(root)
+
+
+def _probe_facts(data, probe):
+    """The usable facts of one probe in a facts file: None when the unit never finished or ended in an error."""
+    entry = (data.get('probes') or {}).get(probe)
+    if not isinstance(entry, dict) or entry.get('error') or not entry.get('done', True) or not isinstance(entry.get('facts'), dict):
+        return None
+    return entry['facts']
+
+
+def _features(root, part, sig):
+    facts = _probe_facts(load_facts(root, part, sig), 'fusion_census') if sig else None
+    if facts is None:
+        return None
+    return {'holes': facts.get('holes') or [], 'openings': facts.get('openings') or []}
+
+
+def _unit_args(probe, vals):
+    if probe == 'fusion_thin':                 # the probe lists faces up to this width; the judge holds the limit
+        return {'width_cap': max(2.0, round(1.5 * float(vals.get('walls.min_face_width') or 0.0), 2))}
+    return {}
+
+
+def run_units(root, reg, resolved, plan, wall_s=20.0, transport=None, pinger=None, target_key=None):
+    """Run the units of a plan that are not finished, in order, until none is left or the wall time is used up.
+
+    For each unit: build the job (gate_fusion_rpc.new_job with params = gate_params.values(resolved), the tables, the
+    census features of the part once fusion_census is done), run it (gate_fusion_rpc.run_unit), then
+      - envelope "error": the unit is "error" after MAX_ATTEMPTS, its text is kept in the plan;
+      - envelope "sig" differs from the plan's: the part changed under the run; its units are "skipped" and the part is
+        reported as changed (scan again);
+      - "done" false: state "partial", the cursor is kept, the facts so far are merged (gate_fusion_rpc.merge_facts);
+      - "done" true: the merged facts are stored with gate_common.save_probe_facts and the unit is "done".
+    The plan is saved after every unit. A unit is not started when less than its budget_s is left of wall_s.
+    A document that is not open: its units are "skipped", the part is unreachable (old stamps stay valid, no new stamp).
+
+    target_key: the .3mf project whose declared target the units are run for (None = the only declared target).
+
+    Returns {"done": n, "total": m, "more": bool, "unreachable": [doc keys], "changed_under_run": [part ids]}.
+    Raises gate_fusion_rpc.FusionDown when Fusion stops answering (the plan is saved first)."""
+    root = os.path.abspath(root)
+    layout, project, census = load_layout(root), load_project(root), load_census(root)
+    vals, target = gate_params.values(resolved), gate_common.target_of(project, target_key)
+
+    def job_for(u):
+        doc, entry = gate_common.document_entry(layout, u['doc']), census['parts'].get(u['part']) or {}
+        return gate_fusion_rpc.new_job(
+            u['id'], plan['run'], u['probe'], doc.get('name'), u['doc'], _abs(root, u['out']), part=u['part'],
+            component_id=entry.get('component_id'), occurrence=entry.get('occurrence'), body=entry.get('body'), sig=u['sig'],
+            cursor=u['cursor'], deadline_s=u['budget_s'], params=vals, tables=reg['tables'], target=target,
+            features=None if u['probe'] == 'fusion_census' else _features(root, u['part'], u['sig']),
+            not_printed=project['not_printed'], motion_groups=doc.get('motion_groups'), args=_unit_args(u['probe'], vals))
+
+    def on_done(u, env):
+        gate_common.save_probe_facts(root, u['part'], u['sig'], dict(env, part=u['part'], sig=u['sig'], probe=u['probe']))
+
+    def on_fail(u, env):
+        # an error entry replaces older facts of this probe: a unit that failed leaves its rules NOT_RUN, not "as before"
+        bad = dict(env, part=u['part'], sig=u['sig'], probe=u['probe'], facts={}, done=False, error=u['error'] or 'error')
+        gate_common.save_probe_facts(root, u['part'], u['sig'], bad)
+        if u['probe'] == 'fusion_census':
+            for other in plan['units']:
+                if other['part'] == u['part'] and other['probe'] in NEEDS_CENSUS and not _finished(other):
+                    other['state'], other['error'] = 'skipped', 'no census: fusion_census ended in an error'
+                    gate_common.save_probe_facts(root, u['part'], u['sig'], dict(bad, probe=other['probe'], job=other['id'], error=other['error']))
+
+    more = _loop(root, plan, wall_s, transport, pinger, job_for, on_done, on_fail)
+    if plan.get('unreachable'):
+        _mark_docs(root, plan['unreachable'], False)
+    n, m = progress(plan)
+    return {'done': n, 'total': m, 'more': more, 'unreachable': list(plan.get('unreachable') or []),
+            'changed_under_run': list(plan.get('changed_under_run') or [])}
+
+
+def _mark_docs(root, doc_keys, is_open):
+    """Note in the census which documents were found open or not open, when that differs from what it says."""
+    census, changed = load_census(root), False
+    for key in doc_keys:
+        d = census['docs'].setdefault(key, {})
+        if d.get('open') is not is_open:
+            d['open'], changed = is_open, True
+    if changed:
+        write_json(gate_common.census_path(root), census)
+
+
+# ---- scan: discovery -----------------------------------------------------------------------------------------------------
+
+def _scan_plan(root, layout, doc_keys):
+    pointer = gate_path(root, 'run', 'scan.json')
+    run = (read_json(pointer, None) or {}).get('run')
+    plan = load_plan(root, run) if run else None
+    if plan and plan.get('command') == 'scan' and [u['doc'] for u in plan['units']] == doc_keys and progress(plan)[0] < len(doc_keys):
+        return plan
+    budget = gate_fusion_rpc.budget(layout)
+    plan = {'run': gate_common.new_run_id(), 'command': 'scan', 'created': gate_common.now(), 'audit': False, 'intent': None, 'parts': [],
+            'unreachable': [], 'changed_under_run': [],
+            'units': [{'doc': k, 'part': None, 'sig': None, 'probe': 'fusion_scan', 'state': 'todo', 'cursor': None, 'attempts': 0,
+                       'budget_s': budget, 'error': None} for k in doc_keys]}
+    _number(root, plan)
+    save_plan(root, plan)
+    write_json(pointer, {'run': plan['run']})
+    return plan
+
+
+def _history(old):
+    """The signatures a part had before, oldest first (the last 20): where the facts of its earlier geometries lie."""
+    return ([s for s in old.get('history') or [] if s != old.get('sig')] + ([old['sig']] if old.get('sig') else []))[-20:]
+
+
+def _merge_doc(root, census, doc, env, result, registered=None):
+    """Lay the finished scan of one document over the census.
+
+    registered  {document name: key} of every document of gate/layout.json. A printed body that comes from a LINKED
+                document (the scan names it in "linked") is a part of this document, with "linked" in its census
+                entry, unless that document is registered itself: then its parts are judged there and are left out
+                here, so nothing is judged twice. Both cases are counted per linked document in
+                census["docs"][key]["linked"] and result["linked"][key], and the scan prints one line for each.
+
+    "stl_names": a part whose mapped file is another part's (the default file of a part of this document, or the STL
+    of a live part of another document or of a part made by code) is a clash line. The part STAYS in the census with
+    the "stl" it had (the default file for a new part): a wrong map never reads as "the part left the document".
+    result["stl_moved"] gets (part id, old "stl", new "stl") for every known part whose file changed with this scan,
+    result["stl_unmatched"] (document key, map key, file) for every key of the map that names no part of this scan."""
+    key, now, parts = doc['key'], gate_common.now(), census['parts']
+    facts, seen, linked = env.get('facts') or {}, {}, {}
+    names = doc.get('stl_names') or {}
+    for p in facts.get('parts') or []:
+        other = p.get('linked') if isinstance(p.get('linked'), str) and p.get('linked') else None
+        if other or p.get('external'):
+            there = (registered or {}).get(other) if other else None
+            row = linked.setdefault(other or '?', {'parts': 0, 'registered': there if there != key else None})
+            row['parts'] += 1
+            if row['registered']:
+                continue
+        pid = gate_common.part_id(key, p.get('name'))
+        if pid in seen or (parts.get(pid) or {}).get('source') == 'generated' or not p.get('sig'):
+            why = 'no signature' if not p.get('sig') else 'the id is taken by %r' % ((seen.get(pid) or parts.get(pid) or {}).get('name'),)
+            result['clashes'].append('%s: body %r of document %r is left out (%s): give it its own name' % (pid, p.get('name'), doc.get('name'), why))
+            continue
+        seen[pid] = p
+    kept = {}                                            # part id -> the "stl" a part keeps because its mapped file is another part's
+    if names and doc.get('stl_dir'):
+        plain = dict(doc, stl_names={})
+        for pid, (want, other, default_only) in sorted(gate_common.stl_map_refusals(doc, {pid: seen[pid].get('name') for pid in seen}, parts).items()):
+            before = (parts.get(pid) or {}).get('stl')
+            kept[pid] = before if before and gate_common.stl_key(before) != gate_common.stl_key(want) else gate_common.stl_of(plain, seen[pid].get('name'))
+            what = ('the default STL name of the part %s (a file named after one part is never given to another)' if default_only else 'the STL of the part %s') % other
+            result['clashes'].append('%s: "stl_names" of document %r gives it the file %s, which is %s: the part keeps %s until the map is changed '
+                                     '(gate/layout.json, then scan again)' % (pid, key, want.rsplit('/', 1)[1], what, kept[pid]))
+        known = {seen[pid].get('name') for pid in seen} | {pid.split('/')[1] for pid in seen}
+        result.setdefault('stl_unmatched', []).extend((key, k, names[k]) for k in sorted(names) if k not in known)
+    for pid in sorted(seen):
+        p, old = seen[pid], parts.get(pid)
+        e = dict(old or {})
+        e.update(doc=key, name=p.get('name'), source='fusion', component_id=p.get('component_id'), occurrence=p.get('occurrence'),
+                 body=p.get('body'), pose=p.get('pose'), matrix=p.get('matrix'), bbox=p.get('bbox'), gone=False,
+                 stl=kept[pid] if pid in kept else gate_common.stl_of(doc, p.get('name')))
+        if old and old.get('stl') and e['stl'] and old['stl'] != e['stl']:
+            result.setdefault('stl_moved', []).append((pid, old['stl'], e['stl']))
+        for k in ('copies', 'volume', 'area', 'faces'):
+            if k in p:
+                e[k] = p[k]
+        e.pop('linked', None)
+        if p.get('linked') or p.get('external'):
+            e['linked'] = p.get('linked') or '?'
+        if old is None:
+            e.update(sig=p['sig'], prev_sig=None, first_seen=now, changed=now)
+            result['new'].append(pid)
+        elif old.get('sig') != p['sig']:
+            e.update(sig=p['sig'], prev_sig=old.get('sig'), changed=now, history=_history(old))
+            result['new' if old.get('gone') else 'changed'].append(pid)
+        elif old.get('gone'):
+            result['new'].append(pid)
+        e.pop('gone_at', None)
+        parts[pid] = e
+    for pid in sorted(parts):
+        e = parts[pid]
+        if e.get('doc') == key and e.get('source', 'fusion') == 'fusion' and pid not in seen and not e.get('gone'):
+            e['gone'], e['gone_at'] = True, now
+            result['gone'].append(pid)
+    census['docs'][key] = {'name': doc.get('name'), 'doc_version': env.get('doc_version'), 'open': True, 'scanned': now,
+                           'parts': len(seen), 'refs': len(facts.get('refs') or [])}
+    if linked:
+        census['docs'][key]['linked'] = linked
+
+
+def _merge_generators(root, census, layout, doc_key, result, only=None):
+    """Parts made by code: every generator of gate/layout.json is a part whose signature is the geom_hash of its STL.
+    only: look at this one part and leave the others as they are."""
+    now, parts, listed = gate_common.now(), census['parts'], set()
+    for g in layout.get('generators') or []:
+        pid = g.get('part')
+        key, _ = gate_common.split_part_id(pid)
+        if (doc_key and key != doc_key) or (only and pid != only):
+            continue
+        old = parts.get(pid)
+        if old and old.get('source', 'fusion') == 'fusion' and not old.get('gone'):
+            result['clashes'].append('%s: the generator %r names a part that the document already has' % (pid, g.get('source')))
+            continue
+        listed.add(pid)
+        path = os.path.join(root, *str(g.get('stl') or '').split('/'))
+        sig = gate_common.sibling('meshid').stl_ids(path)['geom_hash'] if g.get('stl') and os.path.isfile(path) else None
+        e = dict(old or {})
+        e.update(doc=key, name=pid.split('/')[1], source='generated', generator=g.get('source'), stl=g.get('stl'), gone=False)
+        if old is None or old.get('source') != 'generated':
+            e.update(sig=sig, prev_sig=None, first_seen=now, changed=now)
+            result['new'].append(pid)
+        elif old.get('sig') != sig:
+            e.update(sig=sig, prev_sig=old.get('sig'), changed=now, history=_history(old))
+            result['new' if old.get('gone') else 'changed'].append(pid)
+        elif old.get('gone'):
+            result['new'].append(pid)
+        e.pop('gone_at', None)
+        parts[pid] = e
+    for pid in sorted(parts):
+        e = parts[pid]
+        if e.get('source') == 'generated' and pid not in listed and not e.get('gone') and (not doc_key or e.get('doc') == doc_key) and not only:
+            e['gone'], e['gone_at'] = True, now
+            result['gone'].append(pid)
+
+
+def scan(root, doc_key=None, wall_s=20.0, transport=None, pinger=None):
+    """Discover parts. Runs fusion_scan on the registered documents (gate/layout.json), merges the result into
+    gate/census.json and returns {"census": the census, "done": bool, "next": [doc keys not finished],
+    "new": [part ids], "changed": [part ids], "gone": [part ids], "unreachable": [doc keys]}.
+
+    A part's id is gate_common.part_id(doc key, name); its "stl" is gate_common.stl_of(document, name): the file the
+    document's "stl_names" gives it, else <stl_dir>/<slug>.stl. A mapped file that is another part's is a clash: the
+    part stays in the census with the file it had (_merge_doc). After the merge every file that two live parts name
+    as their STL (gate_common.shared_stls: parts of every document and every generator) is one more clash line.
+    A part whose signature differs gets "prev_sig", "changed" and
+    "history" (its earlier signatures, oldest first: the facts of an earlier checked geometry are found through it);
+    a part no longer found gets "gone": true (its stamps stay on disk). Generators of gate/layout.json become parts
+    with "source": "generated" and "sig" = the geom_hash of their STL.
+    Raises gate_fusion_rpc.FusionDown when Fusion does not answer.
+
+    Also returned: "errors" {doc key: why its scan failed}, "clashes" (bodies left out because two give one part id,
+    and STL files that two parts name), "progress" (n, m) of the scan units, "run", "stl_moved" [{"part", "from",
+    "to", "left": the old file is still in the folder and no part names it}] for every part whose STL path changed
+    with this scan, and "stl_unmatched" [(doc key, map key, file)] for every key of "stl_names" that names no part.
+    A document is merged into the census only when its scan is complete: half a list would mark the rest as gone.
+    A finished scan also returns "notes": the lines of scan_notes() for the documents it read (linked documents, equal
+    bodies that are probably bought, parts in no motion group), each said once per document."""
+    root = os.path.abspath(root)
+    layout, project = load_layout(root), load_project(root)
+    if doc_key is not None:
+        gate_common.document_entry(layout, doc_key)
+    docs = [d for d in layout['documents'] if doc_key in (None, d['key'])]
+    if not docs and not layout.get('generators'):
+        raise GateError('gate/layout.json registers no document and no generator: there is nothing to discover')
+    for d in docs:
+        if not d.get('name'):
+            raise GateError('gate/layout.json: document %r has no "name" (the name of the Fusion document)' % (d.get('key'),))
+    result = {'new': [], 'changed': [], 'gone': [], 'unreachable': [], 'errors': {}, 'clashes': [], 'next': [], 'done': True,
+              'stl_moved': [], 'stl_unmatched': []}
+    census, by_key = load_census(root), {d['key']: d for d in docs}
+    _merge_generators(root, census, layout, doc_key, result)        # parts made by code need no Fusion: they are known before the first call
+    write_json(gate_common.census_path(root), census)
+    if docs:
+        plan = _scan_plan(root, layout, [d['key'] for d in docs])
+
+        def job_for(u):
+            doc = by_key[u['doc']]
+            return gate_fusion_rpc.new_job(u['id'], plan['run'], 'fusion_scan', doc['name'], doc['key'], _abs(root, u['out']), cursor=u['cursor'],
+                                           deadline_s=u['budget_s'], not_printed=project['not_printed'], motion_groups=doc.get('motion_groups'))
+
+        registered = {d.get('name'): d['key'] for d in layout['documents'] if d.get('name')}
+
+        def on_done(u, env):
+            _merge_doc(root, census, by_key[u['doc']], env, result, registered)
+            census['scanned'] = gate_common.now()
+            write_json(gate_common.census_path(root), census)
+
+        def on_fail(u, env):
+            result['errors'][u['doc']] = u['error'] or 'error'
+
+        more = _loop(root, plan, wall_s, transport, pinger, job_for, on_done, on_fail)
+        for u in plan['units']:
+            if u['state'] == 'error':
+                result['errors'][u['doc']] = u['error'] or 'error'
+            elif u['state'] == 'skipped':
+                result['unreachable'].append(u['doc'])
+                census['docs'].setdefault(u['doc'], {'name': by_key[u['doc']].get('name')})['open'] = False
+            elif not _finished(u):
+                result['next'].append(u['doc'])
+        result.update(done=not more, progress=progress(plan), run=plan['run'])
+    else:
+        result.update(progress=(0, 0), run=None)
+    for path, pids in sorted(gate_common.shared_stls(census, layout).items()):      # two parts, one file: whatever the reason
+        result['clashes'].append('%s: the parts %s name this one file as their STL, an export of one overwrites the other: give one of them another file '
+                                 '("stl_names", "stl_dir" or the generator\'s "stl" in gate/layout.json), then scan again' % (path, ' and '.join(pids)))
+    named = {gate_common.stl_key(e['stl']) for e in census['parts'].values() if isinstance(e, dict) and e.get('stl') and not e.get('gone')}
+    result['stl_moved'] = [{'part': pid, 'from': old, 'to': new,
+                            'left': gate_common.stl_key(old) not in named and os.path.isfile(os.path.join(root, *old.split('/')))}
+                           for pid, old, new in result['stl_moved']]
+    if result['done']:
+        census['scanned'] = gate_common.now()
+        result['notes'] = scan_notes(root, layout, census, [d['key'] for d in docs if d['key'] not in result['unreachable'] and d['key'] not in result['errors']])
+    write_json(gate_common.census_path(root), census)
+    result['census'] = census
+    return result
+
+
+def _own_number(root, name):
+    """One parameter of this project by name, or None when the registry or the parameter cannot be read."""
+    try:
+        reg = gate_registry.load_default()
+        return gate_params.values(gate_params.resolve(reg, gate_params.load_overrides(root), None), [name]).get(name)
+    except Exception:                                   # a hint must never stop a scan: no number, no hint
+        return None
+
+
+def same_bodies(parts, at_least):
+    """Parts that are one of many equal bodies in one component: {(component id, volume, area, faces): [part ids]} for
+    every such family of `at_least` bodies or more. Rollers, balls and pins come like that; printed parts rarely do.
+    parts: {part id: census entry}. A hint for the reader, never a reason to leave a part out."""
+    families = {}
+    for pid, e in parts.items():
+        if all(isinstance(e.get(k), (int, float)) and not isinstance(e.get(k), bool) for k in ('volume', 'area', 'faces')) and e.get('component_id'):
+            families.setdefault((e['component_id'], round(e['volume'], 1), round(e['area'], 1), e['faces']), []).append(pid)
+    return {k: sorted(v) for k, v in families.items() if isinstance(at_least, (int, float)) and len(v) >= at_least}
+
+
+def parts_in_no_group(parts, groups):
+    """Part ids that match none of the declared motion groups, sorted. The test is the one of the gap probe: the first
+    group one of whose patterns is found in the occurrence path of the part (its name when it sits at the root)."""
+    import re
+    from probes import _geom_rings
+
+    def search(pattern, text):
+        try:
+            return bool(pattern) and re.search(pattern, text or '') is not None
+        except re.error:
+            return False
+    return sorted(pid for pid, e in parts.items() if _geom_rings.group_of(e.get('occurrence') or e.get('name') or '', groups, search) is None)
+
+
+def scan_notes(root, layout, census, doc_keys):
+    """What a finished scan tells the reader ONCE per document, never once per part (lines of text):
+
+      LINKED     how many printed bodies come from which linked document, and who judges them: this document, or the
+                 linked document itself when it is registered in gate/layout.json (then they are not parts here);
+      HINT       families of equal bodies in one component (fusion.bought_hint_same_bodies): probably bought, the
+                 owner adds a "not_printed" pattern or leaves them. Nothing is left out by this;
+      NO GROUP   parts that match no motion group, or a document that declares none: clearance.min_gap_moving does
+                 not measure them. The judge says the same per part as an informational row."""
+    out, n_same = [], _own_number(root, 'fusion.bought_hint_same_bodies')
+    for key in doc_keys:
+        doc = gate_common.document_entry(layout, key)
+        mine = {pid: e for pid, e in census['parts'].items() if e.get('doc') == key and not e.get('gone') and e.get('source', 'fusion') == 'fusion'}
+        for name, row in sorted(((census['docs'].get(key) or {}).get('linked') or {}).items()):
+            what = 'a linked document whose name Fusion did not give' if name == '?' else 'the linked document %r' % name
+            if row.get('registered'):
+                out.append('LINKED   %s: %d printed bodies come from %s, registered as %r: they are judged there and are no parts of %s (open it and scan it)'
+                           % (key, row.get('parts', 0), what, row['registered'], key))
+            else:
+                out.append('LINKED   %s: %d parts come from %s, which gate/layout.json does not register: they are judged here. '
+                           'Its bought parts carry no prefix of this project: check the "not_printed" patterns' % (key, row.get('parts', 0), what))
+        families = same_bodies(mine, n_same)
+        if families:
+            names = sorted({'%d x %r' % (len(v), (mine[v[0]].get('name') or v[0]).split(' / ')[0]) for v in families.values()})
+            out.append('HINT     %s: %d parts are one of %g or more equal bodies in one component (rollers, balls and pins come like that). If they are bought, '
+                       'add a "not_printed" pattern to gate/project.json: %s%s' % (key, sum(len(v) for v in families.values()), n_same, ', '.join(names[:6]),
+                                                                                   ' and %d more' % (len(names) - 6) if len(names) > 6 else ''))
+        groups = doc.get('motion_groups') or []
+        if mine and not groups:
+            out.append('NO GROUP %s: the document declares no "motion_groups" in gate/layout.json: the gap to moving neighbours is checked for none of its %d parts' % (key, len(mine)))
+        elif mine:
+            loose = parts_in_no_group(mine, groups)
+            if loose:
+                out.append('NO GROUP %s: %d of %d parts match no motion group of gate/layout.json, their gap to moving neighbours is not checked: %s%s'
+                           % (key, len(loose), len(mine), ', '.join(loose[:6]), ' and %d more' % (len(loose) - 6) if len(loose) > 6 else ''))
+    return out
+
+
+def cmd_scan(root, args):
+    """gate.py scan [--doc KEY]. Runs fusion_scan units on every registered document (or one) until done or 20 s have
+    passed, updates gate/census.json, prints one line per new, changed and vanished part.
+    Returns 0 done, 3 more calls needed (prints `NEXT n/m`), 4 Fusion not answering. A document that is not open is
+    reported as unreachable and is not an error."""
+    res = scan(root, doc_key=args.doc, wall_s=20.0)
+    _print_scan(res, _hint_faces(root))
+    if res['errors'] or res['clashes']:
+        return EXIT_INFRA
+    if not res['done']:
+        print('NEXT %d/%d' % res['progress'])
+        return EXIT_MORE
+    return EXIT_PASS
+
+
+SCAN_LINES = 12                 # names a scan prints per kind (new, changed, gone) before it gives the count
+
+
+def _hint_faces(root):
+    """The parameter process.bought_hint_faces of this project, or None when it cannot be read (then no hint)."""
+    try:
+        reg = gate_registry.load_default()
+        return gate_params.values(gate_params.resolve(reg, gate_params.load_overrides(root), None), ['process.bought_hint_faces']).get('process.bought_hint_faces')
+    except (GateError, KeyError):
+        return None
+
+
+def _print_scan(res, hint_faces=None):
+    """What a scan found, short enough to read: at most SCAN_LINES names per kind, then the count. While the scan needs
+    more calls nothing is said about the census: a document is merged only when its scan is complete, so counts printed
+    now would be the old ones. hint_faces: new parts with at most that many faces are named as possibly bought."""
+    census = res['census']
+    for word, key in (('NEW', 'new'), ('CHANGED', 'changed'), ('GONE', 'gone')):
+        for pid in res[key][:SCAN_LINES]:
+            print('%-8s %s' % (word, pid))
+        if len(res[key]) > SCAN_LINES:
+            print('%-8s ... and %d more (%d in all; gate/census.json lists every part)' % (word, len(res[key]) - SCAN_LINES, len(res[key])))
+    for key in res['unreachable']:
+        print('UNREACHABLE  %s: document %r is not open (its parts keep their stamps; nothing new is checked)' % (key, (census['docs'].get(key) or {}).get('name')))
+    for key, why in sorted(res['errors'].items()):
+        print('SCAN ERROR  %s: %s' % (key, why))
+    for line in res['clashes']:
+        print('NAME CLASH  %s' % line)
+    moved = res.get('stl_moved') or []
+    for row in moved[:SCAN_LINES]:                      # "stl_names" or "stl_dir" changed in gate/layout.json: said at the scan that makes it true
+        print('STL      %s: %s -> %s (gate/layout.json): the next export writes the new file%s'
+              % (row['part'], row['from'], row['to'], '. %s stays in the folder: delete it once the new file is exported, or it is listed as an STL '
+                                                      'without a valid stamp after the next change of the part' % row['from'] if row.get('left') else ''))
+    if len(moved) > SCAN_LINES:
+        print('STL      ... and %d more parts whose STL path changed (gate/census.json has every path)' % (len(moved) - SCAN_LINES))
+    for doc_key, k, f in (res.get('stl_unmatched') or [])[:SCAN_LINES]:
+        print('STL NAME %s: the key %r of "stl_names" names no part of this scan (a key is a part name exactly as the census shows it, or its part slug): '
+              '%s is the STL of no part' % (doc_key, k, f))
+    if not res['done']:
+        print('scan: not finished, %d of %d document(s) read. The counts come with the last call' % tuple(res.get('progress') or (0, 0)))
+        return
+    if isinstance(hint_faces, (int, float)) and not isinstance(hint_faces, bool):
+        plain = [p for p in res['new'] if isinstance((census['parts'].get(p) or {}).get('faces'), int) and census['parts'][p]['faces'] <= hint_faces]
+        if plain:
+            names = [census['parts'][p].get('name') or p for p in plain]
+            print('HINT     %d new part(s) have %g faces or fewer (a plain cylinder, a washer, a tube). A bought part that no "not_printed" pattern '
+                  'of gate/project.json names is listed as printed: %s%s' % (len(plain), hint_faces, ', '.join(repr(n) for n in names[:8]),
+                                                                           ' and %d more' % (len(names) - 8) if len(names) > 8 else ''))
+    for line in res.get('notes') or []:                 # once per document: linked documents, equal bodies, parts in no motion group
+        print(line)
+    live = [p for p, e in census['parts'].items() if not e.get('gone')]
+    print('scan: %d parts, %d new, %d changed, %d gone, %d document(s) not open' % (len(live), len(res['new']), len(res['changed']), len(res['gone']), len(res['unreachable'])))
+
+
+# ---- which parts ---------------------------------------------------------------------------------------------------------
+
+def changed_parts(root, census=None):
+    """Part ids of the census that have no VALID stamp for their current signature (never checked, changed since, or
+    stamped under a limit that was tightened or a judge that changed since: gate_stamp.verify), sorted.
+    Parts marked "gone" are left out. When the registry cannot be loaded, a stamp file that exists counts."""
+    import gate_stamp
+    census = census or load_census(root)
+    try:
+        reg = gate_registry.load_default()
+    except GateError:
+        reg = None
+    out = []
+    for pid in sorted(census['parts']):
+        e = census['parts'][pid]
+        if e.get('gone'):
+            continue
+        if not e.get('sig') or not os.path.isfile(gate_common.stamp_path(root, pid, e['sig'])):
+            out.append(pid)
+        elif reg is not None and gate_stamp._valid_file(root, reg, pid, e['sig'], census) is None:
+            out.append(pid)
+    return out
+
+
+def part_entry(root, part, census=None):
+    """The census entry of a part. A part made by code that no scan has listed yet (a generator of gate/layout.json) gets
+    an entry made here, so its STL can be checked and stamped with no Fusion at all. GateError for an unknown part."""
+    census = census if census is not None else load_census(root)
+    entry = census['parts'].get(part)
+    if entry is not None:
+        return entry
+    for g in load_layout(root).get('generators') or []:
+        if g.get('part') == part:
+            key, name = gate_common.split_part_id(part)
+            return {'doc': key, 'name': name, 'source': 'generated', 'generator': g.get('source'), 'stl': g.get('stl'), 'sig': None, 'prev_sig': None, 'gone': False}
+    raise GateError('unknown part %r: it is not in gate/census.json (gate.py scan discovers parts; a part made by code is registered under "generators" in gate/layout.json)' % (part,))
+
+
+# ---- judging -------------------------------------------------------------------------------------------------------------
+
+def _prev_facts(root, part, entry, sig, probe):
+    """The facts of one probe at the part's previous CHECKED signature: the census "prev_sig" when it was checked, else
+    the newest earlier signature (census "history") that has facts of this probe. None when there is nothing to compare
+    with."""
+    for old in [entry.get('prev_sig')] + list(reversed(entry.get('history') or [])):
+        if old and old != sig:
+            got = _probe_facts(load_facts(root, part, old), probe)
+            if got is not None:
+                return got
+    return None
+
+
+def print_frame(root, part, entry, layout=None):
+    """How one part lies on the bed, for the judges that count layers (ctx["print"]):
+    {"up": unit vector of the print axis in the PART frame, pointing away from the bed, or None,
+     "bed": the height of the bed face along "up" (the lowest corner of the part's bounding box), or None,
+     "source": where the orientation comes from, "why": text when "up" is None}.
+
+    The bed face is what the build table of a registered .3mf project says for the object built from the part's STL
+    (probes.project_consistency.orientations: the `orient` value bambu3mf.build() takes). That direction is in the
+    frame of the STL, which is the document frame; the census entry's "matrix" (part frame -> document frame, from the
+    scan) turns it into the part frame, where the census holds its holes. Unknown, and said so in "why": no build table
+    names the part; a table is computed, not a literal; two tables lay it on different faces; an orient value that
+    cannot be read; a census entry without its matrix (scanned by an older copy of the tools: scan again)."""
+    from probes import _geom, project_consistency
+    layout = layout if layout is not None else load_layout(root)
+    out = {'up': None, 'bed': None, 'source': None, 'why': None}
+    stl = entry.get('stl')
+    if not stl:
+        out['why'] = 'the census names no STL for this part'
+        return out
+    rows, problems = project_consistency.orientations(root, layout, stl)
+    if not rows:
+        tables = [e.get('build_table') for e in layout.get('projects') or [] if isinstance(e, dict) and e.get('build_table')]
+        if not tables:
+            out['why'] = 'no registered .3mf project names a build table ("build_table" in gate/layout.json)'
+        elif problems:
+            out['why'] = '; '.join(problems)
+        else:
+            out['why'] = 'no build table of a registered .3mf project builds an object from %s' % stl
+        return out
+    bad = [r for r in rows if r['down'] is None]
+    if bad:
+        out['why'] = 'the orientation %r of %s in %s cannot be read' % (bad[0]['orient'], bad[0]['object'], bad[0]['table'])
+        return out
+    downs = sorted({tuple(round(c, 4) for c in r['down']) for r in rows})
+    if len(downs) > 1:
+        out['why'] = 'the build tables lay it on different faces: %s' % '; '.join(sorted({'%s in %s: %r' % (r['object'], r['table'], r['orient']) for r in rows}))
+        return out
+    out['source'] = '%s: %s on plate "%s", orient %r' % (rows[0]['table'], rows[0]['object'], rows[0]['plate'], rows[0]['orient'])
+    m = _geom.IDENTITY if entry.get('source') == 'generated' else entry.get('matrix')     # an STL made by code is its own frame
+    if not (isinstance(m, (list, tuple)) and len(m) == 16 and all(isinstance(c, (int, float)) and not isinstance(c, bool) for c in m)):
+        out['why'] = 'the census holds no pose of this part (its matrix): scan the document again'
+        return out
+    up_doc = tuple(-c for c in rows[0]['down'])
+    up = _geom.v_unit(_geom.mat_vector(_geom.mat_inverse(m), up_doc))
+    out['up'] = [round(c, 6) for c in up]
+    box = entry.get('bbox')
+    try:
+        lo, hi = box
+        corners = [(x, y, z) for x in (lo[0], hi[0]) for y in (lo[1], hi[1]) for z in (lo[2], hi[2])]
+        out['bed'] = round(min(_geom.v_dot(c, up) for c in corners), 6)
+    except (TypeError, ValueError, IndexError):
+        out['bed'] = None
+    return out
+
+
+def judge_part(root, reg, resolved, part, sig=None, stage='design', intent=None, target=None):
+    """Judge the stored facts of one part with today's judges and parameters and store the result.
+
+    For every rule with a judge of that stage that applies to the part: take the facts of its probe from the part's
+    facts file (None when the unit did not run), call gate_judges.run_judge(rule, facts, gate_params.values(resolved,
+    rule params), ctx) and store the findings with gate_common.save_judged (judge hash and parameter values beside
+    them). ctx is built as gate_judges describes ("census", "prev" from the facts file of the part's "prev_sig",
+    "print" from print_frame()).
+    regression.unintended gets {"changed": [...]} built from the census.
+
+    sig None = the part's current census signature. Returns {rule id: [findings]}."""
+    import gate_judges
+    census = load_census(root)
+    entry = part_entry(root, part, census)
+    if entry.get('source') == 'generated' and sig and entry.get('sig') != sig:
+        # a part made by code is "scanned" by reading its STL: the census follows the file that is being judged
+        _merge_generators(root, census, load_layout(root), None, {'new': [], 'changed': [], 'gone': [], 'clashes': []}, only=part)
+        write_json(gate_common.census_path(root), census)
+        entry = census['parts'].get(part, entry)
+    sig = sig or entry.get('sig')
+    if not sig:
+        raise GateError('part %r has no signature yet (a generated part whose STL is missing?)' % (part,))
+    data = load_facts(root, part, sig)
+    census_facts = _probe_facts(data, 'fusion_census')
+    out, frame = {}, None
+    for rule in _stage_rules(reg, stage, entry.get('source', 'fusion')):
+        probe, name = rule['check']['probe'], rule['check']['judge']
+        if probe == 'fusion_scan':               # a document unit: its facts for one part come from the census
+            stamped = os.path.isfile(gate_common.stamp_path(root, part, sig))
+            facts = {'changed': [] if stamped else [{'part': part, 'sig': sig, 'prev_sig': entry.get('prev_sig')}]}
+        else:
+            facts = _probe_facts(data, probe)
+        params = gate_params.values(resolved, rule.get('params') or [])
+        if frame is None:
+            try:
+                frame = print_frame(root, part, entry)
+            except Exception as e:                   # what could not be worked out is unknown, and the judge says so
+                frame = {'up': None, 'bed': None, 'source': None, 'why': 'the print orientation could not be worked out (%s: %s)' % (type(e).__name__, e)}
+        ctx = {'part': part, 'rule': rule['id'], 'tables': reg['tables'], 'target': target, 'census': census_facts,
+               'prev': None if probe == 'fusion_scan' else _prev_facts(root, part, entry, sig, probe),
+               'intent': list(intent) if intent is not None else None, 'print': frame}
+        findings = gate_judges.run_judge(rule, facts, params, ctx)
+        gate_common.save_judged(root, part, sig, rule['id'], _judge_hash(name), params, findings)
+        out[rule['id']] = findings
+    import gate_attest
+    gate_attest.record_fact_answers(root, reg, part, sig)      # the standing questions the facts of this geometry answer
+    return out
+
+
+_JUDGE_HASHES = {}             # (name, function) -> hash: reading a judge's source 1600 times is too slow for the session-start digest
+
+
+def _judge_hash(name):
+    import gate_judges
+    fn = gate_judges.JUDGES.get(name)
+    if fn is None:
+        return None
+    if (name, fn) not in _JUDGE_HASHES:
+        _JUDGE_HASHES[(name, fn)] = gate_judges.judge_hash(name)
+    return _JUDGE_HASHES[(name, fn)]
+
+
+def _waivers(root):
+    data = read_json(gate_path(root, 'owner', 'waivers.json'), {})
+    return list(data.get('waivers') or []) if isinstance(data, dict) else []
+
+
+def part_verdict(root, reg, part, sig=None, stages=('design',), defer_inherited=False):
+    """What the stored judgements of one part add up to, with no Fusion call and no judging.
+
+    defer_inherited  False (what a stamp needs: `gate.py export` calls it so): every standing question counts.
+                     True (run, status, attest list): the questions of an INHERITED part (gate_report: the audit
+                     judged this geometry, it has not changed, it has no stamp) are not asked: the standing ones of
+                     the part and the ones a finding carries. They are returned as "deferred_questions" (the findings
+                     as "deferred_asked"), and a part with nothing else open has the verdict "inherited".
+
+    Returns {"part", "sig", "verdict": "pass" | "pass_attested" | "fail" | "attest" | "incomplete" | "unreachable",
+             "open": [findings that block: no valid waiver, no "ask"],
+             "asked": [findings with "ask" that no answer closes yet],
+             "answered": [findings an attest answer closed], "waived": [findings a valid waiver closed],
+             "info": [INFO findings], "not_run": [rule ids of these stages with nothing stored for this signature],
+             "waivers": the rows of gate_features.apply_waivers(), "questions": open part-level questions
+             (gate_attest.questions_for_part), "attested": n answers the verdict rests on}.
+    "incomplete": a rule has nothing stored, or every open row is a check that could not decide (NOT_RUN): nothing is
+    known to be wrong, and nothing has passed; "fail": a row in "open" that was measured (FAIL, GROW, BLOCKED);
+    "attest": nothing open, a question is; "pass_attested": nothing open, answers were needed; "pass": nothing at all.
+    An answer the gate gave itself from the facts (gate_attest.fact_answer) is not counted in "attested".
+
+    Every finding carries its "id" (gate_features.finding_id). Also returned:
+      "inherited"      findings that are items of gate/owner/triage.json (same rule, anchor and context): they do not
+                       count as open here; gate_report.inherited_block() says which of them stop the part's export
+      "ask_questions"  the open questions of the "asked" findings; "all_questions": every question, answered or not
+      "stale"          rule ids whose stored judgement was made by an older version of the judge (run --offline)
+      "state"          "new" | "changed" | "unchanged" | "inherited" | "unreachable" for the report
+      "by_facts"       the part-level questions the facts answered
+      "deferred_questions", "deferred_asked", "inherited_part"   see defer_inherited
+      "proposed_part"  an audit judged this geometry after the owner adopted his list and he has not taken that audit
+                       over (gate_report.is_proposed): judged as any part, never inherited by itself
+    "unreachable": the part's document is not open and a rule has nothing stored (old stamps stay valid)."""
+    import gate_attest, gate_features, gate_judges, gate_report
+    census = load_census(root)
+    entry = part_entry(root, part, census)
+    sig = sig or entry.get('sig')
+    source = entry.get('source', 'fusion')
+    data = load_facts(root, part, sig) if sig else {'probes': {}, 'judged': {}}
+    findings, not_run, stale = [], [], []
+    for stage in stages:
+        for rule in _stage_rules(reg, stage, source):
+            j = (data.get('judged') or {}).get(rule['id'])
+            if not isinstance(j, dict):
+                not_run.append(rule['id'])
+                continue
+            name = rule['check']['judge']
+            if name in gate_judges.JUDGES and j.get('judge_hash') != _judge_hash(name):
+                stale.append(rule['id'])
+            findings += [dict(f, id=gate_features.finding_id(f)) for f in j.get('findings') or [] if f.get('part', part) == part]
+    census_facts = _probe_facts(data, 'fusion_census')
+    features = ((census_facts.get('holes') or []) + (census_facts.get('openings') or [])) if census_facts else None
+    info = [f for f in findings if f.get('verdict') == 'INFO' and not f.get('ask')]
+    live = [f for f in findings if not (f.get('verdict') == 'INFO' and not f.get('ask'))]
+    left, waived, rows = gate_features.apply_waivers(live, _waivers(root), features, part)
+    triage = gate_report.triage_of(root, part)
+    inherited, fresh = [], []
+    for f in left:
+        item = gate_report.triage_match(triage, f)
+        if item is not None:
+            inherited.append(dict(f, triage=item.get('id'), decision=item.get('decision')))
+        else:
+            fresh.append(f)
+    questions = gate_attest.questions_for_part(root, reg, part, sig, fresh, stages) if sig else []
+    by_id = {q['q']: q for q in questions}
+    open_, asked, answered, ask_questions = [], [], [], []
+    for f in fresh:
+        if not f.get('ask'):
+            open_.append(f)
+            continue
+        q = by_id.get(gate_attest.question_id(f['ask'], part, f.get('anchor'), f.get('context')))
+        if q is not None and q.get('answer'):
+            answered.append(dict(f, answer=q['answer']))
+        else:
+            asked.append(f)
+            if q is not None and q not in ask_questions:
+                ask_questions.append(q)
+    part_questions = [q for q in questions if not q.get('finding')]
+    open_questions = [q for q in part_questions if not q.get('answer')]
+    by_facts = [q for q in part_questions if q.get('answer') and q['answer'].get('kind') == gate_attest.FACTS]
+    attested = len(answered) + sum(1 for q in part_questions if q.get('answer')) - len(by_facts)
+    doc_open = (census['docs'].get(entry.get('doc')) or {}).get('open', True) is not False or source != 'fusion'
+    stamped = bool(sig) and os.path.isfile(gate_common.stamp_path(root, part, sig))
+    base = gate_report.baseline(root)
+    inherited_part = bool(sig) and not stamped and gate_report.is_inherited(root, part, sig, base)
+    proposed_part = bool(sig) and not stamped and not inherited_part and gate_report.is_proposed(root, part, sig, base)
+    deferred, deferred_asked = [], []
+    if defer_inherited and inherited_part:
+        deferred, open_questions = open_questions + ask_questions, []
+        deferred_asked, asked, ask_questions = asked, [], []
+    if not_run and not doc_open:
+        verdict = 'unreachable'
+    elif any(f.get('verdict') != 'NOT_RUN' for f in open_):
+        verdict = 'fail'
+    elif not_run or open_:
+        verdict = 'incomplete'
+    elif asked or open_questions:
+        verdict = 'attest'
+    elif defer_inherited and inherited_part:
+        verdict = 'inherited'
+    else:
+        verdict = 'pass_attested' if attested else 'pass'
+    state = ('unreachable' if not doc_open else 'unchanged' if stamped else 'inherited' if inherited_part
+             else 'changed' if entry.get('prev_sig') else 'new')
+    return {'part': part, 'sig': sig, 'verdict': verdict, 'open': open_, 'asked': asked, 'answered': answered, 'waived': waived,
+            'info': info, 'not_run': not_run, 'waivers': rows, 'questions': open_questions, 'attested': attested,
+            'inherited': inherited, 'ask_questions': ask_questions, 'all_questions': questions, 'stale': stale, 'state': state,
+            'by_facts': by_facts, 'deferred_questions': deferred, 'deferred_asked': deferred_asked, 'inherited_part': inherited_part,
+            'proposed_part': proposed_part}
+
+
+def exit_code(verdicts, audit=False, more=False):
+    """The exit code for a list of part_verdict() results: 3 when more calls are needed, else 1 when any part is "fail"
+    or "incomplete", else 2 when any is "attest", else 0. With audit: the parts the audit inherits (verdict key
+    "inherited_part") do not count; a part that changed after the audit, or that has a stamp, counts as in any run.
+
+    A part whose open rows are all NOT_RUN is "incomplete" and gives 1 like a failed one: a check that could not decide
+    has not passed, so the run is no pass and no question round. What differs is the text: the summary line splits the
+    open rows by verdict, and `gate.py run` says in its last lines that nothing failed and what makes the checks run.
+    An "inherited" part (nothing new open, its standing questions wait for its export) does not make a run fail."""
+    if more:
+        return EXIT_MORE
+    if audit:                                    # an audit records what exists: an inherited part never blocks it
+        verdicts = [v for v in verdicts if v.get('inherited_part') is False]
+    kinds = {v.get('verdict') for v in verdicts}
+    if kinds & {'fail', 'incomplete'}:
+        return EXIT_BLOCK
+    if 'attest' in kinds:
+        return EXIT_ATTEST
+    return EXIT_PASS
+
+
+# ---- gate.py run ---------------------------------------------------------------------------------------------------------
+
+def _settled(root, census):
+    """Inherited parts of the owner's adopted list whose present geometry is judged: the audit looked at them, the owner
+    took the audit over, and they have not changed since. They have no stamp, and still a run of "what changed" has
+    nothing to do on them: measuring forty parts again on every run would be the audit all over. `--all`, `--part`,
+    `--audit` and `--offline` take them all the same. A part of an audit the owner has NOT adopted is not settled: its
+    rows are still ordinary open findings, and a run shows them."""
+    import gate_report
+    base, out = {p: e for p, e in gate_report.baseline(root).items() if e.get('adopted')}, set()
+    for pid, e in census['parts'].items():
+        if (not e.get('gone') and e.get('sig') and gate_report.is_inherited(root, pid, e['sig'], base)
+                and (read_json(gate_common.facts_path(root, pid, e['sig']), {}) or {}).get('judged')):
+            out.add(pid)
+    return out
+
+
+def _select(root, args, census, intent):
+    live = sorted(p for p, e in census['parts'].items() if not e.get('gone'))
+    changed = changed_parts(root, census)
+    if not args.audit and not args.offline:
+        settled = _settled(root, census)
+        changed = [p for p in changed if p not in settled]
+    if args.part:
+        unknown = [p for p in args.part if p not in live]
+        if unknown:
+            raise GateError('unknown part %s. Parts of the census: %s' % (', '.join(unknown), ', '.join(live) or 'none (run gate.py scan)'))
+        parts = list(dict.fromkeys(args.part))
+    elif args.all:
+        parts = live
+    else:
+        parts = changed
+    if intent is not None:                       # a stated intent: every part that changed is looked at, named or not
+        parts = parts + [p for p in changed if p not in parts]
+    return parts
+
+
+def _request(args):
+    out = {'select': 'part' if args.part else 'all' if args.all else 'changed', 'part': sorted(args.part or []), 'audit': bool(args.audit)}
+    if getattr(args, 'target', None):
+        out['for'] = args.target                  # another target is another run: the units are sent with its numbers
+    return out
+
+
+def _judge_all(root, reg, resolved, parts, census, intent, target, unreachable_docs, with_export=False, pending=(), audit_run=None):
+    """Judge every part that can be judged and return the verdicts of all of them, in order. A part of `pending` still
+    has units to run: it is judged when they are done, until then its verdict comes from what was stored before.
+    audit_run: the id of an audit run; each part it judges is noted in the baseline of inherited parts
+    (gate_report.baseline_add: written once per part). The verdicts are the ones of a run: the standing questions of an
+    inherited part wait (part_verdict with defer_inherited)."""
+    import gate_report
+    verdicts = []
+    for p in parts:
+        entry = census['parts'][p]
+        reachable = entry.get('doc') not in unreachable_docs or entry.get('source', 'fusion') != 'fusion'
+        stages = ('design',)
+        if reachable and entry.get('sig') and p not in pending:
+            judge_part(root, reg, resolved, p, stage='design', intent=intent, target=target)
+            if audit_run:
+                gate_report.baseline_add(root, audit_run, p, entry['sig'])
+            if with_export and target is not None and any(k in (load_facts(root, p, entry['sig']).get('probes') or {}) for k in ('stl_mesh', 'stl_walls')):
+                judge_part(root, reg, resolved, p, stage='export', intent=intent, target=target)
+                stages = ('design', 'export')
+        v = part_verdict(root, reg, p, stages=stages, defer_inherited=True)
+        if not reachable:
+            v['state'] = 'unreachable'
+            if v['not_run']:
+                v['verdict'] = 'unreachable'
+        verdicts.append(v)
+    return verdicts
+
+
+def _finish(root, reg, resolved, run, args, parts, verdicts, plan, intent, unreachable_docs, more, note=None):
+    """Write the report of this call, print its lines and return the exit code."""
+    import gate_report
+    layout = load_layout(root)
+    lines = ['%s: document %r is not open' % (k, gate_common.document_entry(layout, k).get('name')) for k in unreachable_docs]
+    report = gate_report.build(root, reg, resolved, run, 'run', 'design', verdicts, plan=plan, audit=args.audit, intent=intent, unreachable=lines)
+    code = exit_code(verdicts, audit=args.audit, more=more)
+    named_unreachable = [v['part'] for v in verdicts if v['verdict'] == 'unreachable' and v['part'] in (args.part or [])]
+    nothing_reached = bool(verdicts) and all(v['verdict'] == 'unreachable' for v in verdicts)
+    if code == EXIT_PASS and not args.audit and (named_unreachable or nothing_reached):
+        code = EXIT_INFRA                        # what was asked for could not be looked at: never a pass
+    report['exit'] = code
+    if args.offline:
+        report['offline'] = True
+    gate_report.write(root, report)
+    if args.audit:
+        items = gate_report.write_proposal(root, report)
+    print(gate_report.summary_line(report))
+    if args.audit and not more:                   # while units are left, a part that was not judged yet is not in the baseline yet
+        later = [v['part'] for v in verdicts if v.get('inherited_part') is False and not v.get('proposed_part') and v['verdict'] != 'unreachable']
+        if later:
+            print('  not inherited (changed after the audit, or stamped): %s. Judged as in an ordinary run; nothing of them goes to the triage list'
+                  % gate_report._some(later))
+        new = [v['part'] for v in verdicts if v.get('proposed_part') and v['verdict'] != 'unreachable']
+        if new:
+            print('  not inherited (judged after the owner adopted his list): %s. Their rows block as in an ordinary run and are in the proposal; '
+                  'only `gate.py owner adopt --quote "..."` makes them inherited' % gate_report._some(new))
+    totals = report.get('totals') or {}
+    if not more:
+        # equal rows of a part are one line; what is measured and wrong comes first; the report holds every row
+        opened = gate_report.group_rows([f for f in report['findings'] if f['state'] == 'open'])
+        asked = gate_report.group_rows([f for f in report['findings'] if f['state'] == 'asked'])
+        for line in gate_report.group_lines(opened, gate_report.RUN_LINES) + gate_report.group_lines(asked, gate_report.RUN_LINES // 2, word='ASK'):
+            print(line)
+    for line in lines:
+        print('  UNREACHABLE  %s (its parts keep their stamps; nothing new was checked)' % line)
+    if note:
+        print(note)
+    if not verdicts and not more:
+        print('nothing to check: no part changed since its stamp, or since the audit that judged it')
+    by = totals.get('by_verdict') or {}
+    if not more and totals.get('not_run') and not (by.get('FAIL') or by.get('BLOCKED') or by.get('GROW')):
+        print('nothing failed: %d check(s) could not decide or did not run. They count as open and nothing has passed: do what each row says, then run again'
+              % totals['not_run'])
+    if totals.get('by_facts'):
+        print('%d question(s) answered by the facts of the parts: the report lists each with its proof' % totals['by_facts'])
+    if totals.get('waiting'):
+        print('%d question(s) wait at inherited parts: asked when a part changes, and at its export' % totals['waiting'])
+    print('report: gate/reports/%s.md' % run)
+    if args.audit:
+        groups = {gate_report.item_gid(i) for i in items}
+        print('triage proposal: gate/proposals/triage.json (%d items in %d groups; `gate.py triage --md` shows it for the owner)' % (len(items), len(groups)))
+    if code == EXIT_ATTEST:
+        print('questions open: python3 gate/tools/gate.py attest list')
+    if code == EXIT_INFRA:
+        print('GATE: nothing was checked for %s: open the document and run again' % ', '.join(named_unreachable or [v['part'] for v in verdicts]))
+    return code
+
+
+def cmd_run(root, args):
+    """gate.py run [--changed | --all | --part ID ...] [--parts ID,ID] [--for KEY] [--wall 20] [--audit] [--offline].
+
+    args.changed (the default when nothing is named): parts whose census signature has no valid stamp. An inherited
+        part the audit judged, and that has not changed since, is left out (_settled): it has no stamp, and nothing
+        about it is new
+    args.all: every part of the census        args.part: these parts
+    args.intent: the parts this change was meant to touch (regression.unintended judges the rest)
+    args.wall: do not start a unit when less than its budget is left of this many seconds
+    args.audit: findings are recorded as inherited (they go to the triage list), nothing blocks: exit 0 unless 3 or 4.
+        Each part an audit judges is noted in the baseline of inherited parts with its signature (once: a later audit
+        does not move it). Such a part is not asked its standing questions until it changes or is exported
+    args.offline: no Fusion call; stored facts are judged again with today's parameters and judges
+    args.target (--for KEY): the .3mf project whose declared target the parts are judged for. A judgement holds for one
+        target (its layer height, the tags of its fits), so a project that declares several must name one: a run
+        without it is refused (exit 4) and never judges against "no target". `gate.py export --for KEY` judges the
+        stored facts again for its own target, so one run serves the export for every project
+
+    Continues the current plan when one is unfinished and covers the same parts, else makes a new one. After the units:
+    judges every part (judge_part), writes the report (gate_report.build / write), prints its summary.
+    Returns 0 pass, 1 open block findings, 2 attest questions open, 3 more calls needed, 4 infrastructure.
+
+    A new plan starts with a scan (unless args.no_scan or args.offline), so the parts and their signatures come from
+    the open documents. After EVERY call the parts whose units are all done are judged and the report is written, so
+    `gate.py status` is current while a run is still going; the rows of a part add up over the calls.
+    A part whose STL was measured at its present signature (an export that was refused) is judged at the export stage
+    too, with and without --offline: a run never reads as a pass while `gate.py status` shows an open wall or mesh row.
+    A named part whose document is not open, or a run that reached no part at all, is exit 4."""
+    root = os.path.abspath(root)
+    reg = gate_registry.load_default()
+    project, layout = load_project(root), load_layout(root)
+    target_key = getattr(args, 'target', None)
+    target = gate_common.target_of(project, target_key)
+    if target is None and project.get('targets'):
+        raise GateError('gate/project.json declares several targets, and a part is judged for one of them (layer height, measured fits): '
+                        'name the .3mf project with --for KEY (%s)' % ', '.join(sorted(project['targets'])))
+    resolved = gate_params.resolve(reg, gate_params.load_overrides(root), target)
+    request, wall = _request(args), float(args.wall)
+    last = load_plan(root)
+    intent = args.intent if args.intent is not None else ((last or {}).get('intent') if (last or {}).get('command') == 'run' else None)
+
+    if args.offline:
+        census = load_census(root)
+        parts = _select(root, args, census, intent)
+        run = gate_common.new_run_id()
+        verdicts = _judge_all(root, reg, resolved, parts, census, intent, target, [], with_export=True, audit_run=run if args.audit else None)
+        return _finish(root, reg, resolved, run, args, parts, verdicts, None, intent, [], False,
+                       note='offline: stored facts judged again with today\'s parameters and judges; nothing was asked of Fusion')
+
+    budget = gate_fusion_rpc.budget(layout)
+    if wall + WALL_GRACE_S < budget:
+        raise GateError('--wall %g is shorter than the budget of one unit (%g s, gate/layout.json "fusion"."budget_s"): no unit could start' % (wall, budget))
+    t_end = _clock() + wall
+    plan = last if (last and last.get('command') == 'run' and last.get('request') == request and progress(last)[0] < progress(last)[1]) else None
+    if plan is None:
+        unreachable = [k for k, d in load_census(root)['docs'].items() if d.get('open') is False]
+        if not getattr(args, 'no_scan', False):
+            res = scan(root, wall_s=wall)
+            _print_scan(res, _hint_faces(root))
+            if res['errors'] or res['clashes']:
+                raise GateError('the scan did not hold: %s' % '; '.join(['%s: %s' % kv for kv in sorted(res['errors'].items())] + res['clashes']))
+            if not res['done']:
+                print('scan: more documents to read before the units can be planned')
+                print('NEXT %d/%d' % res['progress'])
+                return EXIT_MORE
+            unreachable = res['unreachable']
+        census = load_census(root)
+        if not census['parts']:
+            closed = [k for k in unreachable if any(d.get('key') == k for d in layout['documents'])]
+            if closed:
+                raise GateError('gate/census.json holds no part yet, and the registered document%s %s %s not open in Fusion: open %s and run again'
+                                % ('s' if len(closed) > 1 else '', ', '.join('"%s"' % gate_common.document_entry(layout, k).get('name') for k in closed),
+                                   'are' if len(closed) > 1 else 'is', 'them' if len(closed) > 1 else 'it'))
+            raise GateError('gate/census.json holds no part: register the document in gate/layout.json and run gate.py scan')
+        parts = _select(root, args, census, args.intent)
+        intent = args.intent
+        plan = new_plan(root, reg, parts, 'run', intent, args.audit)
+        plan['request'] = request
+        for key in unreachable:
+            _skip_doc(plan, key)
+        save_plan(root, plan)
+    parts = plan['parts']
+    res = run_units(root, reg, resolved, plan, wall_s=t_end - _clock(), target_key=target_key)
+    census = load_census(root)
+    pending = {u['part'] for u in plan['units'] if not _finished(u)}
+    verdicts = _judge_all(root, reg, resolved, parts, census, intent, target, res['unreachable'], with_export=True, pending=pending,
+                          audit_run=plan['run'] if args.audit else None)
+    rescan = bool(res['changed_under_run']) and not res['more']
+    note = ('changed in Fusion while the run was going: %s. Their units were skipped; the next call scans again.'
+            % ', '.join(res['changed_under_run'])) if res['changed_under_run'] else None
+    code = _finish(root, reg, resolved, plan['run'], args, parts, verdicts, plan, intent, res['unreachable'], res['more'] or rescan, note)
+    if res['more']:
+        print('NEXT %d/%d' % (res['done'], res['total']))
+    elif rescan:
+        print('NEXT 0/1')
+    return code

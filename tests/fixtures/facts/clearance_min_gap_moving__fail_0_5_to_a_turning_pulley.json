@@ -1,0 +1,40 @@
+{
+ "judge": "clearance_min_gap_moving",
+ "case": "the border of a plate hangs 0.5 mm over a turning pulley; the overlap is 0 mm3",
+ "incident": "a plate was declared printable on \"0 mm3 overlaps\", rubbed the pulley and was reprinted",
+ "facts": {
+  "own_group": "base",
+  "margin": 5.0,
+  "gaps": [
+   {
+    "name": "Driven pulley",
+    "kind": "printed",
+    "part": "demo/driven_pulley",
+    "group": "turntable",
+    "gap": 0.5,
+    "point": [60.0, 0.0, 9.0],
+    "dir": [0, 0, -1],
+    "approx": false
+   },
+   {
+    "name": "Column tube",
+    "kind": "printed",
+    "part": "demo/column_tube",
+    "group": "turntable",
+    "gap": 3.4,
+    "point": [41.0, 0.0, 12.0],
+    "dir": [-1, 0, 0],
+    "approx": false
+   }
+  ]
+ },
+ "params": {"clearance.min_gap_moving": 2.0},
+ "expect": [
+  {
+   "verdict": "FAIL",
+   "measure": 0.5,
+   "limit": 2.0,
+   "by": ["Driven pulley"]
+  }
+ ]
+}

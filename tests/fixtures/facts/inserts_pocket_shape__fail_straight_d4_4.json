@@ -1,0 +1,59 @@
+{
+ "judge": "inserts_pocket_shape",
+ "case": "a straight D4.4 x 6.5 pocket: no D3.6 hole below the lead-in",
+ "incident": "inserts in straight pockets were pulled out by hand; nothing listed a wrong pocket as a row",
+ "facts": {
+  "holes": [
+   {
+    "id": "h1",
+    "anchor": {
+     "kind": "insert_pocket",
+     "axis": [0, 0, 1],
+     "point": [10.0, 0.0, 12.0]
+    },
+    "segments": [
+     {"d": 4.4, "len": 6.5}
+    ],
+    "depth": 6.5,
+    "through": false,
+    "floor": 2.0,
+    "exit": null,
+    "class": {"table": "inserts", "kind": "M3x4x5", "role": "insert_pocket", "match": "band"},
+    "coaxial": []
+   },
+   {
+    "id": "h2",
+    "anchor": {
+     "kind": "insert_pocket",
+     "axis": [0, 0, 1],
+     "point": [-10.0, 0.0, 12.0]
+    },
+    "segments": [
+     {"d": 4.4, "len": 6.5}
+    ],
+    "depth": 6.5,
+    "through": false,
+    "floor": 2.0,
+    "exit": null,
+    "class": {"table": "inserts", "kind": "M3x4x5", "role": "insert_pocket", "match": "band"},
+    "coaxial": []
+   }
+  ],
+  "openings": [],
+  "counts": {"holes": 2, "openings": 0, "insert_pocket": 2, "unknown": 0}
+ },
+ "expect": [
+  {
+   "verdict": "FAIL",
+   "measure": 4.4,
+   "limit": 3.6,
+   "by": ["M3x4x5"]
+  },
+  {
+   "verdict": "FAIL",
+   "measure": 4.4,
+   "limit": 3.6,
+   "by": ["M3x4x5"]
+  }
+ ]
+}

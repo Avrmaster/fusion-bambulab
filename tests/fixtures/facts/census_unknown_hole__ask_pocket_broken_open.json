@@ -1,0 +1,40 @@
+{
+ "judge": "census_unknown_hole",
+ "case": "a D4.4 cylinder with its wall over 9 of 16 points: a pocket that breaks out of the side of the part",
+ "facts": {
+  "holes": [],
+  "partial": [
+   {
+    "anchor": {
+     "kind": "hole",
+     "axis": [
+      0,
+      0,
+      1
+     ],
+     "point": [
+      30.0,
+      0.0,
+      8.0
+     ]
+    },
+    "d": 4.4,
+    "len": 1.5,
+    "arc": 0.562
+   }
+  ],
+  "openings": [],
+  "counts": {
+   "partial_arcs": 1
+  }
+ },
+ "params": {
+  "screws.ref_pattern": "(?i)screw|bolt"
+ },
+ "expect": [
+  {
+   "verdict": "INFO",
+   "ask": "census.unknown_hole"
+  }
+ ]
+}

@@ -1,0 +1,122 @@
+{
+ "judge": "bearings_holding",
+ "case": "a flat printed spacer between two bearings lies on the inner and the outer ring",
+ "facts": {
+  "bearings": [
+   {
+    "ref": "ref roller pair / bearing 686 (1)",
+    "designation": "686ZZ",
+    "by": "geometry",
+    "d": 6.0,
+    "D": 13.0,
+    "B": 5.0,
+    "anchor": {
+     "kind": "bearing",
+     "axis": [
+      0,
+      0,
+      1
+     ],
+     "point": [
+      0,
+      0,
+      2.5
+     ]
+    },
+    "rings": {
+     "inner": {
+      "faces": [
+       {
+        "side": "+",
+        "covered": [
+         {
+          "name": "Spacer",
+          "kind": "printed",
+          "part": "demo/spacer",
+          "share": 1.0,
+          "points": 1,
+          "gap": 0.0,
+          "touches_other_ring": true
+         }
+        ]
+       },
+       {
+        "side": "-",
+        "covered": [
+         {
+          "name": "Carriage",
+          "kind": "printed",
+          "part": "demo/carriage",
+          "share": 1.0,
+          "points": 1,
+          "gap": 0.0,
+          "touches_other_ring": false
+         }
+        ]
+       }
+      ]
+     },
+     "outer": {
+      "faces": [
+       {
+        "side": "+",
+        "covered": [
+         {
+          "name": "Spacer",
+          "kind": "printed",
+          "part": "demo/spacer",
+          "share": 1.0,
+          "points": 1,
+          "gap": 0.0,
+          "touches_other_ring": true
+         }
+        ]
+       },
+       {
+        "side": "-",
+        "covered": [
+         {
+          "name": "Carriage",
+          "kind": "printed",
+          "part": "demo/carriage",
+          "share": 1.0,
+          "points": 1,
+          "gap": 0.0,
+          "touches_other_ring": false
+         }
+        ]
+       }
+      ]
+     }
+    },
+    "clamps": [],
+    "seat": {
+     "inner": {
+      "d": 6.1,
+      "part": "demo/carriage",
+      "len": 5.0,
+      "entry_d": 6.1
+     },
+     "outer": null
+    }
+   }
+  ],
+  "seats_without_bearing": []
+ },
+ "params": {
+  "bearings.cover_share_min": 0.5,
+  "bearings.clamp_points_min": 4,
+  "bearings.contact_gap_max": 0.05
+ },
+ "ctx": {
+  "part": "demo/carriage"
+ },
+ "expect": [
+  {
+   "verdict": "FAIL",
+   "by": [
+    "Spacer"
+   ]
+  }
+ ]
+}

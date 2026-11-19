@@ -115,6 +115,7 @@ def add_plate(proj, pname, stl_dir, objs, settings=None, extruder=None, cols=Non
         rels = rels.replace('</Relationships>', ' <Relationship Target="/%s" Id="rel-%d" Type="http://schemas.microsoft.com/3dmanufacturing/2013/01/3dmodel"/>\n</Relationships>' % (path, npath))
         res.append('  <object id="%d" p:UUID="%s" type="model">\n   <components>\n    <component p:path="/%s" objectid="%d" p:UUID="%s" transform="1 0 0 0 1 0 0 0 1 0 0 0"/>\n   </components>\n  </object>\n' % (obj_id, uuid.uuid4(), path, mesh_id, uuid.uuid4()))
         items.append('  <item objectid="%d" p:UUID="%s" transform="%s" printable="1"/>\n' % (obj_id, uuid.uuid4(), tr))
+        for kv in settings.items(): bambu3mf.note_setting(kv[0], kv[1], name, 'add_plate', proj)     # an object of this name may be in the project already
         opts = ''.join('    <metadata key="%s" value="%s"/>\n' % kv for kv in settings.items())
         objcfg.append('  <object id="%d">\n    <metadata key="name" value="%s"/>\n' % (obj_id, name) + opts +
                       '    <metadata key="extruder" value="%d"/>\n    <metadata face_count="%d"/>\n    <part id="%d" subtype="normal_part">\n      <metadata key="name" value="%s"/>\n      <metadata key="matrix" value="1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 1"/>\n      <mesh_stat face_count="%d" edges_fixed="0" degenerate_facets="0" facets_removed="0" facets_reversed="0" backwards_edges="0"/>\n    </part>\n  </object>\n' % (extruder, len(F), mesh_id, name, len(F)))

@@ -1,0 +1,84 @@
+{
+ "test": "no_bearing_here",
+ "case": "a ring that sits on a large bearing: the bearing unit knows no bearing here and the census holds no seat, but a ref named \"6810 top\" is on the axis of its bore",
+ "probes": {
+  "fusion_bearings": {
+   "bearings": [],
+   "seats_without_bearing": [],
+   "not_bearings": []
+  },
+  "fusion_census": {
+   "holes": [
+    {
+     "id": "h1",
+     "anchor": {
+      "kind": "hole",
+      "axis": [
+       0,
+       0,
+       1
+      ],
+      "point": [
+       0,
+       0,
+       0
+      ]
+     },
+     "segments": [
+      {
+       "d": 3.4,
+       "len": 9.0
+      }
+     ],
+     "through": true,
+     "class": {
+      "table": "screws",
+      "kind": "M3",
+      "role": "clearance",
+      "match": "exact"
+     },
+     "coaxial": []
+    }
+   ],
+   "openings": [],
+   "partial": [],
+   "bores": [
+    {
+     "id": "h2",
+     "anchor": {
+      "kind": "hole",
+      "axis": [
+       0,
+       0,
+       1
+      ],
+      "point": [
+       0,
+       0,
+       0
+      ]
+     },
+     "segments": [
+      {
+       "d": 80.5,
+       "len": 4.0
+      }
+     ],
+     "through": true,
+     "class": null,
+     "coaxial": [
+      {
+       "kind": "bought",
+       "name": "ref 6810 top",
+       "part": null
+      }
+     ]
+    }
+   ],
+   "counts": {}
+  }
+ },
+ "params": {},
+ "expect": false,
+ "says": "speaks of a bearing (ref 6810 top)"
+}

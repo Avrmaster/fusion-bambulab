@@ -1,0 +1,155 @@
+{
+ "judge": "inserts_mouth_reachable",
+ "case": "a cross hole with an insert ref on its axis, read as a piece only 0.7 long: too short to hold its insert, so there is no pocket to reach. inserts.floor has the one row of such a hole (twin: access_fail_straight_through_pocket_closed_at_both_ends)",
+ "facts": {
+  "openings": [
+   {
+    "feature": "h4",
+    "of": "insert_pocket",
+    "anchor": {
+     "kind": "insert_pocket",
+     "axis": [
+      1,
+      0,
+      0
+     ],
+     "point": [
+      5.0,
+      0.0,
+      12.0
+     ]
+    },
+    "end": "mouth",
+    "paths": {
+     "own": {
+      "r": 2.2,
+      "reach": 60.0,
+      "free": 60.0,
+      "hits": []
+     },
+     "iron": {
+      "r": 4.0,
+      "reach": 30.0,
+      "free": 0.05,
+      "hits": [
+       {
+        "name": "Hub",
+        "kind": "self",
+        "part": "demo/bracket",
+        "at": 0.05,
+        "share": 0.94,
+        "approx": false,
+        "expected": false
+       }
+      ]
+     }
+    }
+   },
+   {
+    "feature": "h4",
+    "of": "insert_pocket",
+    "anchor": {
+     "kind": "insert_pocket",
+     "axis": [
+      -1,
+      0,
+      0
+     ],
+     "point": [
+      4.3,
+      0.0,
+      12.0
+     ]
+    },
+    "end": "exit",
+    "paths": {
+     "own": {
+      "r": 2.2,
+      "reach": 60.0,
+      "free": 60.0,
+      "hits": []
+     },
+     "iron": {
+      "r": 4.0,
+      "reach": 30.0,
+      "free": 7.0,
+      "hits": [
+       {
+        "name": "Hub",
+        "kind": "self",
+        "part": "demo/bracket",
+        "at": 7.0,
+        "share": 1.0,
+        "approx": false,
+        "expected": false
+       }
+      ]
+     }
+    }
+   }
+  ],
+  "closed": []
+ },
+ "params": {
+  "inserts.iron_d": 8.0,
+  "inserts.iron_reach": 30.0
+ },
+ "expect": [],
+ "ctx": {
+  "part": "demo/bracket",
+  "census": {
+   "holes": [
+    {
+     "id": "h4",
+     "anchor": {
+      "kind": "insert_pocket",
+      "axis": [
+       1,
+       0,
+       0
+      ],
+      "point": [
+       5.0,
+       0.0,
+       12.0
+      ]
+     },
+     "segments": [
+      {
+       "d": 4.4,
+       "len": 0.7
+      }
+     ],
+     "depth": 0.7,
+     "through": true,
+     "floor": null,
+     "exit": {
+      "kind": "insert_pocket",
+      "axis": [
+       -1,
+       0,
+       0
+      ],
+      "point": [
+       4.3,
+       0.0,
+       12.0
+      ]
+     },
+     "class": null,
+     "coaxial": [
+      {
+       "kind": "hardware",
+       "name": "ref lamp hardware / insert M3x4x5 (hub lock)",
+       "part": null
+      }
+     ],
+     "arc": 0.81
+    }
+   ],
+   "openings": [],
+   "partial": [],
+   "counts": {}
+  }
+ }
+}

@@ -1,0 +1,236 @@
+{
+ "judge": "hardware_recognised",
+ "case": "facts of an older probe hold no \"fastener_holes\": the census holes are compared with the screw rows. One hole has its screw, one holds two bought bodies and no screw row, one a dowel, one nothing",
+ "facts": {
+  "screws": [
+   {
+    "ref": "ref hardware / M3x14 cap head (1)",
+    "size": "M3",
+    "length": 14.0,
+    "named_length": 14.0,
+    "named_size": "M3",
+    "head": "cap",
+    "head_d": 5.5,
+    "head_h": 3.0,
+    "thread_d": 3.0,
+    "anchor": {
+     "kind": "screw",
+     "axis": [
+      0,
+      0,
+      1
+     ],
+     "point": [
+      10.0,
+      10.0,
+      6.0
+     ]
+    },
+    "role": "head",
+    "under_head": 6.0,
+    "under_head_min": 6.0,
+    "seat": {
+     "kind": "flat",
+     "d": 5.5,
+     "recess": -3.0,
+     "share": 1.0
+    },
+    "engagement": 4.0,
+    "into": {
+     "kind": "insert",
+     "name": "ref hardware / insert M3x4x5 (1)"
+    },
+    "tip_room": 1.0,
+    "tip_room_capped": false,
+    "air_gap": 0.0,
+    "in_solid": {
+     "len": 0.0,
+     "name": null,
+     "part": null
+    },
+    "washer": null
+   }
+  ],
+  "washers": [],
+  "n_screws": 1,
+  "n_washers": 0,
+  "unreadable_washers": [],
+  "not_screws": []
+ },
+ "params": {
+  "screws.ref_pattern": "(?i)screw|bolt",
+  "washers.ref_pattern": "(?i)washer",
+  "inserts.ref_pattern": "(?i)insert",
+  "screws.nut_ref_pattern": "(?i)(?<![a-z])nut(?![a-z])|locknut",
+  "bearings.ref_pattern": "(?i)bearing"
+ },
+ "ctx": {
+  "census": {
+   "holes": [
+    {
+     "id": "h1",
+     "anchor": {
+      "kind": "hole",
+      "axis": [
+       0,
+       0,
+       1
+      ],
+      "point": [
+       10.0,
+       10.0,
+       6.0
+      ]
+     },
+     "segments": [
+      {
+       "d": 3.4,
+       "len": 6.0
+      }
+     ],
+     "depth": 6.0,
+     "through": true,
+     "class": {
+      "table": "screws",
+      "kind": "M3",
+      "role": "clearance",
+      "match": "exact"
+     },
+     "coaxial": [
+      {
+       "kind": "hardware",
+       "name": "ref hardware / M3x14 cap head (1)",
+       "part": null
+      },
+      {
+       "kind": "hardware",
+       "name": "ref hardware / insert M3x4x5 (1)",
+       "part": null
+      }
+     ]
+    },
+    {
+     "id": "h2",
+     "anchor": {
+      "kind": "hole",
+      "axis": [
+       0,
+       0,
+       1
+      ],
+      "point": [
+       20.0,
+       10.0,
+       6.0
+      ]
+     },
+     "segments": [
+      {
+       "d": 3.4,
+       "len": 6.0
+      }
+     ],
+     "depth": 6.0,
+     "through": true,
+     "class": {
+      "table": "screws",
+      "kind": "M3",
+      "role": "clearance",
+      "match": "exact"
+     },
+     "coaxial": [
+      {
+       "kind": "bought",
+       "name": "ref plate hardware / M3x14 DIN 912 head (2)",
+       "part": null
+      },
+      {
+       "kind": "bought",
+       "name": "ref plate hardware / M3x14 DIN 912 shank (2)",
+       "part": null
+      },
+      {
+       "kind": "printed",
+       "name": "Post",
+       "part": "demo/post"
+      }
+     ]
+    },
+    {
+     "id": "h3",
+     "anchor": {
+      "kind": "hole",
+      "axis": [
+       0,
+       0,
+       1
+      ],
+      "point": [
+       30.0,
+       10.0,
+       6.0
+      ]
+     },
+     "segments": [
+      {
+       "d": 3.4,
+       "len": 6.0
+      }
+     ],
+     "depth": 6.0,
+     "through": true,
+     "class": {
+      "table": "screws",
+      "kind": "M3",
+      "role": "clearance",
+      "match": "exact"
+     },
+     "coaxial": [
+      {
+       "kind": "hardware",
+       "name": "ref plate hardware / dowel D3 x 12",
+       "part": null
+      }
+     ]
+    },
+    {
+     "id": "h4",
+     "anchor": {
+      "kind": "hole",
+      "axis": [
+       0,
+       0,
+       1
+      ],
+      "point": [
+       40.0,
+       10.0,
+       6.0
+      ]
+     },
+     "segments": [
+      {
+       "d": 3.4,
+       "len": 6.0
+      }
+     ],
+     "depth": 6.0,
+     "through": true,
+     "class": {
+      "table": "screws",
+      "kind": "M3",
+      "role": "clearance",
+      "match": "exact"
+     },
+     "coaxial": []
+    }
+   ],
+   "openings": []
+  }
+ },
+ "expect": [
+  {
+   "verdict": "NOT_RUN"
+  }
+ ]
+}

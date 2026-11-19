@@ -1,0 +1,173 @@
+{
+  "category": "sensors",
+  "params": {
+    "sensors.magnet_d": {
+      "default": 4.0,
+      "unit": "mm",
+      "looser": null,
+      "measured_on": "placeholder: a common small disc magnet; measure the magnet in hand",
+      "class": "geometry",
+      "formula": null,
+      "description": "diameter of the magnet in hand"
+    },
+    "sensors.magnet_h": {
+      "default": 2.0,
+      "unit": "mm",
+      "looser": null,
+      "measured_on": "placeholder: a common small disc magnet; measure the magnet in hand",
+      "class": "geometry",
+      "formula": null,
+      "description": "height of the magnet in hand"
+    },
+    "sensors.magnet_d_extra": {
+      "default": 0.2,
+      "unit": "mm",
+      "looser": null,
+      "measured_on": "decided with one measured disc magnet; not printed yet",
+      "class": "fit",
+      "formula": null,
+      "description": "pocket diameter over the magnet diameter",
+      "measured_under": null
+    },
+    "sensors.magnet_depth_extra": {
+      "default": 0.1,
+      "unit": "mm",
+      "looser": null,
+      "measured_on": "decided with one measured disc magnet; not printed yet",
+      "class": "fit",
+      "formula": null,
+      "description": "pocket depth over the magnet height",
+      "measured_under": null
+    },
+    "sensors.magnet_pocket_d": {
+      "default": null,
+      "unit": "mm",
+      "looser": null,
+      "measured_on": "computed",
+      "class": "fit",
+      "formula": "sensors.magnet_d + sensors.magnet_d_extra",
+      "description": "diameter of the magnet pocket"
+    },
+    "sensors.magnet_pocket_depth": {
+      "default": null,
+      "unit": "mm",
+      "looser": null,
+      "measured_on": "computed",
+      "class": "fit",
+      "formula": "sensors.magnet_h + sensors.magnet_depth_extra",
+      "description": "depth of the magnet pocket"
+    },
+    "sensors.magnet_floor_min": {
+      "default": 0.9,
+      "unit": "mm",
+      "looser": "lower",
+      "measured_on": "decided, not printed",
+      "class": "limit",
+      "formula": null,
+      "description": "least plastic behind a magnet pocket"
+    },
+    "sensors.pilot_floor_min": {
+      "default": 2.0,
+      "unit": "mm",
+      "looser": "lower",
+      "measured_on": "decided, not printed",
+      "class": "limit",
+      "formula": null,
+      "description": "least plastic under the pilot hole of a self-tapping board screw"
+    }
+  },
+  "rules": [
+    {
+      "id": "sensors.board_and_magnet",
+      "title": "A sensor board and its magnet are mounted from measurements",
+      "statement": "A part that holds a sensor board or a magnet: the board is fastened through its own holes, every pin row has a wire window, and the magnet pocket is cut for the magnet measured in hand.",
+      "why": "A sensor bridge was printed with pilots at the corners of the board. A link was printed with a pocket for a magnet the owner never had: 1 mm loose a side.",
+      "params": [
+        "sensors.magnet_d",
+        "sensors.magnet_h"
+      ],
+      "check": null,
+      "level": "attest",
+      "stage": "design",
+      "fix_order": [],
+      "attest": {
+        "question": "Sensor board or magnet on this part: how is the board fastened, where do the wires of every pin row leave, and which measured magnet is the pocket for?",
+        "evidence": [
+          "label",
+          "shot"
+        ],
+        "per": "part",
+        "labels": [
+          "no sensor board and no magnet on this part",
+          "board through its own holes; a window behind every pin row; magnet pocket from the measured magnet"
+        ]
+      },
+      "deferred": true,
+      "note": "Deferred: hardware.bought_from_step asks for the measured board and magnet today. Remove \"deferred\" to ask one question for three rules: sensors.board_through_own_holes, sensors.wire_windows, sensors.magnet_pocket.",
+      "x_see": [
+        "sensors.board_through_own_holes",
+        "sensors.wire_windows",
+        "sensors.magnet_pocket",
+        "hardware.bought_from_step"
+      ]
+    },
+    {
+      "id": "sensors.board_through_own_holes",
+      "title": "A bought board is screwed through its own holes",
+      "statement": "A bought board is fastened through its own mounting holes, not clamped by pilots at its corners. Its pocket locates it. At least {sensors.pilot_floor_min} of plastic stays under a self-tapping pilot. Hole pitch and outline come from a caliper: sizes read from a photo stay D until they are measured.",
+      "why": "A sensor bridge was printed with pilots at the corners of the board; the board sizes had been read from a photo.",
+      "params": [
+        "sensors.pilot_floor_min"
+      ],
+      "check": null,
+      "level": "advice",
+      "stage": "design",
+      "fix_order": [],
+      "attest": null,
+      "note": "The measured board is asked through hardware.bought_from_step; sensors.board_and_magnet is deferred.",
+      "x_see": [
+        "fits.bought_part_measured",
+        "hardware.bought_from_step"
+      ]
+    },
+    {
+      "id": "sensors.wire_windows",
+      "title": "Every pin row has a wire window",
+      "statement": "Every pin row of a board has a wire window through the part behind it, as wide as the row and running to the pocket wall, with no ledge left at the wall. A seat that reaches one row only is a defect.",
+      "why": "A seat was cut that reached one pin row only; the first window left a 0.3 mm ledge at the wall.",
+      "params": [],
+      "check": null,
+      "level": "advice",
+      "stage": "design",
+      "fix_order": [],
+      "attest": null,
+      "note": "Text only today: sensors.board_and_magnet is deferred.",
+      "x_see": [
+        "walls.thin_faces"
+      ]
+    },
+    {
+      "id": "sensors.magnet_pocket",
+      "title": "A magnet pocket is cut for the measured magnet",
+      "statement": "A magnet pocket is cut for the magnet measured in hand: {sensors.magnet_pocket_d} wide (the magnet plus {sensors.magnet_d_extra}) and {sensors.magnet_pocket_depth} deep (the magnet plus {sensors.magnet_depth_extra}), from the same mouth so that the gap to the sensor does not move, with at least {sensors.magnet_floor_min} of floor behind it. The gap stays inside the window the sensor's data sheet gives.",
+      "why": "A printed link carried a pocket for a larger magnet than the one in hand: 1 mm loose a side and 1 mm too deep. An older pocket had no floor.",
+      "params": [
+        "sensors.magnet_pocket_d",
+        "sensors.magnet_pocket_depth",
+        "sensors.magnet_d_extra",
+        "sensors.magnet_depth_extra",
+        "sensors.magnet_floor_min"
+      ],
+      "check": null,
+      "level": "advice",
+      "stage": "design",
+      "fix_order": [],
+      "attest": null,
+      "note": "The measured magnet is asked through hardware.bought_from_step, and the pocket shows up as a hole of the census; sensors.board_and_magnet is deferred.",
+      "x_see": [
+        "census.unknown_hole",
+        "hardware.bought_from_step"
+      ]
+    }
+  ]
+}

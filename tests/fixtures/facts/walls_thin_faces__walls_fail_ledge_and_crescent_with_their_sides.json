@@ -1,0 +1,103 @@
+{
+ "judge": "walls_thin_faces",
+ "case": "a 1.0 mm ledge beside a groove and the 0.2 mm crescent of an old hole: one long side rises, the other falls away, 90 degrees each",
+ "incident": "slivers reached the slicer and were found by eye",
+ "facts": {
+  "width_cap": 2.0,
+  "lumps": 1,
+  "shells": 1,
+  "n_faces": 40,
+  "non_manifold_edges": 0,
+  "seam_edges": 0,
+  "faces": [
+   {
+    "anchor": {
+     "kind": "face",
+     "axis": [
+      0,
+      0,
+      1
+     ],
+     "point": [
+      0.0,
+      30.0,
+      12.0
+     ]
+    },
+    "width": 1.0,
+    "area": 60.0,
+    "shape": "strip",
+    "id": 11,
+    "sides": [
+     [
+      60.0,
+      -90.0,
+      3
+     ],
+     [
+      60.0,
+      90.0,
+      4
+     ],
+     [
+      1.0,
+      90.0,
+      5
+     ],
+     [
+      1.0,
+      90.0,
+      6
+     ]
+    ]
+   },
+   {
+    "anchor": {
+     "kind": "face",
+     "axis": [
+      0,
+      0,
+      1
+     ],
+     "point": [
+      18.0,
+      4.0,
+      12.0
+     ]
+    },
+    "width": 0.2,
+    "area": 0.9,
+    "shape": "strip",
+    "id": 12,
+    "sides": [
+     [
+      3.1,
+      -90.0,
+      7
+     ],
+     [
+      2.9,
+      90.0,
+      8
+     ]
+    ]
+   }
+  ]
+ },
+ "params": {
+  "walls.min_face_width": 1.2,
+  "walls.strip_turn_max": 60,
+  "overhang.bridge_step": 0.3
+ },
+ "expect": [
+  {
+   "verdict": "FAIL",
+   "measure": 1.0,
+   "limit": 1.2
+  },
+  {
+   "verdict": "FAIL",
+   "measure": 0.2
+  }
+ ]
+}

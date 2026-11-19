@@ -1,0 +1,1193 @@
+{
+ "judge": "bearings_holding",
+ "case": "the same arm also seats a 6000 whose inner ring is free on both faces (a hub stands 0.4 off one of them): that ring is the arm's and is judged, the rollers of the drive unit are one INFO row",
+ "facts": {
+  "near_bearings": [],
+  "seats_without_bearing": [],
+  "touch": 0.05,
+  "look": 2.0,
+  "travel_look": 3.0,
+  "n_bearings": 9,
+  "ring_angles": 24,
+  "not_bearings": [],
+  "rejected": [],
+  "bearings": [
+   {
+    "ref": "Drive unit / planet roller 2",
+    "designation": "685ZZ",
+    "by": "geometry",
+    "d": 5.0,
+    "D": 11.0,
+    "B": 5.0,
+    "anchor": {
+     "kind": "bearing",
+     "axis": [
+      0.0,
+      1.0,
+      0.0
+     ],
+     "point": [
+      24.0,
+      10.0,
+      80.0
+     ]
+    },
+    "rings": {
+     "inner": {
+      "faces": [
+       {
+        "side": "+",
+        "covered": [
+         {
+          "name": "Drive unit / planet washer",
+          "kind": "hardware",
+          "part": null,
+          "bearing": false,
+          "twin": false,
+          "share": 1.0,
+          "points": 1,
+          "gap": 0.0,
+          "near": 1.0,
+          "touches_other_ring": false,
+          "other_ring_share": 0.0
+         },
+         {
+          "name": "Drive unit / planet roller 3",
+          "kind": "bought",
+          "part": null,
+          "bearing": true,
+          "twin": false,
+          "share": 0.0,
+          "points": 0,
+          "gap": 0.8,
+          "near": 1.0,
+          "touches_other_ring": false,
+          "other_ring_share": 0.0
+         }
+        ]
+       },
+       {
+        "side": "-",
+        "covered": [
+         {
+          "name": "Drive unit / planet roller 1",
+          "kind": "bought",
+          "part": null,
+          "bearing": true,
+          "twin": false,
+          "share": 1.0,
+          "points": 1,
+          "gap": 0.0,
+          "near": 1.0,
+          "touches_other_ring": false,
+          "other_ring_share": 0.0
+         }
+        ]
+       }
+      ]
+     },
+     "outer": {
+      "faces": [
+       {
+        "side": "+",
+        "covered": [
+         {
+          "name": "Drive unit / planet roller 3",
+          "kind": "bought",
+          "part": null,
+          "bearing": true,
+          "twin": false,
+          "share": 0.0,
+          "points": 0,
+          "gap": 0.8,
+          "near": 1.0,
+          "touches_other_ring": false,
+          "other_ring_share": 0.0
+         }
+        ]
+       },
+       {
+        "side": "-",
+        "covered": [
+         {
+          "name": "Drive unit / planet roller 1",
+          "kind": "bought",
+          "part": null,
+          "bearing": true,
+          "twin": false,
+          "share": 1.0,
+          "points": 1,
+          "gap": 0.0,
+          "near": 1.0,
+          "touches_other_ring": false,
+          "other_ring_share": 0.0
+         }
+        ]
+       }
+      ]
+     }
+    },
+    "clamps": [
+     {
+      "ring": "inner",
+      "side": "+",
+      "by": "washer",
+      "name": "Drive unit / planet washer",
+      "part": null,
+      "gap": 0.0,
+      "stop_gap": 0.0,
+      "stop_part": null,
+      "room": 5.0,
+      "ring_width": 5.0,
+      "travel": 0.0,
+      "travel_capped": false,
+      "lands_on": "Drive unit / planet post",
+      "against": "Drive unit / planet roller 1"
+     }
+    ],
+    "seat": {
+     "inner": null,
+     "outer": null
+    },
+    "hidden_near": [],
+    "mesh_near": []
+   },
+   {
+    "ref": "Drive unit / planet roller 2 (1)",
+    "designation": "685ZZ",
+    "by": "geometry",
+    "d": 5.0,
+    "D": 11.0,
+    "B": 5.0,
+    "anchor": {
+     "kind": "bearing",
+     "axis": [
+      0.0,
+      1.0,
+      0.0
+     ],
+     "point": [
+      16.97,
+      10.0,
+      96.97
+     ]
+    },
+    "rings": {
+     "inner": {
+      "faces": [
+       {
+        "side": "+",
+        "covered": [
+         {
+          "name": "Drive unit / planet washer",
+          "kind": "hardware",
+          "part": null,
+          "bearing": false,
+          "twin": false,
+          "share": 1.0,
+          "points": 1,
+          "gap": 0.0,
+          "near": 1.0,
+          "touches_other_ring": false,
+          "other_ring_share": 0.0
+         },
+         {
+          "name": "Drive unit / planet roller 3",
+          "kind": "bought",
+          "part": null,
+          "bearing": true,
+          "twin": false,
+          "share": 0.0,
+          "points": 0,
+          "gap": 0.8,
+          "near": 1.0,
+          "touches_other_ring": false,
+          "other_ring_share": 0.0
+         }
+        ]
+       },
+       {
+        "side": "-",
+        "covered": [
+         {
+          "name": "Drive unit / planet roller 1",
+          "kind": "bought",
+          "part": null,
+          "bearing": true,
+          "twin": false,
+          "share": 1.0,
+          "points": 1,
+          "gap": 0.0,
+          "near": 1.0,
+          "touches_other_ring": false,
+          "other_ring_share": 0.0
+         }
+        ]
+       }
+      ]
+     },
+     "outer": {
+      "faces": [
+       {
+        "side": "+",
+        "covered": [
+         {
+          "name": "Drive unit / planet roller 3",
+          "kind": "bought",
+          "part": null,
+          "bearing": true,
+          "twin": false,
+          "share": 0.0,
+          "points": 0,
+          "gap": 0.8,
+          "near": 1.0,
+          "touches_other_ring": false,
+          "other_ring_share": 0.0
+         }
+        ]
+       },
+       {
+        "side": "-",
+        "covered": [
+         {
+          "name": "Drive unit / planet roller 1",
+          "kind": "bought",
+          "part": null,
+          "bearing": true,
+          "twin": false,
+          "share": 1.0,
+          "points": 1,
+          "gap": 0.0,
+          "near": 1.0,
+          "touches_other_ring": false,
+          "other_ring_share": 0.0
+         }
+        ]
+       }
+      ]
+     }
+    },
+    "clamps": [
+     {
+      "ring": "inner",
+      "side": "+",
+      "by": "washer",
+      "name": "Drive unit / planet washer",
+      "part": null,
+      "gap": 0.0,
+      "stop_gap": 0.0,
+      "stop_part": null,
+      "room": 5.0,
+      "ring_width": 5.0,
+      "travel": 0.0,
+      "travel_capped": false,
+      "lands_on": "Drive unit / planet post",
+      "against": "Drive unit / planet roller 1"
+     }
+    ],
+    "seat": {
+     "inner": null,
+     "outer": null
+    },
+    "hidden_near": [],
+    "mesh_near": []
+   },
+   {
+    "ref": "Drive unit / planet roller 2 (2)",
+    "designation": "685ZZ",
+    "by": "geometry",
+    "d": 5.0,
+    "D": 11.0,
+    "B": 5.0,
+    "anchor": {
+     "kind": "bearing",
+     "axis": [
+      0.0,
+      1.0,
+      0.0
+     ],
+     "point": [
+      0.0,
+      10.0,
+      104.0
+     ]
+    },
+    "rings": {
+     "inner": {
+      "faces": [
+       {
+        "side": "+",
+        "covered": [
+         {
+          "name": "Drive unit / planet washer",
+          "kind": "hardware",
+          "part": null,
+          "bearing": false,
+          "twin": false,
+          "share": 1.0,
+          "points": 1,
+          "gap": 0.0,
+          "near": 1.0,
+          "touches_other_ring": false,
+          "other_ring_share": 0.0
+         },
+         {
+          "name": "Drive unit / planet roller 3",
+          "kind": "bought",
+          "part": null,
+          "bearing": true,
+          "twin": false,
+          "share": 0.0,
+          "points": 0,
+          "gap": 0.8,
+          "near": 1.0,
+          "touches_other_ring": false,
+          "other_ring_share": 0.0
+         }
+        ]
+       },
+       {
+        "side": "-",
+        "covered": [
+         {
+          "name": "Drive unit / planet roller 1",
+          "kind": "bought",
+          "part": null,
+          "bearing": true,
+          "twin": false,
+          "share": 1.0,
+          "points": 1,
+          "gap": 0.0,
+          "near": 1.0,
+          "touches_other_ring": false,
+          "other_ring_share": 0.0
+         }
+        ]
+       }
+      ]
+     },
+     "outer": {
+      "faces": [
+       {
+        "side": "+",
+        "covered": [
+         {
+          "name": "Drive unit / planet roller 3",
+          "kind": "bought",
+          "part": null,
+          "bearing": true,
+          "twin": false,
+          "share": 0.0,
+          "points": 0,
+          "gap": 0.8,
+          "near": 1.0,
+          "touches_other_ring": false,
+          "other_ring_share": 0.0
+         }
+        ]
+       },
+       {
+        "side": "-",
+        "covered": [
+         {
+          "name": "Drive unit / planet roller 1",
+          "kind": "bought",
+          "part": null,
+          "bearing": true,
+          "twin": false,
+          "share": 1.0,
+          "points": 1,
+          "gap": 0.0,
+          "near": 1.0,
+          "touches_other_ring": false,
+          "other_ring_share": 0.0
+         }
+        ]
+       }
+      ]
+     }
+    },
+    "clamps": [
+     {
+      "ring": "inner",
+      "side": "+",
+      "by": "washer",
+      "name": "Drive unit / planet washer",
+      "part": null,
+      "gap": 0.0,
+      "stop_gap": 0.0,
+      "stop_part": null,
+      "room": 5.0,
+      "ring_width": 5.0,
+      "travel": 0.0,
+      "travel_capped": false,
+      "lands_on": "Drive unit / planet post",
+      "against": "Drive unit / planet roller 1"
+     }
+    ],
+    "seat": {
+     "inner": null,
+     "outer": null
+    },
+    "hidden_near": [],
+    "mesh_near": []
+   },
+   {
+    "ref": "Drive unit / planet roller 2 (3)",
+    "designation": "685ZZ",
+    "by": "geometry",
+    "d": 5.0,
+    "D": 11.0,
+    "B": 5.0,
+    "anchor": {
+     "kind": "bearing",
+     "axis": [
+      0.0,
+      1.0,
+      0.0
+     ],
+     "point": [
+      -16.97,
+      10.0,
+      96.97
+     ]
+    },
+    "rings": {
+     "inner": {
+      "faces": [
+       {
+        "side": "+",
+        "covered": [
+         {
+          "name": "Drive unit / planet washer",
+          "kind": "hardware",
+          "part": null,
+          "bearing": false,
+          "twin": false,
+          "share": 1.0,
+          "points": 1,
+          "gap": 0.0,
+          "near": 1.0,
+          "touches_other_ring": false,
+          "other_ring_share": 0.0
+         },
+         {
+          "name": "Drive unit / planet roller 3",
+          "kind": "bought",
+          "part": null,
+          "bearing": true,
+          "twin": false,
+          "share": 0.0,
+          "points": 0,
+          "gap": 0.8,
+          "near": 1.0,
+          "touches_other_ring": false,
+          "other_ring_share": 0.0
+         }
+        ]
+       },
+       {
+        "side": "-",
+        "covered": [
+         {
+          "name": "Drive unit / planet roller 1",
+          "kind": "bought",
+          "part": null,
+          "bearing": true,
+          "twin": false,
+          "share": 1.0,
+          "points": 1,
+          "gap": 0.0,
+          "near": 1.0,
+          "touches_other_ring": false,
+          "other_ring_share": 0.0
+         }
+        ]
+       }
+      ]
+     },
+     "outer": {
+      "faces": [
+       {
+        "side": "+",
+        "covered": [
+         {
+          "name": "Drive unit / planet roller 3",
+          "kind": "bought",
+          "part": null,
+          "bearing": true,
+          "twin": false,
+          "share": 0.0,
+          "points": 0,
+          "gap": 0.8,
+          "near": 1.0,
+          "touches_other_ring": false,
+          "other_ring_share": 0.0
+         }
+        ]
+       },
+       {
+        "side": "-",
+        "covered": [
+         {
+          "name": "Drive unit / planet roller 1",
+          "kind": "bought",
+          "part": null,
+          "bearing": true,
+          "twin": false,
+          "share": 1.0,
+          "points": 1,
+          "gap": 0.0,
+          "near": 1.0,
+          "touches_other_ring": false,
+          "other_ring_share": 0.0
+         }
+        ]
+       }
+      ]
+     }
+    },
+    "clamps": [
+     {
+      "ring": "inner",
+      "side": "+",
+      "by": "washer",
+      "name": "Drive unit / planet washer",
+      "part": null,
+      "gap": 0.0,
+      "stop_gap": 0.0,
+      "stop_part": null,
+      "room": 5.0,
+      "ring_width": 5.0,
+      "travel": 0.0,
+      "travel_capped": false,
+      "lands_on": "Drive unit / planet post",
+      "against": "Drive unit / planet roller 1"
+     }
+    ],
+    "seat": {
+     "inner": null,
+     "outer": null
+    },
+    "hidden_near": [],
+    "mesh_near": []
+   },
+   {
+    "ref": "Drive unit / planet roller 3",
+    "designation": "685ZZ",
+    "by": "geometry",
+    "d": 5.0,
+    "D": 11.0,
+    "B": 5.0,
+    "anchor": {
+     "kind": "bearing",
+     "axis": [
+      0.0,
+      1.0,
+      0.0
+     ],
+     "point": [
+      24.0,
+      16.0,
+      80.0
+     ]
+    },
+    "rings": {
+     "inner": {
+      "faces": [
+       {
+        "side": "+",
+        "covered": [
+         {
+          "name": "Drive unit / planet roller 4",
+          "kind": "bought",
+          "part": null,
+          "bearing": true,
+          "twin": false,
+          "share": 1.0,
+          "points": 1,
+          "gap": 0.0,
+          "near": 1.0,
+          "touches_other_ring": false,
+          "other_ring_share": 0.0
+         }
+        ]
+       },
+       {
+        "side": "-",
+        "covered": [
+         {
+          "name": "Drive unit / planet roller 2",
+          "kind": "bought",
+          "part": null,
+          "bearing": true,
+          "twin": false,
+          "share": 0.0,
+          "points": 0,
+          "gap": 0.8,
+          "near": 1.0,
+          "touches_other_ring": false,
+          "other_ring_share": 0.0
+         },
+         {
+          "name": "Drive unit / planet washer",
+          "kind": "hardware",
+          "part": null,
+          "bearing": false,
+          "twin": false,
+          "share": 0.0,
+          "points": 0,
+          "gap": 0.2,
+          "near": 1.0,
+          "touches_other_ring": false,
+          "other_ring_share": 0.0
+         }
+        ]
+       }
+      ]
+     },
+     "outer": {
+      "faces": [
+       {
+        "side": "+",
+        "covered": [
+         {
+          "name": "Drive unit / planet roller 4",
+          "kind": "bought",
+          "part": null,
+          "bearing": true,
+          "twin": false,
+          "share": 1.0,
+          "points": 1,
+          "gap": 0.0,
+          "near": 1.0,
+          "touches_other_ring": false,
+          "other_ring_share": 0.0
+         }
+        ]
+       },
+       {
+        "side": "-",
+        "covered": [
+         {
+          "name": "Drive unit / planet roller 2",
+          "kind": "bought",
+          "part": null,
+          "bearing": true,
+          "twin": false,
+          "share": 0.0,
+          "points": 0,
+          "gap": 0.8,
+          "near": 1.0,
+          "touches_other_ring": false,
+          "other_ring_share": 0.0
+         }
+        ]
+       }
+      ]
+     }
+    },
+    "clamps": [],
+    "seat": {
+     "inner": null,
+     "outer": null
+    },
+    "hidden_near": [],
+    "mesh_near": []
+   },
+   {
+    "ref": "Drive unit / planet roller 3 (1)",
+    "designation": "685ZZ",
+    "by": "geometry",
+    "d": 5.0,
+    "D": 11.0,
+    "B": 5.0,
+    "anchor": {
+     "kind": "bearing",
+     "axis": [
+      0.0,
+      1.0,
+      0.0
+     ],
+     "point": [
+      16.97,
+      16.0,
+      96.97
+     ]
+    },
+    "rings": {
+     "inner": {
+      "faces": [
+       {
+        "side": "+",
+        "covered": [
+         {
+          "name": "Drive unit / planet roller 4",
+          "kind": "bought",
+          "part": null,
+          "bearing": true,
+          "twin": false,
+          "share": 1.0,
+          "points": 1,
+          "gap": 0.0,
+          "near": 1.0,
+          "touches_other_ring": false,
+          "other_ring_share": 0.0
+         }
+        ]
+       },
+       {
+        "side": "-",
+        "covered": [
+         {
+          "name": "Drive unit / planet roller 2",
+          "kind": "bought",
+          "part": null,
+          "bearing": true,
+          "twin": false,
+          "share": 0.0,
+          "points": 0,
+          "gap": 0.8,
+          "near": 1.0,
+          "touches_other_ring": false,
+          "other_ring_share": 0.0
+         },
+         {
+          "name": "Drive unit / planet washer",
+          "kind": "hardware",
+          "part": null,
+          "bearing": false,
+          "twin": false,
+          "share": 0.0,
+          "points": 0,
+          "gap": 0.2,
+          "near": 1.0,
+          "touches_other_ring": false,
+          "other_ring_share": 0.0
+         }
+        ]
+       }
+      ]
+     },
+     "outer": {
+      "faces": [
+       {
+        "side": "+",
+        "covered": [
+         {
+          "name": "Drive unit / planet roller 4",
+          "kind": "bought",
+          "part": null,
+          "bearing": true,
+          "twin": false,
+          "share": 1.0,
+          "points": 1,
+          "gap": 0.0,
+          "near": 1.0,
+          "touches_other_ring": false,
+          "other_ring_share": 0.0
+         }
+        ]
+       },
+       {
+        "side": "-",
+        "covered": [
+         {
+          "name": "Drive unit / planet roller 2",
+          "kind": "bought",
+          "part": null,
+          "bearing": true,
+          "twin": false,
+          "share": 0.0,
+          "points": 0,
+          "gap": 0.8,
+          "near": 1.0,
+          "touches_other_ring": false,
+          "other_ring_share": 0.0
+         }
+        ]
+       }
+      ]
+     }
+    },
+    "clamps": [],
+    "seat": {
+     "inner": null,
+     "outer": null
+    },
+    "hidden_near": [],
+    "mesh_near": []
+   },
+   {
+    "ref": "Drive unit / planet roller 3 (2)",
+    "designation": "685ZZ",
+    "by": "geometry",
+    "d": 5.0,
+    "D": 11.0,
+    "B": 5.0,
+    "anchor": {
+     "kind": "bearing",
+     "axis": [
+      0.0,
+      1.0,
+      0.0
+     ],
+     "point": [
+      0.0,
+      16.0,
+      104.0
+     ]
+    },
+    "rings": {
+     "inner": {
+      "faces": [
+       {
+        "side": "+",
+        "covered": [
+         {
+          "name": "Drive unit / planet roller 4",
+          "kind": "bought",
+          "part": null,
+          "bearing": true,
+          "twin": false,
+          "share": 1.0,
+          "points": 1,
+          "gap": 0.0,
+          "near": 1.0,
+          "touches_other_ring": false,
+          "other_ring_share": 0.0
+         }
+        ]
+       },
+       {
+        "side": "-",
+        "covered": [
+         {
+          "name": "Drive unit / planet roller 2",
+          "kind": "bought",
+          "part": null,
+          "bearing": true,
+          "twin": false,
+          "share": 0.0,
+          "points": 0,
+          "gap": 0.8,
+          "near": 1.0,
+          "touches_other_ring": false,
+          "other_ring_share": 0.0
+         },
+         {
+          "name": "Drive unit / planet washer",
+          "kind": "hardware",
+          "part": null,
+          "bearing": false,
+          "twin": false,
+          "share": 0.0,
+          "points": 0,
+          "gap": 0.2,
+          "near": 1.0,
+          "touches_other_ring": false,
+          "other_ring_share": 0.0
+         }
+        ]
+       }
+      ]
+     },
+     "outer": {
+      "faces": [
+       {
+        "side": "+",
+        "covered": [
+         {
+          "name": "Drive unit / planet roller 4",
+          "kind": "bought",
+          "part": null,
+          "bearing": true,
+          "twin": false,
+          "share": 1.0,
+          "points": 1,
+          "gap": 0.0,
+          "near": 1.0,
+          "touches_other_ring": false,
+          "other_ring_share": 0.0
+         }
+        ]
+       },
+       {
+        "side": "-",
+        "covered": [
+         {
+          "name": "Drive unit / planet roller 2",
+          "kind": "bought",
+          "part": null,
+          "bearing": true,
+          "twin": false,
+          "share": 0.0,
+          "points": 0,
+          "gap": 0.8,
+          "near": 1.0,
+          "touches_other_ring": false,
+          "other_ring_share": 0.0
+         }
+        ]
+       }
+      ]
+     }
+    },
+    "clamps": [],
+    "seat": {
+     "inner": null,
+     "outer": null
+    },
+    "hidden_near": [],
+    "mesh_near": []
+   },
+   {
+    "ref": "Drive unit / planet roller 3 (3)",
+    "designation": "685ZZ",
+    "by": "geometry",
+    "d": 5.0,
+    "D": 11.0,
+    "B": 5.0,
+    "anchor": {
+     "kind": "bearing",
+     "axis": [
+      0.0,
+      1.0,
+      0.0
+     ],
+     "point": [
+      -16.97,
+      16.0,
+      96.97
+     ]
+    },
+    "rings": {
+     "inner": {
+      "faces": [
+       {
+        "side": "+",
+        "covered": [
+         {
+          "name": "Drive unit / planet roller 4",
+          "kind": "bought",
+          "part": null,
+          "bearing": true,
+          "twin": false,
+          "share": 1.0,
+          "points": 1,
+          "gap": 0.0,
+          "near": 1.0,
+          "touches_other_ring": false,
+          "other_ring_share": 0.0
+         }
+        ]
+       },
+       {
+        "side": "-",
+        "covered": [
+         {
+          "name": "Drive unit / planet roller 2",
+          "kind": "bought",
+          "part": null,
+          "bearing": true,
+          "twin": false,
+          "share": 0.0,
+          "points": 0,
+          "gap": 0.8,
+          "near": 1.0,
+          "touches_other_ring": false,
+          "other_ring_share": 0.0
+         },
+         {
+          "name": "Drive unit / planet washer",
+          "kind": "hardware",
+          "part": null,
+          "bearing": false,
+          "twin": false,
+          "share": 0.0,
+          "points": 0,
+          "gap": 0.2,
+          "near": 1.0,
+          "touches_other_ring": false,
+          "other_ring_share": 0.0
+         }
+        ]
+       }
+      ]
+     },
+     "outer": {
+      "faces": [
+       {
+        "side": "+",
+        "covered": [
+         {
+          "name": "Drive unit / planet roller 4",
+          "kind": "bought",
+          "part": null,
+          "bearing": true,
+          "twin": false,
+          "share": 1.0,
+          "points": 1,
+          "gap": 0.0,
+          "near": 1.0,
+          "touches_other_ring": false,
+          "other_ring_share": 0.0
+         }
+        ]
+       },
+       {
+        "side": "-",
+        "covered": [
+         {
+          "name": "Drive unit / planet roller 2",
+          "kind": "bought",
+          "part": null,
+          "bearing": true,
+          "twin": false,
+          "share": 0.0,
+          "points": 0,
+          "gap": 0.8,
+          "near": 1.0,
+          "touches_other_ring": false,
+          "other_ring_share": 0.0
+         }
+        ]
+       }
+      ]
+     }
+    },
+    "clamps": [],
+    "seat": {
+     "inner": null,
+     "outer": null
+    },
+    "hidden_near": [],
+    "mesh_near": []
+   },
+   {
+    "ref": "ref axle / ball bearing 6000",
+    "designation": "6000",
+    "by": "geometry",
+    "d": 10.0,
+    "D": 26.0,
+    "B": 8.0,
+    "anchor": {
+     "kind": "bearing",
+     "axis": [
+      0.0,
+      1.0,
+      0.0
+     ],
+     "point": [
+      0.0,
+      40.0,
+      60.0
+     ]
+    },
+    "rings": {
+     "inner": {
+      "faces": [
+       {
+        "side": "+",
+        "covered": []
+       },
+       {
+        "side": "-",
+        "covered": [
+         {
+          "name": "ref pulley / hub",
+          "kind": "bought",
+          "part": null,
+          "bearing": false,
+          "twin": false,
+          "share": 0.0,
+          "points": 0,
+          "gap": 0.4,
+          "near": 1.0,
+          "touches_other_ring": false,
+          "other_ring_share": 0.0
+         }
+        ]
+       }
+      ]
+     },
+     "outer": {
+      "faces": [
+       {
+        "side": "+",
+        "covered": [
+         {
+          "name": "Arm",
+          "kind": "printed",
+          "part": "demo/arm",
+          "bearing": false,
+          "twin": false,
+          "share": 1.0,
+          "points": 1,
+          "gap": 0.0,
+          "near": 1.0,
+          "touches_other_ring": false,
+          "other_ring_share": 0.0
+         }
+        ]
+       },
+       {
+        "side": "-",
+        "covered": [
+         {
+          "name": "ref axle / washer M3 large",
+          "kind": "hardware",
+          "part": null,
+          "bearing": false,
+          "twin": false,
+          "share": 0.25,
+          "points": 6,
+          "gap": 0.0,
+          "near": 1.0,
+          "touches_other_ring": false,
+          "other_ring_share": 0.0
+         }
+        ]
+       }
+      ]
+     }
+    },
+    "clamps": [],
+    "seat": {
+     "inner": null,
+     "outer": {
+      "d": 26.0,
+      "part": "demo/arm",
+      "name": "Arm",
+      "kind": "printed",
+      "len": 8.0,
+      "entry_d": 26.25
+     }
+    },
+    "hidden_near": [],
+    "mesh_near": []
+   }
+  ]
+ },
+ "params": {
+  "bearings.cover_share_min": 0.5,
+  "bearings.clamp_points_min": 4,
+  "bearings.contact_gap_max": 0.05
+ },
+ "ctx": {
+  "part": "demo/arm"
+ },
+ "expect": [
+  {
+   "verdict": "INFO"
+  },
+  {
+   "verdict": "FAIL",
+   "limit": 0.5
+  },
+  {
+   "verdict": "FAIL",
+   "limit": 0.5
+  }
+ ]
+}

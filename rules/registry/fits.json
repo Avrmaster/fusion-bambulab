@@ -1,0 +1,402 @@
+{
+  "category": "fits",
+  "params": {
+    "fits.hole_compensation": {
+      "default": 0.125,
+      "unit": "mm",
+      "looser": null,
+      "measured_on": "0.6 nozzle, PETG-CF, one printer: slicer X-Y hole compensation, per side",
+      "class": "fit",
+      "formula": null,
+      "tag": "M",
+      "description": "slicer X-Y hole compensation the hole sizes of this registry were measured with",
+      "measured_under": {
+        "nozzle": 0.6,
+        "material": "PETG-CF",
+        "xy_hole_compensation": 0.125,
+        "layer_height": null
+      }
+    },
+    "fits.sliding_per_side": {
+      "default": 0.25,
+      "unit": "mm",
+      "looser": "lower",
+      "measured_on": "0.6 nozzle, one printer: PLA slid at 0.25, a filled nylon needed 0.4; in the print plane only",
+      "class": "fit",
+      "formula": null,
+      "tag": "M",
+      "per": {
+        "PA6-CF": 0.4
+      },
+      "description": "clearance per side of a printed part that slides in a printed part; the keys are materials",
+      "measured_under": {
+        "nozzle": 0.6,
+        "material": "PLA",
+        "xy_hole_compensation": null,
+        "layer_height": null
+      }
+    },
+    "fits.pin_slip_extra": {
+      "default": 0.05,
+      "unit": "mm",
+      "looser": null,
+      "measured_on": "one printer, D3 steel pins: slip at +0.05 in PETG-CF, at +0.1 in a filled nylon",
+      "class": "fit",
+      "formula": null,
+      "tag": "M",
+      "per": {
+        "PA6-CF": 0.1
+      },
+      "description": "hole diameter over the pin diameter for a slip fit; the keys are materials",
+      "measured_under": {
+        "nozzle": null,
+        "material": "PETG-CF",
+        "xy_hole_compensation": null,
+        "layer_height": null
+      }
+    },
+    "fits.pin_running_extra": {
+      "default": 0.3,
+      "unit": "mm",
+      "looser": null,
+      "measured_on": "one printer: a D3 pin turning in a printed bore",
+      "class": "fit",
+      "formula": null,
+      "tag": "M",
+      "description": "hole diameter over the pin diameter where the pin turns in the hole",
+      "measured_under": {
+        "nozzle": null,
+        "material": null,
+        "xy_hole_compensation": null,
+        "layer_height": null
+      }
+    },
+    "fits.peg_under_hole": {
+      "default": 0.2,
+      "unit": "mm",
+      "looser": null,
+      "measured_on": "one printer: a D2.0 printed peg in a D2.2 printed hole",
+      "class": "fit",
+      "formula": null,
+      "tag": "M",
+      "description": "diameter of a printed peg under the diameter of its printed hole",
+      "measured_under": {
+        "nozzle": null,
+        "material": null,
+        "xy_hole_compensation": null,
+        "layer_height": null
+      }
+    },
+    "fits.mesh_clearance_per_side": {
+      "default": 0.12,
+      "unit": "mm",
+      "looser": "lower",
+      "measured_on": "one printer: 0.05 jammed and pushed pins out, 0.12 to 0.15 ran free",
+      "class": "fit",
+      "formula": null,
+      "tag": "M",
+      "description": "clearance per side between two printed profiles that mesh or roll on each other",
+      "measured_under": {
+        "nozzle": null,
+        "material": null,
+        "xy_hole_compensation": null,
+        "layer_height": null
+      }
+    },
+    "fits.key_clearance_per_side": {
+      "default": 0.1,
+      "unit": "mm",
+      "looser": null,
+      "measured_on": "decided, not printed",
+      "class": "fit",
+      "formula": null,
+      "description": "clearance per side of a printed key or spigot that locates a part",
+      "measured_under": null
+    },
+    "fits.coupon_steps": {
+      "default": 3,
+      "unit": "count",
+      "looser": "lower",
+      "measured_on": "decided",
+      "class": "limit",
+      "formula": null,
+      "description": "clearance steps on a fit coupon"
+    }
+  },
+  "rules": [
+    {
+      "id": "fits.decided_not_printed",
+      "title": "Fits that were never printed in this material are named",
+      "statement": "Every fit size of this part that was never printed in the target material and on the target nozzle is listed for the owner. A size measured in another material or on another nozzle counts as decided (D) here.",
+      "why": "A pocket \"validated\" in a PLA test was loose in the final material; a slide that ran in PLA had to be sanded in a filled nylon.",
+      "params": [],
+      "check": null,
+      "level": "attest",
+      "stage": "export",
+      "fix_order": [],
+      "attest": {
+        "question": "Which fit sizes of this part were decided and never printed in the target material and on the target nozzle?",
+        "evidence": [
+          "label",
+          "param",
+          "na"
+        ],
+        "per": "part",
+        "labels": [
+          "none: every fit size of this part is measured (M) or owner-set (U)",
+          "listed in the report for the owner"
+        ]
+      },
+      "x_see": [
+        "fits.per_material",
+        "project.target_differs"
+      ]
+    },
+    {
+      "id": "fits.bought_part_pocket",
+      "title": "A pocket for a bought part takes its size from a printed fit",
+      "statement": "A pocket, seat or bore that receives a bought part (a magnet, a pin, a nut, a board) takes its size from a named fit parameter, never from a number typed in a script. While that parameter is D (decided, never printed) for the nozzle, material, hole compensation and layer height of the project, the part is not exported: a coupon print makes it M, or the owner makes it U. A pocket whose size matches no declared fit parameter is asked once: what goes in.",
+      "why": "A pocket for a bought magnet was modelled 0.2 wider than the magnet on an assumption. The number had never been printed with that nozzle and material. The magnet did not go in, and the part was printed again.",
+      "params": [
+        "sensors.magnet_pocket_d",
+        "sensors.magnet_pocket_depth",
+        "inserts.ref_pattern",
+        "screws.ref_pattern"
+      ],
+      "check": {
+        "probe": "fusion_census",
+        "judge": "fits_bought_pocket",
+        "needs": "fusion"
+      },
+      "level": "block",
+      "stage": "design",
+      "fix_order": [
+        "Print a coupon first: a small block with the pocket in three sizes, in the real material, from the real .3mf project. Try the bought part in each.",
+        "Record the size that fits as the parameter: python3 gate/tools/gate.py owner param NAME VALUE --tag M --source \"coupon, date\". It is stored with what it was printed under.",
+        "Or the owner sets the size without a print: the same command with --tag U.",
+        "Cut the pocket from the parameter, not from a typed number."
+      ],
+      "attest": null,
+      "note": "Built for round pockets of the pockets table (rules/tables/pockets.json: today the magnet). Insert pockets, bearing seats and screw holes are judged by their own tables and rules. A nut slot or a board pocket is not round: the census lists it as an opening and this rule does not see it yet."
+    },
+    {
+      "id": "fits.pocket_content",
+      "title": "What goes in this pocket",
+      "statement": "A blind hole that fits no row of the tables and no declared pocket parameter is named once: what goes in. A bought part goes in only with a fit parameter that is measured (M) or owner-set (U) for this project, and the pocket has that parameter's size.",
+      "why": "A pocket cut from a typed number has no parameter the gate could hold it against. The gate cannot tell a magnet pocket from a vent by its shape.",
+      "params": [],
+      "check": null,
+      "level": "attest",
+      "stage": "design",
+      "fix_order": [],
+      "attest": {
+        "question": "What goes in the pocket {feature}? If a bought part goes in, name the fit parameter its size comes from.",
+        "evidence": [
+          "label",
+          "param",
+          "waiver"
+        ],
+        "per": "finding",
+        "labels": [
+          "no bought part goes in: a printed part, a cable, a tool or air"
+        ],
+        "param": {
+          "class": "fit",
+          "matches": "hole_d"
+        }
+      },
+      "note": "Asked through the findings of fits.bought_part_pocket. The parameter named with --param must be of class fit, tagged M or U in this project (a D value is refused), and its value must be the diameter of the pocket at its floor, within the tolerance of the pockets table: a pocket cut from a typed number is not covered by naming some parameter. One hole gets one question: a hole this rule asks about (a blind hole of no table, or a hole of no table with a bought or hardware body on its axis) is not asked by census.unknown_hole as well. A counterbore that goes on behind a bridge layer into its clearance hole is a screw hole, and a short cylinder that is only a piece of another hole is that hole: neither is asked."
+    },
+    {
+      "id": "fits.per_material",
+      "title": "A fit is measured per material and nozzle",
+      "statement": "A fit allowance is a parameter per material and nozzle: this part is judged for {target.material} on a {target.nozzle} nozzle. A value measured in one filament is not carried to another. Only a real print earns the tag M, and its source names the printer, the nozzle and the filament.",
+      "why": "A slide that ran at 0.25 per side in PLA did not move in a filled nylon. Dowel holes drawn 3.0 measured 2.95 and six parts were exported again.",
+      "params": [
+        "target.material",
+        "target.nozzle"
+      ],
+      "check": null,
+      "level": "advice",
+      "stage": "export",
+      "fix_order": [
+        "Calibrate the material and nozzle pair first: flow, shrink, a hole coupon.",
+        "Print the fit as a coupon in that material.",
+        "Write the measured value into the project parameters with tag M."
+      ],
+      "attest": null,
+      "note": "Asked through fits.decided_not_printed.",
+      "x_see": [
+        "fits.decided_not_printed",
+        "process.evidence_tags"
+      ]
+    },
+    {
+      "id": "fits.bought_part_measured",
+      "title": "A bought part is measured before a part depends on it",
+      "statement": "A bought part is modelled from its real model file and measured before any part that depends on it is printed. Vendor models can be off by a millimetre. Each batch is measured at its functional features. A photo is not a measurement. A measurement updates every copy of the reference in every document. A position the owner did not give is asked for, with its datum.",
+      "why": "A motor plate was wrong by 6 mm because the pulley on the shaft was drawn, not measured; it was printed more than once. A newer motor batch did not seat on a printed cam.",
+      "params": [],
+      "check": null,
+      "level": "advice",
+      "stage": "design",
+      "fix_order": [
+        "Ask for one caliper value per feature that decides a fit.",
+        "Record the number with its source as a project parameter (tag M).",
+        "Update every copy of the reference body."
+      ],
+      "attest": null,
+      "note": "Asked through hardware.bought_from_step.",
+      "x_see": [
+        "hardware.bought_from_step",
+        "motors.real_model"
+      ]
+    },
+    {
+      "id": "fits.stack_from_measured",
+      "title": "A stack against a bought unit comes from the measured unit",
+      "statement": "A stack height against a bought or assembled unit comes from the measured unit. An over-constrained part gets a relief or an allowance. A component that stands between a floor and a moving part is checked at both ends. No joint is designed to need shims to close.",
+      "why": "A cap stood about 1 mm off on a test print; a motor boss jammed on the floor of a shallow pocket; a pulley ended 6 mm inside the floor below it.",
+      "params": [],
+      "check": null,
+      "level": "advice",
+      "stage": "design",
+      "fix_order": [],
+      "attest": null
+    },
+    {
+      "id": "fits.sliding_pair",
+      "title": "A sliding pair has clearance and a long guide",
+      "statement": "A printed part that slides in a printed part has at least {fits.sliding_per_side} per side in the print plane (more in a filled nylon: see the per-material values). The guide is captured in every direction but its travel and is at least twice as long as the lever arm of the load.",
+      "why": "A slider drawn with the clearance of another material did not slide and was sanded.",
+      "params": [
+        "fits.sliding_per_side"
+      ],
+      "check": null,
+      "level": "advice",
+      "stage": "design",
+      "fix_order": [],
+      "attest": null
+    },
+    {
+      "id": "fits.pins_dowels",
+      "title": "Pin and dowel holes come from one table per material",
+      "statement": "Pin and dowel holes come from one table per material: press at the pin size, slip at the pin size plus {fits.pin_slip_extra}, running at the pin size plus {fits.pin_running_extra}; a printed peg is {fits.peg_under_hole} under its hole. Small holes are checked go / no-go on a coupon.",
+      "why": "Printed sleeves with a bore 0.1 over the rod barely went on; holes 0.03 to 0.05 over let their pins wobble.",
+      "params": [
+        "fits.pin_slip_extra",
+        "fits.pin_running_extra",
+        "fits.peg_under_hole"
+      ],
+      "check": null,
+      "level": "advice",
+      "stage": "design",
+      "fix_order": [],
+      "attest": null,
+      "x_see": [
+        "walls.one_line_ladder"
+      ]
+    },
+    {
+      "id": "fits.model_or_slicer",
+      "title": "Each fit has one home: the model or the slicer",
+      "statement": "Each fit has one home: the drawn size in the model, or the compensation in the slicer ({fits.hole_compensation} per side here). Model clearance is not stacked on slicer compensation without saying so. A fit the slicer setting cannot reach is corrected in the model and recorded per material.",
+      "why": "\"Correct in the slicer, not in the model\" and \"draw the hole at the pin size\" stood in one rulebook while dowel holes and insert pockets had to change in the model.",
+      "params": [
+        "fits.hole_compensation"
+      ],
+      "check": null,
+      "level": "advice",
+      "stage": "design",
+      "fix_order": [],
+      "attest": null,
+      "note": "Two accepted practices met here; the rule keeps both and says when each holds."
+    },
+    {
+      "id": "fits.slots_nuts",
+      "title": "A nut slot fits the nut the way it travels",
+      "statement": "A nut slot is sized for the nut in the orientation it travels: across flats in a pocket that holds it, across corners in a slot it turns in. A bolt through a bearing fills the bore.",
+      "why": "A nut did not enter its printed slot and the slot was filed; in the next size neither the nut nor the screw fitted.",
+      "params": [],
+      "check": null,
+      "level": "advice",
+      "stage": "design",
+      "fix_order": [],
+      "attest": null
+    },
+    {
+      "id": "fits.test_cheap_first",
+      "title": "A new fit is printed small and cheap first",
+      "statement": "A new fit or joint is printed first as a cut-down slice of the real mesh, or as a coupon with {fits.coupon_steps} marked clearance steps. The entry lists what will be measured. The result goes back into the parameters. A sibling joint waits for the first test. The correction goes into the cheaper part or the slicer, never into a datum feature. A cheap test proves a fit in its own material only, and never strength.",
+      "why": "A cam tuned to a guessed gap clicked exactly at the stop on the test print: it was 0.85 mm off.",
+      "params": [
+        "fits.coupon_steps"
+      ],
+      "check": null,
+      "level": "advice",
+      "stage": "design",
+      "fix_order": [],
+      "attest": null,
+      "x_see": [
+        "fits.decided_not_printed",
+        "inserts.coupon_first"
+      ]
+    },
+    {
+      "id": "fits.keys_spigots",
+      "title": "Screws in slots do not locate",
+      "statement": "A part that must be centred or indexed gets a spigot, a dowel, a printed datum lip or a key with {fits.key_clearance_per_side} per side. A bolt-on mount whose position matters is located by printed faces.",
+      "why": "The alignment of a printed split cam did not work.",
+      "params": [
+        "fits.key_clearance_per_side"
+      ],
+      "check": null,
+      "level": "advice",
+      "stage": "design",
+      "fix_order": [],
+      "attest": null
+    },
+    {
+      "id": "fits.wall_order_for_holes",
+      "title": "A hole size holds for one wall order",
+      "statement": "The wall order of the slicer changes small holes. With inner walls first, small fit holes scattered; with the outer wall first the scatter went away in one calibration. A hole size measured under one wall order holds only for that order: keep the order of the project, or measure the hole again after changing it. Hole compensation is per side ({fits.hole_compensation}).",
+      "why": "Four holes drawn alike measured 2.8 to 3.0 with inner walls first; other projects on the same printer kept that order and their own hole sizes.",
+      "params": [
+        "fits.hole_compensation"
+      ],
+      "check": null,
+      "level": "advice",
+      "stage": "export",
+      "fix_order": [],
+      "attest": null,
+      "note": "Two practices stand side by side; the rule keeps both with the condition under which each holds."
+    },
+    {
+      "id": "fits.printed_mesh_clearance",
+      "title": "Printed profiles that mesh keep a real clearance",
+      "statement": "Two printed profiles that mesh or roll on each other keep at least {fits.mesh_clearance_per_side} per side. A clearance at a bed face allows for the first layer, which spreads by about {print.first_layer_growth}.",
+      "why": "At 0.05 the profiles pushed their pins out; a 0.1 face clearance rubbed once the first layer had spread.",
+      "params": [
+        "fits.mesh_clearance_per_side",
+        "print.first_layer_growth"
+      ],
+      "check": null,
+      "level": "advice",
+      "stage": "design",
+      "fix_order": [],
+      "attest": null
+    },
+    {
+      "id": "fits.scaling_keeps_interfaces",
+      "title": "Scaling keeps the interfaces",
+      "statement": "Scaling a model scales the body only. Screw bosses, bearing seats and magnet pockets stay at their real size.",
+      "why": "No lost print is on record. It is the first thing that goes wrong when a found model is resized.",
+      "params": [],
+      "check": null,
+      "level": "advice",
+      "stage": "design",
+      "fix_order": [],
+      "attest": null
+    }
+  ]
+}

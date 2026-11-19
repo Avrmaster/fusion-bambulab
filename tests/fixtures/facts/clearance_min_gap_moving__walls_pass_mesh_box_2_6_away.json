@@ -1,0 +1,34 @@
+{
+ "judge": "clearance_min_gap_moving",
+ "case": "the bounding box of the mesh body is 2.6 mm away: the body itself is at least that far",
+ "facts": {
+  "own_group": "base",
+  "margin": 5.0,
+  "groups": 2,
+  "gaps": [
+   {
+    "name": "ref old cover",
+    "kind": "mesh",
+    "part": null,
+    "group": "turntable",
+    "gap": 2.6,
+    "point": [
+     12.0,
+     0.0,
+     9.0
+    ],
+    "dir": [
+     0,
+     0,
+     -1
+    ],
+    "approx": true
+   }
+  ]
+ },
+ "params": {
+  "clearance.min_gap_moving": 2.0,
+  "clearance.scan_margin": 5.0
+ },
+ "expect": []
+}

@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3",
+            "args": ["${CLAUDE_PLUGIN_ROOT}/tools/gate/gate_hook.py", "session-start"],
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}

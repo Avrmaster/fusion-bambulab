@@ -1,0 +1,22 @@
+{
+ "judge": "walls_min_material",
+ "case": "the neck thickened to 3.0: nothing under the limit, 97 % of the surface sampled",
+ "facts": {
+  "stl": "stl/demo.stl",
+  "triangles": 48210,
+  "bbox": [
+   [-20.0, -20.0, 0.0],
+   [20.0, 20.0, 126.0]
+  ],
+  "area": 31250.0,
+  "samples": 20000,
+  "spacing": 1.25,
+  "coverage": 0.97,
+  "report_under": 3.0,
+  "budget_s": 60.0,
+  "elapsed_s": 21.4,
+  "regions": []
+ },
+ "params": {"walls.min_wall_effective": 1.5, "walls.coverage_min": 0.9, "target.line_width": 0.42},
+ "expect": []
+}
