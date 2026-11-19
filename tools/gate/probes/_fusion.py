@@ -28,7 +28,8 @@ and run() wraps it into the envelope
      on its cursor). The host adopts a result file it finds after a call that got no answer in time only when this is
      the call it sent,
      "timing": only when the probe returned one: where the time of the unit went (seconds and pointContainment calls
-     per stage, summed over the calls of the unit). Not a fact: no judge reads it}.
+     per stage; fusion_bearings and fusion_census sum them over the calls of the unit, fusion_screws gives those of that
+     call). Not a fact: no judge reads it}.
 An exception inside the probe becomes "error" (text, with the end of the traceback); the file is still written.
 A document that is not open is such an error; "open_documents" is filled all the same.
 One answer is made here and not by the probe: when the signature of a large body needs more time than the call has left
@@ -119,9 +120,26 @@ def gate_doc_version(doc):
         return None
 
 
+_GATE_CLOCK = {'last': None, 'gap': 0.0}    # this call: when the clock was last read (gate_left), the longest stretch between two reads
+
+
 def gate_left(job):
-    """Seconds left of job["deadline_s"] (default 20), counted from the moment the host sent the call (_gate_t0)."""
-    return float(job.get('deadline_s') or 20) - (time.time() - _gate_t0())
+    """Seconds left of job["deadline_s"] (default 20), counted from the moment the host sent the call (_gate_t0).
+    Every read is noted: gate_clock_gap() says how long the probe went without one."""
+    now = time.time()
+    last = _GATE_CLOCK['last'] if _GATE_CLOCK['last'] is not None else _GATE_STARTED
+    if now - last > _GATE_CLOCK['gap']:
+        _GATE_CLOCK['gap'] = now - last
+    _GATE_CLOCK['last'] = now
+    return float(job.get('deadline_s') or 20) - (now - _gate_t0())
+
+
+def gate_clock_gap():
+    """Seconds of the longest stretch of this call without a look at the clock (gate_left), from the start of the script,
+    the stretch since the last look included: the step a probe could not cut. A probe that stays inside its budget keeps
+    it small."""
+    last = _GATE_CLOCK['last'] if _GATE_CLOCK['last'] is not None else _GATE_STARTED
+    return max(_GATE_CLOCK['gap'], time.time() - last)
 
 
 def gate_time_up(job, reserve=1.5):

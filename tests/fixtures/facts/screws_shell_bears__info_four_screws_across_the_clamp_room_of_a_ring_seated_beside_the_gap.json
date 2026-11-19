@@ -1,0 +1,356 @@
+{
+ "judge": "screws_shell_bears",
+ "case": "four screws pull a lid onto a housing across a 1.0 mm gap; a ring sits in a seat of the lid, flush with the lid face, 3 mm from each screw axis, so nothing stands in the gap itself; a lip of the housing reaches 1.0 up across the gap onto the ring and the shoulder of the seat holds the ring from above: the gap is its clamp room, one INFO row and no FAIL",
+ "incident": "flange screws were reported as clamping across about 1 mm of air: a bearing ring in a seat of one part, flush with its face, is pressed by a lip of the other part, so the parts close on the ring; the screw unit had looked for bought bodies only inside the slab of the gap, and the ring lies wholly beside it",
+ "params": {
+  "screws.air_gap_max": 0.05,
+  "screws.bridge_search_r": 8.0,
+  "bearings.contact_gap_max": 0.05
+ },
+ "ctx": {
+  "part": "demo/lid"
+ },
+ "facts": {
+  "screws": [
+   {
+    "ref": "ref hardware / screw M3x12 cap (1)",
+    "size": "M3",
+    "length": 12.0,
+    "named_length": 12.0,
+    "named_size": "M3",
+    "head": "cap",
+    "head_d": 5.5,
+    "head_h": 3.0,
+    "thread_d": 3.0,
+    "anchor": {
+     "kind": "screw",
+     "axis": [
+      0.0,
+      0.0,
+      1.0
+     ],
+     "point": [
+      33.0,
+      0.0,
+      16.0
+     ]
+    },
+    "role": "head",
+    "under_head": 4.99,
+    "seat": {
+     "kind": "flat",
+     "d": 5.5,
+     "recess": -3.0,
+     "share": 1.0
+    },
+    "engagement": 5.0,
+    "into": {
+     "kind": "insert",
+     "name": "ref hardware / insert M3x4x5 (1)"
+    },
+    "tip_room": 2.01,
+    "air_gap": 1.0,
+    "in_solid": {
+     "len": 0.0,
+     "name": null,
+     "part": null,
+     "at": null
+    },
+    "washer": null,
+    "under_head_min": 4.99,
+    "gaps": [
+     {
+      "gap": 1.0,
+      "at": 5.0,
+      "between": [
+       {
+        "name": "Lid",
+        "kind": "printed",
+        "part": "demo/lid"
+       },
+       {
+        "name": "Housing",
+        "kind": "printed",
+        "part": "demo/housing"
+       }
+      ],
+      "search_r": 8.0,
+      "in_gap": [
+       {
+        "name": "ref bearing ring",
+        "kind": "hardware",
+        "off": 4.0,
+        "along": [
+         0.0,
+         0.0
+        ],
+        "lines": 10,
+        "beside": true
+       }
+      ]
+     }
+    ],
+    "tip_room_capped": false
+   },
+   {
+    "ref": "ref hardware / screw M3x12 cap (2)",
+    "size": "M3",
+    "length": 12.0,
+    "named_length": 12.0,
+    "named_size": "M3",
+    "head": "cap",
+    "head_d": 5.5,
+    "head_h": 3.0,
+    "thread_d": 3.0,
+    "anchor": {
+     "kind": "screw",
+     "axis": [
+      0.0,
+      0.0,
+      1.0
+     ],
+     "point": [
+      0.0,
+      33.0,
+      16.0
+     ]
+    },
+    "role": "head",
+    "under_head": 4.99,
+    "seat": {
+     "kind": "flat",
+     "d": 5.5,
+     "recess": -3.0,
+     "share": 1.0
+    },
+    "engagement": 5.0,
+    "into": {
+     "kind": "insert",
+     "name": "ref hardware / insert M3x4x5 (2)"
+    },
+    "tip_room": 2.01,
+    "air_gap": 1.0,
+    "in_solid": {
+     "len": 0.0,
+     "name": null,
+     "part": null,
+     "at": null
+    },
+    "washer": null,
+    "under_head_min": 4.99,
+    "gaps": [
+     {
+      "gap": 1.0,
+      "at": 5.0,
+      "between": [
+       {
+        "name": "Lid",
+        "kind": "printed",
+        "part": "demo/lid"
+       },
+       {
+        "name": "Housing",
+        "kind": "printed",
+        "part": "demo/housing"
+       }
+      ],
+      "search_r": 8.0,
+      "in_gap": [
+       {
+        "name": "ref bearing ring",
+        "kind": "hardware",
+        "off": 4.0,
+        "along": [
+         0.0,
+         0.0
+        ],
+        "lines": 10,
+        "beside": true
+       }
+      ]
+     }
+    ],
+    "tip_room_capped": false
+   },
+   {
+    "ref": "ref hardware / screw M3x12 cap (3)",
+    "size": "M3",
+    "length": 12.0,
+    "named_length": 12.0,
+    "named_size": "M3",
+    "head": "cap",
+    "head_d": 5.5,
+    "head_h": 3.0,
+    "thread_d": 3.0,
+    "anchor": {
+     "kind": "screw",
+     "axis": [
+      0.0,
+      0.0,
+      1.0
+     ],
+     "point": [
+      -33.0,
+      0.0,
+      16.0
+     ]
+    },
+    "role": "head",
+    "under_head": 4.99,
+    "seat": {
+     "kind": "flat",
+     "d": 5.5,
+     "recess": -3.0,
+     "share": 1.0
+    },
+    "engagement": 5.0,
+    "into": {
+     "kind": "insert",
+     "name": "ref hardware / insert M3x4x5 (3)"
+    },
+    "tip_room": 2.01,
+    "air_gap": 1.0,
+    "in_solid": {
+     "len": 0.0,
+     "name": null,
+     "part": null,
+     "at": null
+    },
+    "washer": null,
+    "under_head_min": 4.99,
+    "gaps": [
+     {
+      "gap": 1.0,
+      "at": 5.0,
+      "between": [
+       {
+        "name": "Lid",
+        "kind": "printed",
+        "part": "demo/lid"
+       },
+       {
+        "name": "Housing",
+        "kind": "printed",
+        "part": "demo/housing"
+       }
+      ],
+      "search_r": 8.0,
+      "in_gap": [
+       {
+        "name": "ref bearing ring",
+        "kind": "hardware",
+        "off": 4.0,
+        "along": [
+         0.0,
+         0.0
+        ],
+        "lines": 10,
+        "beside": true
+       }
+      ]
+     }
+    ],
+    "tip_room_capped": false
+   },
+   {
+    "ref": "ref hardware / screw M3x12 cap (4)",
+    "size": "M3",
+    "length": 12.0,
+    "named_length": 12.0,
+    "named_size": "M3",
+    "head": "cap",
+    "head_d": 5.5,
+    "head_h": 3.0,
+    "thread_d": 3.0,
+    "anchor": {
+     "kind": "screw",
+     "axis": [
+      0.0,
+      0.0,
+      1.0
+     ],
+     "point": [
+      0.0,
+      -33.0,
+      16.0
+     ]
+    },
+    "role": "head",
+    "under_head": 4.99,
+    "seat": {
+     "kind": "flat",
+     "d": 5.5,
+     "recess": -3.0,
+     "share": 1.0
+    },
+    "engagement": 5.0,
+    "into": {
+     "kind": "insert",
+     "name": "ref hardware / insert M3x4x5 (4)"
+    },
+    "tip_room": 2.01,
+    "air_gap": 1.0,
+    "in_solid": {
+     "len": 0.0,
+     "name": null,
+     "part": null,
+     "at": null
+    },
+    "washer": null,
+    "under_head_min": 4.99,
+    "gaps": [
+     {
+      "gap": 1.0,
+      "at": 5.0,
+      "between": [
+       {
+        "name": "Lid",
+        "kind": "printed",
+        "part": "demo/lid"
+       },
+       {
+        "name": "Housing",
+        "kind": "printed",
+        "part": "demo/housing"
+       }
+      ],
+      "search_r": 8.0,
+      "in_gap": [
+       {
+        "name": "ref bearing ring",
+        "kind": "hardware",
+        "off": 4.0,
+        "along": [
+         0.0,
+         0.0
+        ],
+        "lines": 10,
+        "beside": true
+       }
+      ]
+     }
+    ],
+    "tip_room_capped": false
+   }
+  ],
+  "washers": [],
+  "passing": [],
+  "n_screws": 4,
+  "n_washers": 0,
+  "unreadable_washers": [],
+  "not_screws": [],
+  "rejected": [],
+  "fastener_holes": []
+ },
+ "expect": [
+  {
+   "verdict": "INFO",
+   "measure": 1.0,
+   "limit": 0.05,
+   "by": [
+    "ref bearing ring"
+   ],
+   "text": "4 screws of this part clamp across a gap that a bought body bridges, the widest 1 mm between Lid and Housing: ref bearing ring does not stand in the gap but beside it along the screw (in a seat of one part, the other reaching across the gap onto it), and both parts press on it along the screw: Lid 0 mm off it, Housing 0 mm off it, on a line through it at least 4 mm from the screw axis (each within 0.05, at most 8 mm from the axis). That gap is the clamp room of that body, not air: the screws close on it. First: screw ref hardware / screw M3x12 cap (1) at (33, 0, 16). What holds the body is judged by the bearing rules"
+  }
+ ]
+}

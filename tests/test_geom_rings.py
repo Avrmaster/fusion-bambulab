@@ -1315,6 +1315,175 @@ class Probes(unittest.TestCase):
         self.assertEqual(s['gaps'][0]['in_gap'][0]['along'], [0.0, 0.0])
         self.assertEqual([(f['verdict'], f['by']) for f in out], [('INFO', ['ref spacer block'])])
 
+    def seated_scene(self, lip=1.0, in_housing=False, r_in=22.0, r_out=30.0, shoulder=26.5, lip_in=24.5, ring_name='ref bearing ring', ring_comp=None):
+        """A lid screwed to a housing across a 1.0 mm gap at a screw 33 mm from the centre. A ring (r_in .. r_out, 4 long)
+        sits in a seat of the lid, its face flush with the lid's face (z 11), on a shoulder that holds it from r_in to
+        `shoulder` only (a relief over the rest); the housing has an annular lip (lip_in .. r_out) that reaches `lip` mm
+        up from its face (z 10) towards the ring. The gap at the screw is the clamp room: lid, shoulder, ring, lip,
+        housing. in_housing: the same mirrored, the ring in a seat of the housing and the lip on the lid."""
+        clear, pocket = Rod(33, 0, 10.0, 17.0, 1.7), Rod(33, 0, 2.0, 11.0, 2.5)
+        ring = Rod(0, 0, 6.0, 10.0, r_out, r_in) if in_housing else Rod(0, 0, 11.0, 15.0, r_out, r_in)
+        if in_housing:
+            housing = Sub(Blk((-40, -40, -20), (40, 40, 10)), pocket, Rod(0, 0, 6.0, 11.0, r_out), Rod(0, 0, 5.5, 6.1, r_out, shoulder), Rod(0, 0, -21.0, 11.0, r_in))
+            lid = Add(Sub(Blk((-40, -40, 11), (40, 40, 16)), clear, Rod(0, 0, 10.0, 17.0, r_in)), Rod(0, 0, 11.0 - lip, 11.0, r_out, lip_in))
+        else:
+            housing = Add(Sub(Blk((-40, -40, -20), (40, 40, 10)), pocket, Rod(0, 0, -21.0, 11.0, r_in)), Rod(0, 0, 10.0, 10.0 + lip, r_out, lip_in))
+            lid = Sub(Blk((-40, -40, 11), (40, 40, 16)), clear, Rod(0, 0, 10.0, 15.0, r_out), Rod(0, 0, 14.9, 15.5, r_out, shoulder), Rod(0, 0, 10.0, 17.0, r_in))
+        hw = [Body('screw M3x12 cap (1)', Add(Rod(33, 0, 4.0, 16.0, 1.5), Rod(33, 0, 16.0, 19.0, 2.75))), Body('insert M3x4x5 (1)', Rod(33, 0, 5.0, 10.0, 2.5, 1.25))]
+        bought = Comp(ring_comp or ring_name, [Body('Body1' if ring_comp is None else ring_name, ring)])
+        return [Comp('Lid', [Body('Body1', lid)]), Comp('Housing', [Body('Body1', housing)]), Comp('ref hardware', hw), bought]
+
+    def test_screws_a_ring_in_a_seat_beside_the_gap_that_a_lip_reaches_across_it(self):
+        """The ring does not stand in the gap at the screw: it sits in a seat of one part, flush with its face, and a lip of
+        the other part reaches across the gap onto it. The gap is its clamp room. The shoulder and the lip overlap only
+        from 24.5 to 26.5 mm off the centre: the first three circles round the screw (4, 5, 6 mm) meet the ring only
+        farther out, so the lines must go out to the search radius."""
+        s, out = self.gap_of(self.seated_scene())
+        self.assertAlmostEqual(s['air_gap'], 1.0, delta=0.05)
+        body, = s['gaps'][0]['in_gap']
+        self.assertEqual((body['name'], body['off'], body['along'], body['beside']), ('ref bearing ring', 4.0, [0.0, 0.0], True))
+        self.assertGreater(body['lines'], 9)                                                            # past the 3 x 3 lines of the first three circles
+        self.assertNotIn('passed_over', s['gaps'][0])
+        self.assertEqual([(f['verdict'], f['by']) for f in out], [('INFO', ['ref bearing ring'])])
+        self.assertIn('between Lid and Housing: ref bearing ring does not stand in the gap but beside it along the screw (in a seat of one part, '
+                      'the other reaching across the gap onto it), and both parts press on it along the screw: Lid 0 mm off it, Housing 0 mm off it, '
+                      'on a line through it at least 4 mm from the screw axis (each within 0.05, at most 8 mm from the axis)', out[0]['text'])
+        # the lip stops 0.3 short of the ring: the lid presses on it, the housing stands off it
+        s, out = self.gap_of(self.seated_scene(lip=0.7))
+        body, = s['gaps'][0]['in_gap']
+        self.assertEqual(body['along'][0], 0.0); self.assertAlmostEqual(body['along'][1], 0.3, delta=0.011)
+        self.assertEqual([f['verdict'] for f in out], ['FAIL'])
+        self.assertIn('ref bearing ring sits beside that gap along the screw and does not carry it: Lid presses on it, Housing stands 0.3 mm off it along the screw', out[0]['text'])
+        # the same mirrored: the ring in a seat of the housing, a lip of the lid reaches down onto it
+        s, out = self.gap_of(self.seated_scene(in_housing=True))
+        self.assertEqual(s['gaps'][0]['in_gap'][0]['along'], [0.0, 0.0])
+        self.assertEqual([(f['verdict'], f['by']) for f in out], [('INFO', ['ref bearing ring'])])
+        s, out = self.gap_of(self.seated_scene(in_housing=True, lip=0.7))
+        self.assertEqual(s['gaps'][0]['in_gap'][0]['along'][1], 0.0); self.assertAlmostEqual(s['gaps'][0]['in_gap'][0]['along'][0], 0.3, delta=0.011)
+        self.assertEqual([f['verdict'] for f in out], ['FAIL'])
+        # a ring whose rim is 9 mm from the screw axis is not looked at (search radius 8): air
+        s, out = self.gap_of(self.seated_scene(r_in=16.0, r_out=24.0, shoulder=20.5, lip_in=18.5))
+        self.assertEqual(s['gaps'][0]['in_gap'], [])
+        self.assertEqual([f['verdict'] for f in out], ['FAIL']); self.assertIn('Nothing bought stands in the gap within 8 mm', out[0]['text'])
+        # the same ring drawn as a washer (its own name says so) is a fastener, never what the parts close on
+        s, out = self.gap_of(self.seated_scene(ring_name='washer 60 x 44', ring_comp='ref hardware washers'))
+        self.assertEqual(s['gaps'][0]['in_gap'], [])
+        self.assertEqual([f['verdict'] for f in out], ['FAIL'])
+        # the same ring under a name that says nothing (no bearing by its name, no ring of the table): beside the gap it is
+        # passed over and named, never taken
+        s, out = self.gap_of(self.seated_scene(ring_name='ref spacer ring'))
+        self.assertEqual((s['gaps'][0]['in_gap'], s['gaps'][0]['passed_over']), ([], [{'name': 'ref spacer ring', 'kind': 'bought', 'off': 4.0}]))
+        self.assertEqual([f['verdict'] for f in out], ['FAIL'])
+        self.assertIn('Nothing bought stands in the gap within 8 mm of the screw axis (beside it along the screw: ref spacer ring, which is no bearing', out[0]['text'])
+
+    def test_screws_a_lip_that_overhangs_air_on_the_line_does_not_carry_the_load_across_the_gap(self):
+        """Two distinct parts: the housing's lip presses the ring, but on every line within the search radius there is air
+        under the lip down to the housing's face (the lip is joined to the housing far from the screw). The load does
+        not cross the gap on any line along the screw: not a clamp the owner can check by eye, a FAIL."""
+        sc = self.seated_scene()
+        housing = sc[1].bRepBodies[0]
+        housing.shape = Add(housing.shape.parts[0], Rod(0, 0, 10.7, 11.0, 30.0, 24.5), Blk((-31, -3, 10.0), (-24, 3, 10.7)))
+        s, out = self.gap_of(sc)
+        body, = s['gaps'][0]['in_gap']
+        self.assertEqual((body['name'], body['along']), ('ref bearing ring', [0.0, None]))
+        self.assertEqual([f['verdict'] for f in out], ['FAIL'])
+        self.assertIn('Lid presses on it, Housing is not met on a line along the screw through it', out[0]['text'])
+
+    def test_screws_a_seal_beside_the_gap_that_a_tongue_reaches_is_no_clamp(self):
+        """Tongue and groove: a cord in a closed groove of the lid, flush with its face, and a tongue of the housing that
+        reaches across the 1 mm gap onto it. Both press on it along the screw, but a seal is no bearing: it is passed over
+        and the gap stays air (0.2.1 never looked beside the gap at all)."""
+        def scene(name):
+            lid = Sub(Blk((-40, -40, 11), (40, 40, 16)), Rod(33, 0, 10.0, 17.0, 1.7), Rod(0, 0, 10.9, 13.0, 29.0, 26.0))
+            housing = Add(Sub(Blk((-40, -40, -20), (40, 40, 10)), Rod(33, 0, 2.0, 11.0, 2.5)), Rod(0, 0, 10.0, 11.0, 28.5, 26.5))
+            hw = [Body('screw M3x12 cap (1)', Add(Rod(33, 0, 4.0, 16.0, 1.5), Rod(33, 0, 16.0, 19.0, 2.75))), Body('insert M3x4x5 (1)', Rod(33, 0, 5.0, 10.0, 2.5, 1.25))]
+            return [Comp('Lid', [Body('Body1', lid)]), Comp('Housing', [Body('Body1', housing)]), Comp('ref hardware', hw),
+                    Comp(name, [Body('Body1', Rod(0, 0, 11.0, 13.0, 29.0, 26.0))])]
+        for name in ('ref seal cord 3 mm EPDM', 'ref o-ring 58 x 3'):
+            s, out = self.gap_of(scene(name))
+            self.assertAlmostEqual(s['air_gap'], 1.0, delta=0.05)
+            self.assertEqual((s['gaps'][0]['in_gap'], [p['name'] for p in s['gaps'][0]['passed_over']]), ([], [name]), name)
+            self.assertEqual([f['verdict'] for f in out], ['FAIL'], name)
+            self.assertIn('(beside it along the screw: %s, which is no bearing by its shape or its name' % name, out[0]['text'])
+        # the same groove holding a bearing ring is the clamp of that ring
+        s, out = self.gap_of(scene('ref bearing ring'))
+        self.assertEqual(s['gaps'][0]['in_gap'][0]['along'], [0.0, 0.0])
+        self.assertEqual([f['verdict'] for f in out], ['INFO'])
+
+    def test_screws_a_chamfer_at_the_rim_of_a_ring_first_met_on_the_last_circle_is_passed(self):
+        """The outer rim of the ring is 7.6 mm from the screw: only the last circle (8 mm) meets it, right in a 0.5 x 0.4
+        chamfer at its top edge. The lines stand on two more circles beyond it, as in 0.2.1, and meet the full face."""
+        sc = self.flange_scene(bore=24.4)
+        sc[-1] = Comp('ref bearing ring', [Body('Body1', Sub(Rod(0, 0, 0.0, 11.0, 24.4, 20.0), Rod(0, 0, 10.6, 11.1, 24.5, 23.9)))])
+        s, out = self.gap_of(sc)
+        body, = s['gaps'][0]['in_gap']
+        self.assertEqual((body['off'], body['along']), (8.0, [0.0, 0.0]))
+        self.assertNotIn('beside', body)                                                               # it stands in the gap
+        self.assertEqual([(f['verdict'], f['by']) for f in out], [('INFO', ['ref bearing ring'])])
+        self.assertIn('ref bearing ring stands in it and both parts press on it along the screw', out[0]['text'])
+
+    def test_screws_a_body_fusion_cannot_answer_on_is_named_and_fails(self):
+        """A bought body whose point tests raise inside Fusion (an unhealed import): the unit goes on, the gap names it and
+        stays a FAIL that says why; nothing else of the part is lost."""
+        class Broken(Body):
+            def pointContainment(self, p): raise RuntimeError('no answer')
+        sc = self.seated_scene()
+        ring = sc[-1].bRepBodies[0]
+        sc[-1] = Comp(sc[-1].name, [Broken(ring.name, ring.shape)])
+        s, out = self.gap_of(sc)
+        self.assertEqual(s['gaps'][0]['in_gap'], [{'name': 'ref bearing ring', 'kind': 'hardware', 'off': None, 'along': [None, None], 'lines': 0, 'unreadable': 'RuntimeError: no answer'}])
+        self.assertEqual((s['engagement'], s['into']['kind']), (5.0, 'insert'))
+        self.assertEqual([f['verdict'] for f in out], ['FAIL'])
+        self.assertIn('ref bearing ring is near that gap and does not carry it: Fusion could not answer point tests on it (RuntimeError: no answer)', out[0]['text'])
+
+    def test_screws_a_body_in_a_closed_pocket_beside_the_hollow_of_one_shell_bridges_nothing(self):
+        """One shell, a 3 mm hollow at its seam screw. A bought ring fills a closed pocket of the shell 1 mm above the
+        hollow: the shell presses on it from above and from below, and the load does not cross the hollow through it.
+        A block there is no bearing: passed over, the gap is air."""
+        def scene(body, name):
+            shell = Sub(Blk((-20, -20, 0), (20, 20, 16)), Blk((-15, -15, 5), (15, 15, 8)), body, Rod(0, 0, 4.0, 17.0, 1.7), Rod(0, 0, -1.0, 5.5, 2.5))
+            hw = [Body('screw M3x12 cap (1)', Add(Rod(0, 0, 3.0, 16.0, 1.5), Rod(0, 0, 16.0, 19.0, 2.75))), Body('insert M3x4x5 (1)', Rod(0, 0, 0.0, 5.0, 2.5, 1.25))]
+            return [Comp('Shell', [Body('Body1', shell)]), Comp('ref hardware', hw), Comp(name, [Body('Body1', body)])]
+        s, out = self.gap_of(scene(Rod(9, 0, 9.0, 11.0, 4.0, 1.5), 'ref bearing ring'), part='Shell')
+        body, = s['gaps'][0]['in_gap']
+        self.assertEqual((body['name'], body['along'], body['beside']), ('ref bearing ring', [0.0, None], True))
+        self.assertEqual([f['verdict'] for f in out], ['FAIL'])
+        self.assertIn('Shell on the thread side is not met on a line along the screw through it', out[0]['text'])
+        s, out = self.gap_of(scene(Blk((4, -6, 9), (14, 6, 11)), 'ref sensor block'), part='Shell')
+        self.assertEqual((s['gaps'][0]['in_gap'], [p['name'] for p in s['gaps'][0]['passed_over']]), ([], ['ref sensor block']))
+        self.assertEqual([f['verdict'] for f in out], ['FAIL'])
+
+    def test_screws_a_ring_beside_the_gap_is_measured_over_several_calls_as_in_one(self):
+        """The cursor inside a screw: the lines over the whole ring, cut by the clock anywhere, give the facts of one call;
+        one of the cuts lands inside the gap search of the first screw (the "timing" of that call says so)."""
+        def scene():
+            sc = self.seated_scene()
+            hw = sc[2].bRepBodies
+            hw.append(Body('screw M3x12 cap (2)', Add(Rod(-33, 0, 4.0, 16.0, 1.5), Rod(-33, 0, 16.0, 19.0, 2.75))))
+            hw.append(Body('insert M3x4x5 (2)', Rod(-33, 0, 5.0, 10.0, 2.5, 1.25)))
+            lid, housing = sc[0].bRepBodies[0], sc[1].bRepBodies[0]
+            lid.shape = Sub(lid.shape, Rod(-33, 0, 10.0, 17.0, 1.7))
+            housing.shape = Add(Sub(housing.shape.parts[0], Rod(-33, 0, 2.0, 11.0, 2.5)), *housing.shape.parts[1:])
+            return sc
+        one = self.unit('fusion_screws', scene(), part='Lid')
+        self.assertTrue(one['done'])
+        self.assertEqual([s['gaps'][0]['in_gap'][0]['along'] for s in one['facts']['screws']], [[0.0, 0.0], [0.0, 0.0]])
+        stages = one['timing']['stages']
+        self.assertEqual(sorted(stages), ['gap', 'screw']); self.assertGreater(stages['gap'][1], 0)
+        self.assertNotIn('stopped_in', one['timing'])
+        # the first call stops inside the gap search of the first screw: questions of the screw before it, plus 100
+        limit = None
+        for n in range(200, stages['screw'][1] + stages['gap'][1], 100):
+            first = self.unit('fusion_screws', scene(), part='Lid', args={'tape_limit': n})
+            if (first['done'], first['cursor']['i'], first['timing'].get('stopped_in')) == (False, 0, 'gap'):
+                limit = n
+                break
+        self.assertIsNotNone(limit)
+        for lim in (90, limit):
+            facts, calls, _ = self.whole('fusion_screws', scene, part='Lid', args={'tape_limit': lim})
+            self.assertGreater(calls, 1, lim)
+            self.assertEqual(json.dumps(facts, sort_keys=True), json.dumps(one['facts'], sort_keys=True), lim)
+
     def test_screws_a_gap_is_measured_whole_or_by_the_next_call_never_half(self):
         """No distance call: only point tests. When the time of the call is used up inside a screw that is not the first of
         the call, the unit stops with its cursor on that screw; the first screw of a call is written and marked."""

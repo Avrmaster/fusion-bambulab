@@ -3162,6 +3162,8 @@ def _gap_loose(c, row, touch):
     if sides[0] == sides[1]:                         # one part on both sides of the gap: a hollow in it
         sides = ['%s on the head side' % sides[0], '%s on the thread side' % sides[1]]
     along = _gap_along(c)
+    if c.get('unreadable'):
+        return 'Fusion could not answer point tests on it (%s), so what the two parts do to it along the screw is not known' % str(c['unreadable'])[:80]
     if c.get('late'):
         return 'what the two parts do to it along the screw was not measured (the time of that call was used up): collect the facts again'
     if 'along' not in c:
@@ -3187,7 +3189,12 @@ def screws_shell_bears(facts, params, ctx):
         the axis and both parts press on it along the screw, each within bearings.contact_gap_max on one line: a
         bearing ring the two parts clamp between them). The load of that screw goes through the body. No FAIL; ONE
         INFO row for the part counts these screws and names the body and the two parts, so the exception can be
-        checked by eye. The ring itself is judged by the bearing rules.
+        checked by eye. The ring itself is judged by the bearing rules. A bearing met only beside the gap ("beside":
+        a ring in a seat of one part that a lip of the other reaches across the gap onto) is said so in that row,
+        with both distances and its distance from the screw axis: the owner looks at the seat and the lip, not
+        into the empty gap.
+    A gap with nothing taken in it names the bodies the unit met beside it and passed over ("passed_over": no
+    bearing), and a body Fusion could not answer on ("unreadable") is a FAIL that says so.
     A body that stands in the gap and that the two parts do NOT both press on bridges nothing: the gap is air the
     screws close first. The screws of one part with the same body in the same gap have one cause and are ONE FAIL
     row (count, the gap, the body, what each part does to it along the screw; measure = the widest gap; context =
@@ -3239,6 +3246,10 @@ def screws_shell_bears(facts, params, ctx):
                     more = '. The gap was looked into only %s mm round the screw axis, the rule counts %s: collect the facts again' % (_g(worst['search_r']), _g(reach))
                 else:
                     more = '. Nothing bought stands in the gap within %s mm of the screw axis' % _g(reach)
+                    passed = sorted({str(x.get('name')) for x in _list(worst.get('passed_over')) if isinstance(x, dict) and x.get('name')})
+                    if passed:                       # met beside the gap and not taken: say so, the owner can look at it
+                        more += (' (beside it along the screw: %s, which is no bearing by its shape or its name, so it is not taken for a body '
+                                 'the two parts close on)' % (', '.join(passed[:3]) + (' and %d more' % (len(passed) - 3) if len(passed) > 3 else '')))
         out.append(finding(ctx['rule'], ctx['part'], 'FAIL', '%s clamps across %s mm of air%s (at most %s): the wall bends until it cracks%s' % (_screw(s, a), _g(gap), between, _g(limit), more),
                            anchor=a, measure=gap, limit=limit, context={'size': s.get('size'), 'air_gap': gap}))
     key = lambda t: gate_features.anchor_key(t[1]) if t[1] else str(t[0].get('ref'))
@@ -3247,9 +3258,10 @@ def screws_shell_bears(facts, params, ctx):
         s, a, row, c = group[0]
         n = len(group)
         out.append(finding(ctx['rule'], ctx['part'], 'FAIL',
-                           '%s clamp%s across %s mm of air%s (at most %s). %s stands in that gap and does not carry %s: %s. The screw%s close%s that air first: the wall bends until it cracks, '
+                           '%s clamp%s across %s mm of air%s (at most %s). %s %s and does not carry %s: %s. The screw%s close%s that air first: the wall bends until it cracks, '
                            'or the body is never clamped. Let both parts land on the body (the part that stands off needs its shoulder at the body), or close the gap%s'
                            % ('%d screws of this part' % n if n > 1 else _screw(s, a), '' if n > 1 else 's', _g(row['gap']), _gap_between(row), _g(limit), name,
+                              'sits beside that gap along the screw' if c.get('beside') else 'is near that gap' if c.get('unreadable') else 'stands in that gap',
                               'them' if n > 1 else 'it', _gap_loose(c, row, touch), 's' if n > 1 else '', '' if n > 1 else 's',
                               '. First: %s' % _screw(s, a) if n > 1 else ''),
                            anchor=a, measure=row['gap'], limit=limit, by=[name],
@@ -3258,13 +3270,28 @@ def screws_shell_bears(facts, params, ctx):
         s, a, row = max(bridged, key=lambda t: t[2]['gap'])
         by = sorted({n for t in bridged for r in _list(t[0].get('gaps')) if isinstance(r, dict) for n in _gap_bridges(r, reach, touch)})
         n = len(bridged)
+        names = ', '.join(by[:3]) + (' and %d more' % (len(by) - 3) if len(by) > 3 else '')
+        bridges = set(_gap_bridges(row, reach, touch))
+        mine = [c for c in _list(row.get('in_gap')) if isinstance(c, dict) and str(c.get('name') or 'a bought body') in bridges]
+        context = {'bridged': sorted(key(t) for t in bridged), 'by': by}
+        if mine and all(c.get('beside') for c in mine):  # met beside the gap only (a ring in a seat): say where, with the numbers
+            c = mine[0]
+            sides = _gap_sides(row) or ['the part on the head side', 'the part on the thread side']
+            if sides[0] == sides[1]:
+                sides = ['%s on the head side' % sides[0], '%s on the thread side' % sides[1]]
+            along = _gap_along(c)
+            how = ('%s does not stand in the gap but beside it along the screw (in a seat of one part, the other reaching across the gap onto it), '
+                   'and both parts press on it along the screw: %s %s mm off it, %s %s mm off it, on a line through it at least %s mm from the screw axis '
+                   '(each within %s, at most %s mm from the axis)'
+                   % (str(c.get('name')), sides[0], _g(along[0]), sides[1], _g(along[1]), _g(c.get('off')), _g(touch), _g(reach)))
+            context['beside'] = {'name': str(c.get('name')), 'off': c.get('off'), 'along': list(along)}
+        else:
+            how = '%s stands in it and both parts press on it along the screw (each within %s, at most %s mm from the screw axis)' % (names, _g(touch), _g(reach))
         out.append(finding(ctx['rule'], ctx['part'], 'INFO',
-                           '%d screw%s of this part clamp%s across a gap that a bought body bridges, the widest %s mm%s: %s stands in it and both parts press on it along the screw (each within %s, at most %s mm from the screw axis). '
+                           '%d screw%s of this part clamp%s across a gap that a bought body bridges, the widest %s mm%s: %s. '
                            'That gap is the clamp room of that body, not air: the screws close on it. First: %s. What holds the body is judged by the bearing rules'
-                           % (n, '' if n == 1 else 's', 's' if n == 1 else '', _g(row['gap']), _gap_between(row),
-                              ', '.join(by[:3]) + (' and %d more' % (len(by) - 3) if len(by) > 3 else ''), _g(touch), _g(reach), _screw(s, a)),
-                           measure=row['gap'], limit=limit, by=by,
-                           context={'bridged': sorted(key(t) for t in bridged), 'by': by}))
+                           % (n, '' if n == 1 else 's', 's' if n == 1 else '', _g(row['gap']), _gap_between(row), how, _screw(s, a)),
+                           measure=row['gap'], limit=limit, by=by, context=context))
     return out
 
 

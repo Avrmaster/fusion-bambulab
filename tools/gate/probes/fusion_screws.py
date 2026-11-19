@@ -20,9 +20,10 @@ How it measures (arithmetic in _geom_rings.py; Fusion is asked "is this point in
   thread    an insert or nut ref on the screw's axis: the stretch they share. Else the longest stretch of the shank
             that lies in a body whose hole is narrower than the thread (8 points just outside the shank, 6 inside).
   the rest  lines along the screw sampled every 0.25 .. 0.5 mm, ends refined by halving (runs_along).
-  gap       an air gap between the clamped parts is looked into: a bought solid body in its slab within
-            screws.bridge_search_r of the axis (a box test, then circles of points), and, on lines parallel to the
-            screw through that body, the air between it and the part on either side (_scr_stack: point tests only).
+  gap       an air gap between the clamped parts is looked into: a bought solid body within screws.bridge_search_r
+            of the axis that stands in its slab or beside it, within _SCR_STACK_LOOK of it along the screw (a box
+            test, then circles of points), and, on lines parallel to the screw through that body, the air between it
+            and the part on either side, and that the load crosses the gap there (_scr_stack: point tests only).
   washer    every body whose own name matches washers.ref_pattern (it must be a thin ring, else it is listed as
             unreadable), and every thin ring of a row of the washers table with no hardware word in its own name whose
             component name matches. Landing: 24 x 6 points under the washer; the share is counted on
@@ -45,7 +46,8 @@ _SCR_RINGS = 6                  # circles of sample points on a washer's landing
 _SCR_GAP_STEP = 1.0             # mm between the circles of points that look for a bought body in an air gap along a screw
 _SCR_STACK_LOOK = 3.0           # mm past the end of that body in which the part on that side is looked for (farther: "not met")
 _SCR_STACK_SPAN = 60.0          # mm: that body is followed no farther than this from the gap along the screw
-_SCR_STACK_LINES = 3            # lines per circle, on the first three circles that meet the body
+_SCR_STACK_LINES = 3            # lines per circle, on every circle within screws.bridge_search_r that meets the body
+_SCR_FACE = 0.025               # mm of air along a screw that is read as face to face (the ends of a gap are found to 0.01)
 
 
 _SCR_TAPE = None                # the GateTape of this call (_fusion.py): probe() sets it, every point test goes through it
@@ -259,18 +261,36 @@ def _scr_who(rec):
     return {'name': rec['name'], 'kind': rec['kind'], 'part': rec['part']}
 
 
-def _scr_stack(body, sides, p, A):
-    """What lies on ONE line parallel to the screw through p, a point of an air gap that is inside `body`: [the air
-    between the part on the head side and the body, the air between the body and the part on the thread side], mm.
+def _scr_holds(inside, p, A, a, b):
+    """Does a body hold the line p + t A for every t from a to b? Sample points at least every 0.25 mm, two at least,
+    none on the ends; the first point in air ends the test."""
+    n = max(2, int(math.ceil((b - a) / 0.25 - 1e-9)))
+    return all(inside(v_add(p, v_scale(A, a + (b - a) * (i + 0.5) / n))) for i in range(n))
+
+
+def _scr_stack(body, sides, p, A, slab=None):
+    """What lies on ONE line parallel to the screw through p, a point inside `body`: [the air between the part on the
+    head side and the body, the air between the body and the part on the thread side], mm.
     The body is followed from p to where it ends (towards the head, then towards the tip), and the part on that side
     is looked for from that end on: 0.0 when it begins right there (face on face), the distance when it begins within
     _SCR_STACK_LOOK, None when it does not (the body ends in the open there, or under another body), None when the
     body does not end within _SCR_STACK_SPAN of p, and None when the part is drawn THROUGH the body there (it already
-    holds the point 0.3 mm before the body ends: two bodies drawn into each other have no face that presses).
+    holds the point 0.3 mm before the body ends: two bodies drawn into each other have no face that presses). p may
+    lie beside the gap (a ring in a seat of one part, flush with its face): the test reads only the body and the part
+    on each side along the line, never what lies beside it, so a seat whose shoulder ends at the ring's face is that
+    part beginning at 0.0.
+    slab: (t_lo, t_hi), where the air gap at the screw lies on this line (mm along A from p, head side positive).
+    The load must cross it: what lies between the gap and the place where a part meets the body must be that part
+    (a lip of the thread-side part that reaches across the gap onto a ring in a seat of the other part), or the body
+    itself, or the measured air of that contact. Else that number is None: a body that one shell holds in a closed
+    pocket above or below its own hollow (beside the gap along the screw) touches the shell on both ends and bridges
+    nothing. When the two sides are one body, only the body itself may cross the gap. The test reads the line only
+    between the gap and the contact: a body that itself spans the heights of the gap on that line (a spacer, or a
+    block in a pocket of the shell beside the hollow at the same heights) is read as in 0.2.1.
     A load path needs both numbers at about 0 on the same line: part, body, part, with no air along the screw. A ring
     that only sits in a bore of one part, a pin through both parts and a plate that lies on one of them and stops
     short of the other all have air or nothing at one end. Point tests only."""
-    out = []
+    out, raw = [], []
     for side, d in ((sides[0], A), (sides[1], v_scale(A, -1.0))):
         at = lambda s, d=d: v_add(p, v_scale(d, s))
         top = min(_SCR_STACK_SPAN, box_span(body['box'][0], body['box'][1], p, d)[1] + 0.5)
@@ -284,9 +304,20 @@ def _scr_stack(body, sides, p, A):
             prev = s
         if end is None or side['_inside'](at(max(0.0, end - 0.3))):
             out.append(None)
+            raw.append(None)
             continue
         hit = first_hit(lambda s: 'part' if side['_inside'](at(s)) else None, end, end + _SCR_STACK_LOOK, 0.25, 0.005)
         out.append(None if hit is None else round(max(0.0, hit[1] - end - 0.005), 2))
+        raw.append(None if hit is None else hit[1])                      # where that part begins, mm from p along d
+    if slab is not None:
+        t_lo, t_hi = slab
+        one = sides[0] is sides[1]
+        if raw[0] is not None and t_hi - max(t_lo, raw[0]) > _SCR_FACE:  # gap beyond where the head-side part meets the body
+            if one or not _scr_holds(sides[0]['_inside'], p, A, max(t_lo, raw[0]), t_hi):
+                out[0] = None
+        if raw[1] is not None and min(t_hi, -raw[1]) - t_lo > _SCR_FACE:  # gap beyond where the thread-side part meets it
+            if one or not _scr_holds(sides[1]['_inside'], p, A, t_lo, min(t_hi, -raw[1])):
+                out[1] = None
     return out
 
 
@@ -296,82 +327,156 @@ def _scr_stack_rank(pair):
     return (2 - len(known), max(known) if known else 0.0, sum(known))
 
 
+def _scr_heights(b_lo, b_hi, s0, gap):
+    """Where along the screw a body is looked for round the axis (mm from the landing towards the tip), given the
+    stretch b_lo .. b_hi its box covers along the screw and the gap s0 .. s0 + gap: half the height of the gap when the
+    box reaches into it (asked there first, as before), then inside the body next to the gap on the head side and on
+    the thread side, each only when the body comes within _SCR_STACK_LOOK of the gap there: 0.5 mm in from its end
+    nearest the gap, or the middle of that stretch when it is 1 mm or less."""
+    s1, L, out = s0 + gap, _SCR_STACK_LOOK, []
+    if b_lo < s1 and b_hi > s0:
+        out.append(s0 + gap / 2.0)
+    a, b = max(b_lo, s0 - L), min(b_hi, s0)                          # beside the gap on the head side: a ring in a seat of that part
+    if b > a:
+        out.append(b - 0.5 if b - a > 1.0 else (a + b) / 2.0)
+    a, b = max(b_lo, s1), min(b_hi, s1 + L)                          # beside it on the thread side
+    if b > a:
+        out.append(a + 0.5 if b - a > 1.0 else (a + b) / 2.0)
+    return out
+
+
 def _scr_gaps(gaps, solid, land, A, job, may_stop=False):
-    """What stands in each air gap between the clamped parts along one screw.
+    """What stands in each air gap between the clamped parts along one screw, or bridges it from beside it.
 
     gaps   run_gaps() rows wider than face to face: (gap, index of the body before, index of the body after, s where
            the gap starts, counted from the landing towards the tip); the indices point into `solid`
     Returns one row per gap: {"gap", "at", "between": [who, who] (the bodies either side, head side first),
     "search_r": screws.bridge_search_r as it was used, "in_gap": [{"name", "kind", "off", "along": [mm, mm],
-    "lines"}]}.
-    "in_gap": every bought solid body that lies in the slab of the gap within search_r of the screw axis. A printed
-    body, the screw itself and its washers, every recognised screw, washer, insert and nut, and a body whose own name
-    says so are left out: only a bearing ring, a sleeve, a bought plate can carry the clamp load of two parts.
-    "off": the radius of the first circle of points round the axis, at half the height of the gap, that meets the
-    body (circles every _SCR_GAP_STEP mm, 24 points each).
+    "lines", "beside"}], "passed_over": [{"name", "kind", "off"}] (only when there is one)}.
+    "in_gap": every bought solid body within search_r of the screw axis that lies in the slab of the gap or beside
+    it: its stretch along the screw reaches the slab or comes within _SCR_STACK_LOOK of it on either side (a ring in
+    a seat of one part, flush with or just under that part's face, that a lip of the other part reaches across the gap
+    to press). A printed body, the screw itself and its washers, every recognised screw, washer, insert and nut, and
+    a body whose own name says so are left out: only a bearing ring, a sleeve, a bought plate can carry the clamp
+    load of two parts. A body met only beside the gap (not across its middle) is taken only when it is a bearing
+    (_scr_bearing_like: a ring of the bearing table, or named so); it then has "beside": True. Any other body met
+    there (a seal cord in a groove that a tongue reaches across the gap to, a block in a pocket) is listed in
+    "passed_over" and not measured along the screw: 0.2.1 never took it either.
+    "off": the radius of the first circle of points round the axis that meets the body (circles every _SCR_GAP_STEP
+    mm, 24 points each), at the first height of _scr_heights() where one does: half the height of the gap for a body
+    that stands in it. None on a row with "unreadable": Fusion raised on a point test of that body (the text of the
+    error); "along" is then [None, None] and the gap stays a FAIL that names the body.
     "along": on the best of "lines" lines parallel to the screw through the body, the air between the part on the
-    head side and the body, and between the body and the part on the thread side (_scr_stack; None = that part is not
-    met on the line). The lines stand on the first three circles that meet the body (a chamfer at its rim is passed
-    by the second), up to _SCR_STACK_LINES on each; the best line is the one with both numbers and the smallest larger
-    number. [0.0, 0.0] = the two parts clamp the body between them along the screw.
+    head side and the body, and between the body and the part on the thread side (_scr_stack, with the slab of the gap
+    on that line; None = that part is not met on the line, or what lies between it and the gap is not that part).
+    The lines stand on every circle from the first one that meets the body out to search_r, and on at least three
+    circles (a chamfer at the rim of a body first met on the last circle is passed by the next one, as in 0.2.1), at
+    that height, up to _SCR_STACK_LINES on each (the middle and the quarters of the arc inside the body): across the
+    whole width of a ring within search_r, so a shoulder under its inner part and a lip over its outer part are both
+    met. The best line is the one with both numbers and the smallest larger number. [0.0, 0.0] = the two parts clamp
+    the body between them along the screw.
     "late": True on a row that was not measured because the time of the call was used up ("along" is then
     [None, None]); with may_stop the caller stops instead (_ScrLate). Both only without a tape: probe() asks through a
     GateTape, which stops the screw between two point tests and lets the next call go on, so a unit writes no "late".
-    Cost: a box test per body, then point tests for the bodies whose box meets the slab; no distance call."""
+    Cost: a box test per body, then point tests for the bodies whose box meets the slab and the _SCR_STACK_LOOK on
+    either side of it; lines only for a body taken; no distance call. Its questions are counted under the stage "gap"
+    of the "timing" block of the envelope."""
     R = float((job.get('params') or {}).get('screws.bridge_search_r', 8.0))
     n_r = max(1, int(math.ceil(R / _SCR_GAP_STEP - 1e-9)))
     down = v_scale(A, -1.0)
     out = []
+    stage = _SCR_TAPE.stage if _SCR_TAPE is not None else None
+    if _SCR_TAPE is not None:
+        _SCR_TAPE.set_stage('gap')                                      # the questions of this search are counted apart ("timing")
     for gap, i0, i1, s0 in gaps:
         sides = (solid[i0], solid[i1])
-        lo, hi = path_box(v_add(land, v_scale(down, s0)), down, R, gap)
-        mid = v_add(land, v_scale(down, s0 + gap / 2.0))
-        found = []
+        lo, hi = path_box(v_add(land, v_scale(down, s0 - _SCR_STACK_LOOK)), down, R, gap + 2.0 * _SCR_STACK_LOOK)
+        found, passed = [], []
         for r in solid:
             if r is sides[0] or r is sides[1] or r['own'] or r['printed'] or r.get('_fast') or r.get('hw') in ('screw', 'washer', 'insert', 'nut'):
                 continue
             if box_gap(r['box'][0], r['box'][1], lo, hi) > 0.0:
                 continue
-            k0 = next((k for k in range(1, n_r + 1) if any(r['_inside'](p) for p in _scr_ring(mid, A, R * k / n_r, 24))), None)
-            if k0 is None:
+            try:
+                row = _scr_gap_body(r, sides, land, A, s0, gap, R, n_r, job, may_stop)
+            except _ScrLate:
+                raise
+            except Exception as e:                                      # Fusion could not answer on this body: a row that bridges nothing
+                if isinstance(e, (GateStop, GateReplay)):                # out of time, or another tape: the caller's, never this row's
+                    raise
+                row = {'name': r['name'], 'kind': r['kind'], 'off': None, 'along': [None, None], 'lines': 0,
+                       'unreadable': '%s: %s' % (type(e).__name__, str(e)[:80])}
+            if row is None:
                 continue
-            row = {'name': r['name'], 'kind': r['kind'], 'off': round(R * k0 / n_r, 2), 'along': [None, None], 'lines': 0}
-            best = None
-            for k in range(k0, k0 + 3):
-                pts = _scr_ring(mid, A, R * k / n_r, 24)
-                flags = [r['_inside'](p) for p in pts]
-                if not any(flags):
-                    continue
-                start = next((i for i in range(len(flags)) if flags[i] and not flags[i - 1]), 0)     # the first arc inside the body
-                arc = []
-                for i in range(len(flags)):
-                    if not flags[(start + i) % len(flags)]:
-                        break
-                    arc.append(pts[(start + i) % len(flags)])
-                picks = []
-                for i in (len(arc) // 2, len(arc) // 4, (3 * len(arc)) // 4)[:_SCR_STACK_LINES]:
-                    if arc[i] not in picks:
-                        picks.append(arc[i])
-                for p in picks:
-                    if _SCR_TAPE is None and gate_time_up(job, 1.5):     # with a tape the tape stops the screw, and the next call goes on
-                        if may_stop:
-                            raise _ScrLate()
-                        row['late'] = True
-                        break
-                    pair = _scr_stack(r, sides, p, A)
-                    row['lines'] += 1
-                    if best is None or _scr_stack_rank(pair) < _scr_stack_rank(best):
-                        best = pair
-                    if None not in best and max(best) <= 0.02:
-                        break                                           # contact on both sides is proven: no further line
-                if row.get('late') or (best is not None and None not in best and max(best) <= 0.02):
-                    break
-            if best is not None and not row.get('late'):
-                row['along'] = best
+            if row.get('passed'):
+                passed.append({'name': row['name'], 'kind': row['kind'], 'off': row['off']})
+                continue
             found.append(row)
-        found.sort(key=lambda f: (f['off'], f['name']))
-        out.append({'gap': round(gap, 2), 'at': round(s0, 2), 'between': [_scr_who(sides[0]), _scr_who(sides[1])], 'search_r': R, 'in_gap': found})
+        found.sort(key=lambda f: (f['off'] if f['off'] is not None else 1e9, f['name']))
+        g_row = {'gap': round(gap, 2), 'at': round(s0, 2), 'between': [_scr_who(sides[0]), _scr_who(sides[1])], 'search_r': R, 'in_gap': found}
+        if passed:
+            g_row['passed_over'] = sorted(passed, key=lambda f: (f['off'], f['name']))
+        out.append(g_row)
+    if _SCR_TAPE is not None:
+        _SCR_TAPE.set_stage(stage)
     return out
+
+
+def _scr_gap_body(r, sides, land, A, s0, gap, R, n_r, job, may_stop):
+    """One bought body round one gap of _scr_gaps: its "in_gap" row, None when no circle meets it, or
+    {"name", "kind", "off", "passed": True} for a body met only beside the gap that is no bearing (_scr_bearing_like):
+    only a bearing ring is taken there, never a seal, a cord or a block that a lip happens to touch."""
+    down = v_scale(A, -1.0)
+    b_lo, b_hi = box_span(r['box'][0], r['box'][1], land, down)
+    seen = None
+    for h in _scr_heights(b_lo, b_hi, s0, gap):
+        c = v_add(land, v_scale(down, h))
+        k0 = next((k for k in range(1, n_r + 1) if any(r['_inside'](p) for p in _scr_ring(c, A, R * k / n_r, 24))), None)
+        if k0 is not None:
+            seen = (h, c, k0)
+            break
+    if seen is None:
+        return None
+    h, c, k0 = seen
+    row = {'name': r['name'], 'kind': r['kind'], 'off': round(R * k0 / n_r, 2), 'along': [None, None], 'lines': 0}
+    if abs(h - (s0 + gap / 2.0)) > 1e-9:                                 # met beside the gap only, not across its middle
+        if not _scr_bearing_like(r, gate_ref_patterns(job), (job.get('tables') or {}).get('bearings')):
+            return {'name': r['name'], 'kind': r['kind'], 'off': row['off'], 'passed': True}
+        row['beside'] = True
+    slab = (h - s0 - gap, h - s0)                                        # the gap on a line through a point at height h, along A
+    best = None
+    for k in range(k0, max(n_r, k0 + 2) + 1):                            # out to search_r, and never fewer than three circles
+        pts = _scr_ring(c, A, R * k / n_r, 24)
+        flags = [r['_inside'](p) for p in pts]
+        if not any(flags):
+            continue
+        start = next((i for i in range(len(flags)) if flags[i] and not flags[i - 1]), 0)     # the first arc inside the body
+        arc = []
+        for i in range(len(flags)):
+            if not flags[(start + i) % len(flags)]:
+                break
+            arc.append(pts[(start + i) % len(flags)])
+        picks = []
+        for i in (len(arc) // 2, len(arc) // 4, (3 * len(arc)) // 4)[:_SCR_STACK_LINES]:
+            if arc[i] not in picks:
+                picks.append(arc[i])
+        for p in picks:
+            if _SCR_TAPE is None and gate_time_up(job, 1.5):             # with a tape the tape stops the screw, and the next call goes on
+                if may_stop:
+                    raise _ScrLate()
+                row['late'] = True
+                break
+            pair = _scr_stack(r, sides, p, A, slab)
+            row['lines'] += 1
+            if best is None or _scr_stack_rank(pair) < _scr_stack_rank(best):
+                best = pair
+            if None not in best and max(best) <= 0.02:
+                break                                                   # contact on both sides is proven: no further line
+        if row.get('late') or (best is not None and None not in best and max(best) <= 0.02):
+            break
+    if best is not None and not row.get('late'):
+        row['along'] = best
+    return row
 
 
 def _scr_tip_at(sh, solids):
@@ -490,8 +595,8 @@ def _scr_screw(g, job, world, own, inv, washers, threads, table, may_stop=False)
             return None
         gaps = run_gaps(runs_along(owner, 0.05, max(0.3, span), 0.25, 0.01)) if span > 0.3 else []
         widest = max([0.0] + [gp[0] for gp in gaps])
-        out['air_gap'] = round(widest, 2) if widest > 0.025 else 0.0     # under the halving step: face to face
-        out['gaps'] = _scr_gaps([gp for gp in gaps if gp[0] > 0.025], solid, land, A, job, may_stop)      # what stands in each of them
+        out['air_gap'] = round(widest, 2) if widest > _SCR_FACE else 0.0     # under the halving step: face to face
+        out['gaps'] = _scr_gaps([gp for gp in gaps if gp[0] > _SCR_FACE], solid, land, A, job, may_stop)      # what stands in each of them
     # past the tip: the centre line and four points at half the shank radius
     blockers = [r for r in solid if not (into_rec is r and into and into['kind'] in ('insert', 'nut'))]
 
@@ -675,11 +780,14 @@ def probe(job):
       "tip_room" is capped at 10.0 ("tip_room_capped"); a negative value comes with "tip_in": the body the tip is in.
       "air_gap", "under_head" and "seat" are None for a screw whose head is not on this part.
       "gaps": [{"gap", "at", "between": [{"name", "kind", "part"} x 2], "search_r", "in_gap": [{"name", "kind", "off",
-      "along": [mm, mm], "lines", "late"}]}], written with "air_gap": one row per air gap between the clamped parts ("at": mm
-      under the landing), the two bodies either side, and the bought solid bodies that stand in the slab of the gap
-      within screws.bridge_search_r of the axis, each with the air between it and the part on either side on a line
-      parallel to the screw (_scr_gaps, _scr_stack). A bearing ring the two parts clamp between them reads
-      "along": [0.0, 0.0]: screws.shell_bears does not take that gap for air. [] = no gap. "late": True marked a
+      "along": [mm, mm], "lines", "beside", "unreadable", "late"}], "passed_over"}], written with "air_gap": one row per
+      air gap between the clamped parts ("at": mm under the landing), the two bodies either side, and the bought solid
+      bodies within screws.bridge_search_r of the axis that stand in the slab of the gap or, for a bearing only
+      ("beside": True), within _SCR_STACK_LOOK beside it along the screw, each with the air between it and the part on
+      either side on a line parallel to the screw (_scr_gaps, _scr_stack). A bearing ring the two parts clamp between
+      them reads "along": [0.0, 0.0], also when it sits in a seat of one part flush with its face and a lip of the
+      other part reaches across the gap onto it: screws.shell_bears does not take that gap for air. Other bodies met
+      only beside the gap are named in "passed_over". [] = no gap. "late": True marked a
       body that was not measured because the time of a call was used up; a unit does not write it any more (a screw
       that runs out of time goes on in the next call), a judge still reads it in facts stored before.
       "tip_at": {"name", "kind", "part"} or None, only on a screw with "engagement" 0.0 and "into" None: the body the
@@ -712,7 +820,10 @@ def probe(job):
     point tests against the part and every body within 12 mm, which bodies with thousands of faces do not answer within
     one call: every point test goes through a GateTape of _fusion.py, the clock is read every 16 tests, and the next
     call goes on with the same ref. Its facts are the facts of one call. "unreadable_washers", "not_screws", "rejected"
-    and "fastener_holes" are written by the first call of a unit only."""
+    and "fastener_holes" are written by the first call of a unit only.
+    Beside the facts (never in them) every call returns "timing" for THAT call: {"stages": {"screw" | "gap" | "washer":
+    [seconds, questions Fusion answered]}, "slowest": [{"name", "pc", "s"}] (five bodies), "stopped_in": the stage a
+    call stopped in when it ran out of time inside a ref}. The questions of a unit are the sum over its calls."""
     design = gate_design(job)
     occ, comp, body = gate_body(design, job)
     sig = gate_signature(body)
@@ -796,11 +907,23 @@ def probe(job):
              'fastener_holes': _scr_holes(job, world, gate_matrix(occ), screws, taken | set(id(r) for t in threads for r in t['recs']), pats) if first_call else []}
     global _SCR_TAPE
     tape = _SCR_TAPE = GateTape(job, reserve=3.0)
+
+    def timing(stopped=None):
+        """Where the questions of THIS call went (not summed over the calls of the unit): per stage ("screw", "gap",
+        "washer") and for the five bodies asked longest, [seconds, questions]; "stopped_in": the stage a call that ran
+        out of time inside a ref stopped in."""
+        slow = sorted(tape.bodies.items(), key=lambda kv: (-kv[1][0], -kv[1][1], str(kv[0])))[:5]
+        out = {'stages': {k: [round(v[0], 3), v[1]] for k, v in sorted(tape.timing.items())},
+               'slowest': [{'name': world[t]['name'] if isinstance(t, int) and 0 <= t < len(world) else str(t), 'pc': v[1], 's': round(v[0], 2)} for t, v in slow]}
+        if stopped:
+            out['stopped_in'] = stopped
+        return out
     i = start
     while i < len(items):
         if i > start and (gate_time_up(job, 3.0) or tape.out_of_time()):
-            return {'facts': facts, 'done': False, 'cursor': i, 'sig': sig}
+            return {'facts': facts, 'done': False, 'cursor': i, 'sig': sig, 'timing': timing()}
         kind, g = items[i]
+        tape.set_stage(kind)
 
         def one():
             if kind == 'screw':
@@ -827,10 +950,10 @@ def probe(job):
             state = {'i': i, 'tape': tape.saved(), 'world': here, 'asked': gate_states(world, set(tape.tags) | set(mine))}
             if i == start and again:
                 state['again'] = again
-            return {'facts': facts, 'done': False, 'cursor': state, 'sig': sig}
+            return {'facts': facts, 'done': False, 'cursor': state, 'sig': sig, 'timing': timing(tape.stage)}
         if kind == 'screw':
             facts['passing' if row.get('passing') else 'screws'].append({k: v for k, v in row.items() if k != 'passing'})
         elif row:
             facts['washers'].append(row)
         i += 1
-    return {'facts': facts, 'done': True, 'cursor': None, 'sig': sig}
+    return {'facts': facts, 'done': True, 'cursor': None, 'sig': sig, 'timing': timing()}

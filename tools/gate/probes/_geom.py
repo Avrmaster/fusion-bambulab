@@ -1138,3 +1138,175 @@ def tape_sum(check, point, tag=0):
     point that moved, one more or one fewer question, or another order gives another one."""
     q = (int(round(point[0] * 1000.0)) * 73856093 + int(round(point[1] * 1000.0)) * 19349663 + int(round(point[2] * 1000.0)) * 83492791 + int(tag) * 2654435761 + 1)
     return (int(check) * 1000003 + q) % TAPE_MOD
+
+
+# ---- the outline of a large planar loop, read over several calls (fusion_census) ---------------------------------------------
+# opening_shape() takes every point of a loop at once and tries one direction per point against all points: on a toothed
+# outline of thousands of edges that is seconds of Python in one piece. The functions below give EXACTLY its answer from
+# a stream of points read edge by edge, with a state of plain JSON between two calls:
+#   pass 1  outline_q() of every point; hull_keep() thins them to the points that can be the largest or the smallest
+#           along some direction (a point at least `delta` inside the hull never is), so a direction costs |kept|, not N;
+#   pass 2  the same points again, in the same order: rect_direction() for each, against the kept points;
+#   pass 3  only for a loop of curved edges alone: the least distance from the centre (the largest is among the kept).
+# Every value is computed by the same expression as in opening_shape(), so the floats are the same floats; a float goes
+# through the JSON of a cursor unchanged (its shortest repr reads back to the same bits, -0.0 included).
+
+def outline_q(p, o, u, v):
+    """The point p of a planar loop in the frame of opening_shape(): (along u, along v) from the first point o."""
+    return (v_dot(v_sub(p, o), u), v_dot(v_sub(p, o), v))
+
+
+def _hull2(pts):
+    """Convex hull of 2D points, counter-clockwise, no three in a line (monotone chain); fewer than 3 points as they are."""
+    ps = sorted(set(pts))
+    if len(ps) < 3:
+        return ps
+
+    def cross(o, a, b):
+        return (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0])
+    lower, upper = [], []
+    for p in ps:
+        while len(lower) >= 2 and cross(lower[-2], lower[-1], p) <= 0:
+            lower.pop()
+        lower.append(p)
+    for p in reversed(ps):
+        while len(upper) >= 2 and cross(upper[-2], upper[-1], p) <= 0:
+            upper.pop()
+        upper.append(p)
+    return lower[:-1] + upper[:-1]
+
+
+def hull_keep(pts, delta=1e-6):
+    """The points of `pts` (2D, mm) that may be the largest or the smallest along some direction, or the farthest from
+    some point inside: every point except those that lie at least `delta` inside the convex hull of `pts`, in their
+    order. A point that is dropped has a disc of radius `delta` round it inside the hull, so along any direction some
+    kept point lies at least `delta` beyond it: far more than the rounding of a product of two floats, so the largest
+    and the smallest of x*ex + y*ey (and of the distance from a point inside) over the kept points are the very floats
+    those of all points are.
+    The test is conservative: a point is dropped only when the hull, blown up round an inner point c by the factor
+    1 / (1 - rho) (rho = delta / the least distance from c to an edge line), still holds it with a margin; the five
+    edges round its angle from c are asked, so a point beside a vertex is never judged by the wrong edge."""
+    pts = [(float(p[0]), float(p[1])) for p in pts]
+    hull = _hull2(pts)
+    if len(hull) < 3:
+        return pts
+    n = len(hull)
+    cx = sum(p[0] for p in hull) / n
+    cy = sum(p[1] for p in hull) / n
+    edges, r = [], None
+    for k in range(n):
+        a, b = hull[k], hull[(k + 1) % n]
+        ln = math.hypot(b[0] - a[0], b[1] - a[1])
+        if ln <= 0.0:
+            return pts
+        edges.append((a, b, ln))
+        d = ((b[0] - a[0]) * (cy - a[1]) - (b[1] - a[1]) * (cx - a[0])) / ln
+        r = d if r is None or d < r else r
+    if not r or r <= 0.0 or not math.isfinite(r):
+        return pts
+    rho = float(delta) / r
+    if rho >= 0.5:
+        return pts
+    ang = [math.atan2(p[1] - cy, p[0] - cx) for p in hull]
+    k0 = min(range(n), key=lambda k: ang[k])
+    order = [(ang[(k0 + k) % n], (k0 + k) % n) for k in range(n)]
+    keys = [a for a, _ in order]
+    tol = 1e-9
+    out = []
+    for p in pts:
+        y = (cx + (p[0] - cx) / (1.0 - rho), cy + (p[1] - cy) / (1.0 - rho))
+        t = math.atan2(y[1] - cy, y[0] - cx)
+        lo, hi = 0, n                                   # the last angle of the hull not past t (bisect_right - 1)
+        while lo < hi:
+            mid = (lo + hi) // 2
+            if t < keys[mid]:
+                hi = mid
+            else:
+                lo = mid + 1
+        s = order[(lo - 1) % n][1]
+        inside = True
+        for j in range(s - 2, s + 3):
+            a, b, ln = edges[j % n]
+            if (b[0] - a[0]) * (y[1] - a[1]) - (b[1] - a[1]) * (y[0] - a[0]) <= tol * ln:
+                inside = False
+                break
+        if not inside:
+            out.append(p)
+    return out
+
+
+_RECT_WINDOW = 8        # kept points on either side of the four extremes of the last direction (rect_direction's hint)
+
+
+def _rect_argext(a, ids):
+    """[index of the largest, index of the smallest] of the values a, as indices of `ids` (first one on a tie)"""
+    r = range(len(a))
+    return [ids[max(r, key=a.__getitem__)], ids[min(r, key=a.__getitem__)]]
+
+
+def rect_direction(best, prev, q, kept, hint=None):
+    """One step of opening_shape(): the direction from the point `prev` to the point `q`, tried against the points
+    `kept` (hull_keep() of all of them). best: None or [w*h, w, h, ca, cb, ex, ey] of the best direction so far; returns
+    the new best (the same list when this direction is no better).
+    hint: None, or a dict kept from one direction to the next ({} at the start): the four extremes of the last
+    direction. The kept points round them are asked first; their rectangle is never larger than that of all points
+    (the same products, fewer of them, and rounding keeps the order), so when it is no better than `best` the
+    direction is not better either and the other points are not asked. Only the time differs, never the answer: on a
+    convex outline every point is kept, and a direction then costs a few dozen points instead of thousands."""
+    dx, dy = q[0] - prev[0], q[1] - prev[1]
+    length = math.hypot(dx, dy)
+    if length < 1e-6:
+        return best
+    ex, ey = dx / length, dy / length
+    n = len(kept)
+    if best is not None and hint is not None and hint.get('at') and n > 8 * _RECT_WINDOW:
+        ids = sorted(set((c + d) % n for c in hint['at'] for d in range(-_RECT_WINDOW, _RECT_WINDOW + 1)))
+        a = [kept[i][0] * ex + kept[i][1] * ey for i in ids]
+        b = [-kept[i][0] * ey + kept[i][1] * ex for i in ids]
+        if (max(a) - min(a)) * (max(b) - min(b)) >= best[0] - 1e-9:
+            hint['at'] = _rect_argext(a, ids) + _rect_argext(b, ids)
+            return best
+    a = [x * ex + y * ey for x, y in kept]
+    b = [-x * ey + y * ex for x, y in kept]
+    if hint is not None and n > 8 * _RECT_WINDOW:
+        ids = range(n)
+        hint['at'] = _rect_argext(a, ids) + _rect_argext(b, ids)
+    w, h = max(a) - min(a), max(b) - min(b)
+    if best is None or w * h < best[0] - 1e-9:
+        return [w * h, w, h, (max(a) + min(a)) / 2.0, (max(b) + min(b)) / 2.0, ex, ey]
+    return best
+
+
+def rect_centre(best):
+    """(cx, cy) of the best rectangle, in the frame of outline_q()."""
+    _, w, h, ca, cb, ex, ey = best
+    return ca * ex - cb * ey, ca * ey + cb * ex
+
+
+def round_wanted(arcs, edges, n):
+    """Does opening_shape() look at the spread of the distances from the centre at all (every edge curved, 6 points)?"""
+    return bool(arcs) and (edges is None or arcs >= edges) and n >= 6
+
+
+def spread_round(r_max, r_min):
+    """The roundness test of opening_shape() on the largest and the smallest distance from the centre."""
+    return r_max - r_min <= 0.03 * r_max + 0.01
+
+
+def shape_of_rect(best, o, normal, arcs, round_):
+    """The answer of opening_shape() from the best rectangle (rect_direction), the first point o of the loop, the
+    normal, the number of curved edges and the roundness (spread_round, or False when round_wanted() is False)."""
+    u, v = axis_frame(normal)
+    _, w, h, ca, cb, ex, ey = best
+    cx, cy = rect_centre(best)
+    centre = v_add(o, v_add(v_scale(u, cx), v_scale(v, cy)))
+    long_, short = max(w, h), min(w, h)
+    slot = short > 0 and (long_ >= 3.0 * short or (arcs and long_ >= 1.3 * short))
+    return {'point': tuple(_geo_r4(c) for c in centre), 'size': [round(long_, 2), round(short, 2)], 'round': bool(round_),
+            'shape': 'slot' if slot else 'window'}
+
+
+def outline_picks(n):
+    """(indices of the starting points, indices of the rim points) opening_shape()'s caller takes from a loop of n
+    points: points[::max(1, n // 3)][:3] and points[::max(1, n // 4)][:4]."""
+    return list(range(0, n, max(1, n // 3)))[:3], list(range(0, n, max(1, n // 4)))[:4]

@@ -679,7 +679,7 @@ class Occ:
 
 def application(occs, root_bodies=(), name='Demo Assembly v7'):
     root = Comp('root', 'Demo Assembly', root_bodies)
-    root.allOccurrences = list(occs)
+    root.allOccurrences = Coll(occs)
     design = types.SimpleNamespace(rootComponent=root)
     doc = types.SimpleNamespace(name=name, dataFile=types.SimpleNamespace(versionNumber=7, id='file-1'), products=types.SimpleNamespace(itemByProductType=lambda t: design))
     return types.SimpleNamespace(documents=[doc], activeProduct=design, design=design)
@@ -783,7 +783,7 @@ class Units(unittest.TestCase):
             env = cls.unit(app, probe, cursor=cursor, **kw)
             facts, calls, cursor = gate_fusion_rpc.merge_facts(facts, env['facts']), calls + 1, env['cursor']
             if env['done']: return facts, calls, env
-            assert calls < 200, 'the unit never finishes'
+            assert calls < 2000, 'the unit never finishes'
 
 
 def by_place(holes):
@@ -931,16 +931,20 @@ class Census(Units):
         """A planar face with openings is walked with point tests; a call that runs out of time inside one face hands its
         answers on, and the counts of that face are counted once."""
         self.assertTrue(self.facts['openings'])
-        for limit in (3, 11):
+        for limit in (11, 37):                                                     # "tape_limit" holds for every point test of the unit
             steps, calls, _ = self.whole(self.app, 'fusion_census', args={'tape_limit': limit})
             self.assertEqual(steps, self.facts, limit); self.assertGreater(calls, 3)
-        cut = None
-        cursor = None
-        for _ in range(50):                                                        # the first call that stops inside a face
-            env = self.unit(self.app, 'fusion_census', args={'tape_limit': 3}, cursor=cursor)
-            cursor = env['cursor']
-            if env['done'] or 'tape' in cursor: cut = env; break
+        cut, cursor, facts = None, None, None
+        for _ in range(400):                                                       # one step a call up to the openings, then the first
+            args = {'tape_limit': 3} if (cursor or {}).get('stage') == 'openings' else {'limit': 1}     # call that stops inside a face
+            env = self.unit(self.app, 'fusion_census', args=args, cursor=cursor)
+            facts, cursor = gate_fusion_rpc.merge_facts(facts, env['facts']), env['cursor']
+            if env['done'] or (cursor['stage'] == 'openings' and 'tape' in cursor): cut = env; break
         self.assertFalse(cut['done']); self.assertIn(cut['cursor']['tape']['n'], (1, 2, 3)); self.assertEqual(cut['facts']['openings'], [])
+        while not env['done']:
+            env = self.unit(self.app, 'fusion_census', args={'tape_limit': 3}, cursor=env['cursor'])
+            facts = gate_fusion_rpc.merge_facts(facts, env['facts'])
+        self.assertEqual(facts, self.facts)
 
     def test_groove_boss_ring_groove_and_broken_wall(self):
         plate = Solid((0.0, 0.0, 0.0), (40.0, 30.0, 6.0), holes=[
