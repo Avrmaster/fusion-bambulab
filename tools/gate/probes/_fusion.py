@@ -665,10 +665,86 @@ def gate_bbox(body_or_occ):
     return gate_mm(bb.minPoint), gate_mm(bb.maxPoint)
 
 
+_GATE_ACTIVITY_OPTIONS = 0x00EFFFFF | 0xFF00000000      # NSActivityUserInitiatedAllowingIdleSystemSleep | NSActivityLatencyCritical
+
+
+def _gate_objc():
+    """(libobjc, a caller of objc_msgSend for the given argument types) through ctypes, or None off macOS."""
+    if sys.platform != 'darwin':
+        return None
+    import ctypes, ctypes.util
+    path = ctypes.util.find_library('objc')
+    if not path:
+        return None
+    objc = ctypes.cdll.LoadLibrary(path)
+    for fn in (objc.objc_getClass, objc.sel_registerName):
+        fn.restype, fn.argtypes = ctypes.c_void_p, [ctypes.c_char_p]
+    send = ctypes.cast(objc.objc_msgSend, ctypes.c_void_p).value
+
+    def msg(obj, sel, *args):
+        types = [ctypes.c_void_p, ctypes.c_void_p] + [type(a) if isinstance(a, ctypes.c_uint64) else ctypes.c_char_p if isinstance(a, bytes)
+                                                      else ctypes.c_void_p for a in args]
+        return ctypes.CFUNCTYPE(ctypes.c_void_p, *types)(send)(obj, objc.sel_registerName(sel), *args)
+    return objc, msg, ctypes
+
+
+def gate_awake_begin(reason='print gate unit'):
+    """Tell macOS that Fusion does work a person waits for, for the length of this call: returns a handle for
+    gate_awake_end(), or None (not macOS, or the call failed: then a note says so).
+
+    Why: while Fusion is in the background and has had nothing to do for a minute or two, macOS puts it into App Nap
+    and runs it on the slow cores. Measured on a part with 6795 faces: a point test 21 ms instead of 2 ms, a walk over
+    its faces 12.7 s instead of 1.6 s, plain Python 6 times slower; the first call after the pause is slow from its
+    start to its end, the call right after it is not. A run whose calls are some seconds apart (a person or an agent
+    reads the output between them) met the slow state in every call. An activity begun at the start of the call
+    (NSProcessInfo beginActivityWithOptions:reason:, user initiated, latency critical, idle system sleep still
+    allowed) lifts it at once. It ends with the call: nothing stays changed in Fusion or in the system."""
+    try:
+        got = _gate_objc()
+        if got is None:
+            return None
+        objc, msg, ctypes = got
+        info = msg(objc.objc_getClass(b'NSProcessInfo'), b'processInfo')
+        text = msg(objc.objc_getClass(b'NSString'), b'stringWithUTF8String:', reason.encode('ascii', 'replace'))
+        token = msg(info, b'beginActivityWithOptions:reason:', ctypes.c_uint64(_GATE_ACTIVITY_OPTIONS), text)
+        if not token:
+            raise RuntimeError('beginActivityWithOptions gave no activity')
+        try:
+            msg(token, b'retain')
+        except Exception:
+            msg(info, b'endActivity:', token)             # the activity must never outlive the call
+            raise
+        return (msg, info, token)
+    except Exception as e:
+        _GATE_NOTES.append('macOS was not told that Fusion is busy (%s: %s): a call made after a pause may run on the slow '
+                           'cores (App Nap) and take several times longer' % (type(e).__name__, e))
+        return None
+
+
+def gate_awake_end(handle):
+    """End the activity gate_awake_begin() began. Never raises."""
+    if not handle:
+        return
+    try:
+        msg, info, token = handle
+        msg(info, b'endActivity:', token)
+        msg(token, b'release')
+    except Exception:
+        pass
+
+
 def run(_context=''):
     """The entry point (called by the wrapper of build_script). Runs probe(JOB) and writes the envelope to JOB["out"].
     A call that starts after the host has stopped waiting for it (later than the budget + 10 s after it was sent) does
-    no work: it writes an error envelope."""
+    no work: it writes an error envelope. The whole call runs inside gate_awake_begin() / gate_awake_end()."""
+    awake = gate_awake_begin()
+    try:
+        _gate_run()
+    finally:
+        gate_awake_end(awake)
+
+
+def _gate_run():
     came = json.loads(json.dumps(JOB.get('cursor')))    # the cursor as it arrived: a probe may work in place on JOB["cursor"]
     env = {'job': JOB.get('id'), 'doc': JOB.get('doc'), 'doc_version': None, 'part': JOB.get('part'), 'sig': None,
            'probe': JOB.get('probe'), 'facts': {}, 'done': False, 'cursor': came, 'elapsed_s': 0.0, 'error': None,

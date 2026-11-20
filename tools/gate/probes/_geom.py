@@ -743,6 +743,40 @@ def _geo_screw(segments, scr):
     return best[3], best[4], best[5]
 
 
+def _geo_countersunk_seat(segments, scr, coaxial=None, chamfer=0.6):
+    """The screw size of a countersunk screw seat that no clearance row of the screws table fits, or None.
+    A seat: the first segment is a cone deeper than an edge chamfer whose included angle is the countersunk head angle
+    of the table (within 10 degrees) and whose narrow end is the diameter of the cylinder right behind it (within the
+    table's tolerance), AND a body named as a screw lies on the axis while none named as an insert does (by the body's
+    own name, the text after the last " / ": a component that bundles screws and inserts names both). A wood screw
+    or self-tapping screw is cut into a hole that is narrower than any ISO 273 clearance, and that narrow hole can lie
+    in the band of an insert pocket: the cone and the screw on the axis say what it is. The size: the largest thread of
+    the table that the narrow hole can take (thread diameter at most the hole + tolerance), and the wide end of the cone
+    must be that thread's countersunk head diameter within 1 mm (as for an exact countersink): a 90 degree lead-in of an
+    insert pocket is narrower than the head of the screw its hole could take. Else None."""
+    names = [str(n).lower().rsplit(' / ', 1)[-1] for n in coaxial or []]   # the body's own name: a bundle "hardware (screws, inserts)" holds both
+    if not any('screw' in n or 'bolt' in n for n in names) or any('insert' in n for n in names):
+        return None
+    if len(segments) < 2 or segments[0].get('d2') is None or segments[0]['len'] <= chamfer or segments[1].get('d2') is not None:
+        return None
+    tol = float((scr.get('tol') or {}).get('d', 0.15))
+    top, cone = segments[0], segments[1]
+    if not (top['d'] > top['d2'] + tol and abs(top['d2'] - cone['d']) <= tol + 1e-9):
+        return None
+    angle = 2.0 * math.degrees(math.atan2((top['d'] - top['d2']) / 2.0, max(top['len'], 1e-9)))
+    best = None
+    for kind, row in sorted((scr.get('sizes') or {}).items()):
+        cs = (row.get('heads') or {}).get('countersunk') or {}
+        t = row.get('thread_d')
+        if t is None or float(t) > cone['d'] + tol + 1e-9 or abs(angle - float(cs.get('angle', 90))) > 10.0:
+            continue
+        if best is None or float(t) > best[0]:
+            best = (float(t), kind, cs.get('d'))
+    if best is None or best[2] is None or abs(top['d'] - float(best[2])) > 1.0:
+        return None                                     # the cone must also be the seat of that thread's countersunk head
+    return best[1]
+
+
 def _geo_bearing(segments, through, brg, coaxial=None):
     """(designation, match, by a ref on the axis?) of the bearing whose outer ring one segment would seat, or None.
     A diameter alone is no seat (every round number is the outer diameter of some bearing): the segment must end at a
@@ -799,6 +833,9 @@ def classify_stack(segments, through, tables, coaxial=None):
         pocket_levels() says whether the pocket has one.
       - "In the band" means: the narrowest cylindrical segment lies inside the row's band; a through hole is not in a
         "blind_only" band; a blind hole shallower than the band's "min_depth" is not in it (a magnet pocket).
+      - A countersunk screw seat is no pocket (_geo_countersunk_seat): a 90 degree cone deeper than a chamfer over the
+        narrow hole, with a screw named on the axis and no insert. A wood screw's hole fits no clearance row and can lie
+        in an insert band; it is the screw row it can take, role "countersink", match "band".
       - Three cases keep a hole in its insert band although an exact screw row fits, because a wrong pocket must stay a
         row: the screw row has the insert's own thread (the narrow hole without its lead-in); it is one straight BLIND
         cylinder (an old straight pocket: a clearance hole goes through); a body named "...insert..." lies on its axis.
@@ -830,6 +867,11 @@ def classify_stack(segments, through, tables, coaxial=None):
         return {'table': 'inserts', 'kind': kind, 'role': 'insert_pocket', 'match': 'exact', 'ends': 2}
     band = _geo_insert_band(segments, through, ins, coaxial)
     screw = _geo_screw(segments, scr)
+    sunk = _geo_countersunk_seat(segments, scr, coaxial) if band else None
+    if sunk:                                            # a countersunk screw seat: its screw row when one fits, else the thread it takes
+        if screw and screw[1] == 'countersink':
+            return {'table': 'screws', 'kind': screw[0], 'role': 'countersink', 'match': screw[2]}
+        return {'table': 'screws', 'kind': sunk, 'role': 'countersink', 'match': 'band'}
     if screw and screw[2] == 'exact':
         stays = False
         if band:

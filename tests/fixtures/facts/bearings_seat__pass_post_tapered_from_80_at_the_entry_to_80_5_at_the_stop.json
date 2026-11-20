@@ -1,0 +1,124 @@
+{
+ "judge": "bearings_seat",
+ "case": "a printed post for a 61816 tapered on purpose (the owner rule: nominal where the ring enters, up to 0.5 wider beside the thick base that stops it): the probe read the post 79.99 just past the ring face on the entry side and 80.35 as the median of the seat. Compared as a straight seat it was a FAIL \"D80.35, tolerance 0.3\"; the end the ring enters is nominal and the stop end inside the band",
+ "facts": {
+  "bearings": [
+   {
+    "ref": "ref bearing 61816 lower",
+    "designation": "61816",
+    "by": "geometry",
+    "d": 80.0,
+    "D": 100.0,
+    "B": 10.0,
+    "anchor": {
+     "kind": "bearing",
+     "axis": [
+      0,
+      0,
+      1
+     ],
+     "point": [
+      0.0,
+      0.0,
+      34.0
+     ]
+    },
+    "rings": {
+     "inner": {
+      "faces": [
+       {
+        "side": "+",
+        "covered": [
+         {
+          "name": "Base",
+          "kind": "printed",
+          "part": "demo/base",
+          "share": 1.0,
+          "points": 1,
+          "gap": 0.0,
+          "touches_other_ring": false
+         }
+        ]
+       },
+       {
+        "side": "-",
+        "covered": [
+         {
+          "name": "Base",
+          "kind": "printed",
+          "part": "demo/base",
+          "share": 1.0,
+          "points": 1,
+          "gap": 0.0,
+          "touches_other_ring": false
+         }
+        ]
+       }
+      ]
+     },
+     "outer": {
+      "faces": [
+       {
+        "side": "+",
+        "covered": [
+         {
+          "name": "ref washer M3 large (x6)",
+          "kind": "hardware",
+          "part": null,
+          "share": 0.22,
+          "points": 6,
+          "gap": 0.0,
+          "touches_other_ring": false
+         }
+        ]
+       },
+       {
+        "side": "-",
+        "covered": [
+         {
+          "name": "Column tube",
+          "kind": "printed",
+          "part": "demo/column_tube",
+          "share": 1.0,
+          "points": 1,
+          "gap": 0.0,
+          "touches_other_ring": false
+         }
+        ]
+       }
+      ]
+     }
+    },
+    "clamps": [],
+    "seat": {
+     "inner": {
+      "d": 80.35,
+      "entry_d": 79.99,
+      "entry_open": false,
+      "entry_other": 86.0,
+      "entry_side": "+",
+      "part": "demo/base",
+      "len": 10.0
+     },
+     "outer": {
+      "d": 100.13,
+      "part": "demo/column_tube",
+      "len": 10.0,
+      "entry_d": 100.26
+     }
+    }
+   }
+  ],
+  "seats_without_bearing": []
+ },
+ "params": {
+  "bearings.seat_d_tol": 0.3,
+  "bearings.seat_taper": 0.25,
+  "bearings.seat_taper_thick_base": 0.5,
+  "bearings.contact_gap_max": 0.05
+ },
+ "ctx": {
+  "part": "demo/base"
+ },
+ "expect": []
+}

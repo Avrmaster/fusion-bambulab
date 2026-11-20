@@ -216,7 +216,7 @@ The incident behind each rule, the evidence a question takes and the numbers of 
 
 Checked by the gate. A finding stops the stamp of the part.
 
-- **A screw reaches far enough into its thread** (`screws.engagement`, block at design). Every screw is engaged over at least 3.2 mm (M2 2.0, M2.5 2.5, M3 3.2, M4 4.0, M5 5.0, M6 6.0) (per thread size) in its insert, nut or tapped part. Its length comes from the stack: plastic under the head, the parts between, the engagement, ending short of the hole end. A change of length moves everything stacked on the screw: length and seat change together. A screw whose thread nothing receives (no insert, no nut, no hole narrower than the thread anywhere along it) is a finding with 0 mm: the row names the hole and the part its thread ends in and what lies on that axis.
+- **A screw reaches far enough into its thread** (`screws.engagement`, block at design). Every screw is engaged over at least 3.2 mm (M2 2.0, M2.5 2.5, M3 3.2, M4 4.0, M5 5.0, M6 6.0) (per thread size) in its insert, nut or tapped part. Its length comes from the stack: plastic under the head, the parts between, the engagement, ending short of the hole end. A change of length moves everything stacked on the screw: length and seat change together. A screw whose thread nothing receives (no insert, no nut, no hole narrower than the thread anywhere along it) is a finding with 0 mm: the row names the hole and the part its thread ends in and what lies on that axis. A length found along a line by sampling meets the limit on the 0.05 mm measurement grid (a drawn 5.0 read as 4.99 is 5.0; a real 4.9 stays 4.9).
   - Fix, in this order:
     1. Pick the next stock length.
     2. Shorten the stack under the head.
@@ -232,11 +232,11 @@ Checked by the gate. A finding stops the stamp of the part.
     2. Thicken the wall round the screw.
     3. A gap that is the clamp room of a ring: model the ring as a bought body in the gap, with both parts landing on it; the screw unit then finds it.
     4. A gap that must stay open: owner waiver that names the screw and what it closes on.
-- **A screw does not bottom** (`screws.tip_bottoming`, block at design). The tip of every screw stops at least 0.5 mm before the end of its hole, pocket or bought thread.
+- **A screw does not bottom** (`screws.tip_bottoming`, block at design). The tip of every screw stops at least 0.5 mm before the end of its hole, pocket or bought thread. A length found along a line by sampling meets the limit on the 0.05 mm measurement grid (a drawn 5.0 read as 4.99 is 5.0; a real 4.9 stays 4.9).
   - Fix, in this order:
     1. Pick the next shorter stock length.
     2. Deepen the tip hole below the insert.
-- **Plastic under every screw head** (`screws.under_head`, block at design). Under every screw head at least 5.0 mm of plastic stays, measured along the screw. A plate too thin for it is made thicker; neighbours of the project's own design move before the plate is thinned. A head that bears through its washer on a bought rigid body and on no plastic (a clamp washer on a bearing ring, within 0.05 mm) crushes no plastic: it is judged as a clamp, not here.
+- **Plastic under every screw head** (`screws.under_head`, block at design). Under every screw head at least 5.0 mm of plastic stays, measured along the screw. A plate too thin for it is made thicker; neighbours of the project's own design move before the plate is thinned. A head that bears through its washer on a bought rigid body and on no plastic (a clamp washer on a bearing ring, within 0.05 mm) crushes no plastic: it is judged as a clamp, not here. A length found along a line by sampling meets the limit on the 0.05 mm measurement grid (a drawn 5.0 read as 4.99 is 5.0; a real 4.9 stays 4.9).
   - Fix, in this order:
     1. Make the plate thicker.
     2. Use a shallower head recess and a longer stock screw.
@@ -314,13 +314,13 @@ Checked by the gate. A finding stops the stamp of the part.
     3. A cover that touches both rings: relieve it over the other ring and the seal.
     4. A bearing with no table row: add its size to the bearing table. A bearing the gate did not find at all: name its ref so the pattern matches.
     5. A ring that is free on purpose (a floating bearing against one lip, an idler pair on its bolt): owner waiver that names the bearing and what closes it.
-- **A seat fits its bearing** (`bearings.seat`, block at design). Every bearing sits in a seat of its own size: the seat diameter where the ring ends up differs from the bearing diameter (bore for a seat on a post, outer diameter for a seat in a housing) by at most 0.3 mm; the way into the seat is not in the bearing's way by more than that; and every bearing-sized seat of the part holds a bearing. Sizes come from the bearing table; a size or formula copied from another bearing is evaluated again. Every bought bearing exists as a named ref body in each document that uses it. A seat with a bought body on its axis that no pattern recognised is not called empty: the check is not run until the body is named. A hole that is only near a bearing diameter is asked, not failed.
+- **A seat fits its bearing** (`bearings.seat`, block at design). Every bearing sits in a seat of its own size: the seat diameter where the ring ends up differs from the bearing diameter (bore for a seat on a post, outer diameter for a seat in a housing) by at most 0.3 mm, or the seat is a tapered press fit: a post nominal (within that tolerance) at the end the ring enters and at most 0.5 mm wider towards the shoulder that stops it, a bore nominal at its stop and at most 0.25 mm wider towards its mouth, measured end by end; the way into the seat is not in the bearing's way by more than that; and every bearing-sized seat of the part holds a bearing. Sizes come from the bearing table; a size or formula copied from another bearing is evaluated again. Every bought bearing exists as a named ref body in each document that uses it. A seat with a bought body on its axis that no pattern recognised is not called empty: the check is not run until the body is named. A hole that is only near a bearing diameter is asked, not failed.
   - Fix, in this order:
     1. Take d, D and B from the bearing table of the rules (tables/bearings.json).
     2. Evaluate again every size that was copied from another bearing.
     3. An entry that is in the way: widen everything the bearing passes to its own diameter and more (bearings.insertion_path).
     4. A seat with no bearing in it: place the bearing ref (in every document that uses the bearing), or remove the seat.
-    5. A seat that is tapered or compensated by more than the tolerance on purpose: the project raises the tolerance with a measured or owner value, never the agent.
+    5. A seat that is tapered or compensated beyond the taper parameters on purpose: the project raises them with a measured or owner value, never the agent.
 
 Asked by the gate. Each is answered with evidence, never with a typed number.
 

@@ -1,0 +1,94 @@
+{
+ "judge": "screws_under_head",
+ "case": "the twin of 4.99: a real 4.9 is 4.9 on the grid and 4.97 is 4.95, both under the limit 5; the finding keeps the measured value",
+ "facts": {
+  "screws": [
+   {
+    "ref": "HW (ref) / M3x10 DIN 912 head (1)",
+    "size": "M3",
+    "length": 10.0,
+    "head": "cap",
+    "anchor": {
+     "kind": "screw",
+     "axis": [
+      0,
+      1,
+      0
+     ],
+     "point": [
+      10.0,
+      58.2,
+      456.0
+     ]
+    },
+    "role": "head",
+    "under_head": 4.9,
+    "under_head_min": 4.9,
+    "seat": {
+     "kind": "counterbore",
+     "d": 6.5,
+     "recess": 0.0,
+     "share": 1.0
+    },
+    "engagement": null,
+    "into": null,
+    "tip_room": null,
+    "air_gap": 0.0,
+    "washer": null
+   },
+   {
+    "ref": "HW (ref) / M3x10 DIN 912 head (2)",
+    "size": "M3",
+    "length": 10.0,
+    "head": "cap",
+    "anchor": {
+     "kind": "screw",
+     "axis": [
+      0,
+      1,
+      0
+     ],
+     "point": [
+      20.0,
+      58.2,
+      456.0
+     ]
+    },
+    "role": "head",
+    "under_head": 4.97,
+    "under_head_min": 4.97,
+    "seat": {
+     "kind": "counterbore",
+     "d": 6.5,
+     "recess": 0.0,
+     "share": 1.0
+    },
+    "engagement": null,
+    "into": null,
+    "tip_room": null,
+    "air_gap": 0.0,
+    "washer": null
+   }
+  ],
+  "washers": []
+ },
+ "params": {
+  "screws.min_under_head": 5.0,
+  "washers.landing_gap_max": 0.1,
+  "screws.ref_pattern": "(?i)screw|bolt|DIN 912",
+  "inserts.ref_pattern": "(?i)insert",
+  "screws.nut_ref_pattern": "(?i)nut"
+ },
+ "expect": [
+  {
+   "verdict": "FAIL",
+   "measure": 4.9,
+   "limit": 5.0
+  },
+  {
+   "verdict": "FAIL",
+   "measure": 4.97,
+   "limit": 5.0
+  }
+ ]
+}

@@ -83,6 +83,7 @@ Each of these cost real work. None raises a useful error at the moment it goes w
 ## Recovery
 
 - **Timeouts on tiny scripts:** Fusion may be busy with an autosave. Run a one-line read-only probe, then retry.
+- **A script is 6 to 10 times slower than the same script a minute later (macOS):** Fusion sat in the background with nothing to do, and macOS put it into App Nap. The whole first call after the pause runs on the slow cores, plain Python included; the call right after it is fast. Scripts that a person or an agent sends some seconds apart meet it in every call. At the start of a long script, begin an activity (`NSProcessInfo beginActivityWithOptions:reason:` through `ctypes`, user initiated and latency critical) and end it when the script ends: the gate's units do this (`gate_awake_begin` in `tools/gate/probes/_fusion.py`). Time a fixed Python loop in the script to tell this from a slow model.
 - **A full rebuild and an export in one call time out** even when each fits on its own. Run them as separate calls.
 - **Fusion crashes on opening one document, after a hung or killed quit:** with Fusion closed, on macOS move (do not delete) `$(getconf DARWIN_USER_CACHE_DIR)/com.autodesk.fusion360`, then reopen. Next: reboot, then change the graphics driver in Preferences.
 - **Hang on quit:** a save finishes in two steps, and the background publish runs for up to a few minutes. Wait for the version label to come back before quitting.

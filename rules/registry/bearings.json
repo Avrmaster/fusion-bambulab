@@ -79,21 +79,21 @@
     "bearings.seat_taper": {
       "default": 0.25,
       "unit": "mm",
-      "looser": null,
+      "looser": "higher",
       "measured_on": "owner decision of one project (one printer, 0.6 nozzle, PETG); the fit of a seat tapered this way is not yet measured",
       "class": "fit",
       "formula": null,
-      "description": "a printed seat is nominal where the ring ends up and this much wider on the diameter at its entry (a post: this much smaller at its free end)",
+      "description": "a printed bore seat is nominal at the stop where the ring ends up and this much wider on the diameter at its mouth; a printed post is nominal where the ring enters and this much wider towards the shoulder that stops it (bearings.seat_taper_thick_base beside a thick base). bearings.seat judges a bore by this number",
       "measured_under": null
     },
     "bearings.seat_taper_thick_base": {
       "default": 0.5,
       "unit": "mm",
-      "looser": null,
+      "looser": "higher",
       "measured_on": "one printed post measured 0.5 mm smaller on the diameter beside its thick base than at its free end (one printer, 0.6 nozzle, PETG); as a compensation it is decided, never printed",
       "class": "fit",
       "formula": null,
-      "description": "compensation on the diameter for the part of a seat that sits right beside a thick base, until the first print is measured",
+      "description": "compensation on the diameter for the part of a seat that sits right beside a thick base, until the first print is measured; bearings.seat takes it as the most a post may widen from the end the ring enters to its stop",
       "measured_under": null
     },
     "bearings.seat_lead_in": {
@@ -210,11 +210,13 @@
     {
       "id": "bearings.seat",
       "title": "A seat fits its bearing",
-      "statement": "Every bearing sits in a seat of its own size: the seat diameter where the ring ends up differs from the bearing diameter (bore for a seat on a post, outer diameter for a seat in a housing) by at most {bearings.seat_d_tol}; the way into the seat is not in the bearing's way by more than that; and every bearing-sized seat of the part holds a bearing. Sizes come from the bearing table; a size or formula copied from another bearing is evaluated again. Every bought bearing exists as a named ref body in each document that uses it. A seat with a bought body on its axis that no pattern recognised is not called empty: the check is not run until the body is named. A hole that is only near a bearing diameter is asked, not failed.",
+      "statement": "Every bearing sits in a seat of its own size: the seat diameter where the ring ends up differs from the bearing diameter (bore for a seat on a post, outer diameter for a seat in a housing) by at most {bearings.seat_d_tol}, or the seat is a tapered press fit: a post nominal (within that tolerance) at the end the ring enters and at most {bearings.seat_taper_thick_base} wider towards the shoulder that stops it, a bore nominal at its stop and at most {bearings.seat_taper} wider towards its mouth, measured end by end; the way into the seat is not in the bearing's way by more than that; and every bearing-sized seat of the part holds a bearing. Sizes come from the bearing table; a size or formula copied from another bearing is evaluated again. Every bought bearing exists as a named ref body in each document that uses it. A seat with a bought body on its axis that no pattern recognised is not called empty: the check is not run until the body is named. A hole that is only near a bearing diameter is asked, not failed.",
       "why": "A formula copied from another bearing size left a ring 1.2 mm under the outer diameter in the way: the bearing could not reach its seat and the lid was reprinted. One copy of a bearing ref stayed 2 mm off after the bearing moved. Seats were compared with their bearings by a hand table of eight rows.",
       "params": [
         "bearings.seat_d_tol",
-        "bearings.contact_gap_max"
+        "bearings.contact_gap_max",
+        "bearings.seat_taper",
+        "bearings.seat_taper_thick_base"
       ],
       "check": {
         "probe": "fusion_bearings",
@@ -228,7 +230,7 @@
         "Evaluate again every size that was copied from another bearing.",
         "An entry that is in the way: widen everything the bearing passes to its own diameter and more (bearings.insertion_path).",
         "A seat with no bearing in it: place the bearing ref (in every document that uses the bearing), or remove the seat.",
-        "A seat that is tapered or compensated by more than the tolerance on purpose: the project raises the tolerance with a measured or owner value, never the agent."
+        "A seat that is tapered or compensated beyond the taper parameters on purpose: the project raises them with a measured or owner value, never the agent."
       ],
       "attest": null,
       "note": "The seat of a bearing that bought bodies hold and at whose rings no printed part stands, seats or clamps (a roller on a steel post) is not this part's seat: not judged here, bearings.holding tells those bearings in one row."

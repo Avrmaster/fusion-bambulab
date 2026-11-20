@@ -5,7 +5,8 @@ This file holds what a single fixture cannot show:
   - every judge is built and has a failing fixture and its passing twin; the incidents that paid for the rules are there;
   - what every finding looks like, that judges are pure, and that a judge reads only the parameters its rule lists;
   - nothing that was not measured reads as a pass: a missing list, unreadable rows, a probe that did not look far enough;
-  - the pass line is the parameter, exactly: on the limit passes, just under it does not;
+  - the pass line is the parameter, exactly: on the limit passes, just under it does not (a length found along a line by
+    sampling is first put on the 0.05 measurement grid: 4.99 is 5.0, 4.97 is 4.95);
   - the verdict tables of the rules with more than one verdict, the assembly-order question, the per-size limits;
   - a finding keeps its id while its feature does not change, so a waiver holds, and loses it when the feature changes.
 No Fusion, no files but the fixtures."""
@@ -465,7 +466,8 @@ class TheLimitIsTheParameter(unittest.TestCase):
     def test_engagement_per_size(self):
         f = facts_of('screws_engagement__pass_3_4_mm')
         f['screws'] = f['screws'][:1]
-        for size, e, want in (('M3', 3.2, []), ('M3', 3.19, ['FAIL']), ('M4', 3.99, ['FAIL']), ('M4', 4.0, []), ('M2', 2.0, []),
+        # lengths found along a line by sampling meet the limit on the 0.05 grid (_gridded): 3.19 is 3.2, 3.17 is 3.15
+        for size, e, want in (('M3', 3.2, []), ('M3', 3.19, []), ('M3', 3.17, ['FAIL']), ('M4', 3.99, []), ('M4', 3.97, ['FAIL']), ('M4', 4.0, []), ('M2', 2.0, []),
                               ('M6', 5.9, ['FAIL']), ('M8', 3.2, []), ('M8', 3.1, ['FAIL']), (None, 3.1, ['FAIL'])):
             f['screws'][0].update(size=size, engagement=e)
             self.assertEqual(verdicts(judged('screws_engagement', f)), want, (size, e))
@@ -477,13 +479,18 @@ class TheLimitIsTheParameter(unittest.TestCase):
         f = facts_of('screws_under_head__pass_5_2_under_the_head')
         f['screws'][0]['under_head'] = 5.0
         self.assertEqual(judged('screws_under_head', f), [])
-        f['screws'][0]['under_head'] = 4.99
-        self.assertEqual(verdicts(judged('screws_under_head', f)), ['FAIL'])
+        f['screws'][0]['under_head'] = 4.99           # the probe finds the end to 0.02: on the 0.05 grid this is 5.0
+        self.assertEqual(judged('screws_under_head', f), [])
+        for short in (4.97, 4.9):                        # 4.95 and 4.9 on the grid: short, and the finding keeps the measured value
+            f['screws'][0]['under_head'] = short
+            self.assertEqual([(x['verdict'], x['measure']) for x in judged('screws_under_head', f)], [('FAIL', short)])
         self.assertEqual(judged('screws_under_head', f, {'screws.min_under_head': 3.0}), [])
         t = facts_of('screws_tip_bottoming__pass_tip_room_1_2')
         t['screws'][0]['tip_room'] = 0.5
         self.assertEqual(judged('screws_tip_bottoming', t), [])
         t['screws'][0]['tip_room'] = 0.49
+        self.assertEqual(judged('screws_tip_bottoming', t), [])
+        t['screws'][0]['tip_room'] = 0.47
         self.assertEqual(verdicts(judged('screws_tip_bottoming', t)), ['FAIL'])
         t['screws'][0]['tip_room'] = None               # a hole with no end in front of the tip
         self.assertEqual(judged('screws_tip_bottoming', t), [])

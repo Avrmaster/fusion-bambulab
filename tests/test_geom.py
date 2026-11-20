@@ -1406,3 +1406,32 @@ class Thin(Units):
         want = self.unit(app, 'fusion_thin')['sig']
         got = self.unit(app, 'fusion_thin', args={'sig_only': True})
         self.assertEqual((got['facts'], got['done'], got['sig']), ({'sig_only': True}, True, want))
+
+
+class CountersunkSeat(unittest.TestCase):
+    """A countersunk wood screw's hole fits no clearance row and its D4.2 lies in the band of an M3 insert: the 90 degree
+    cone over it and the screw on its axis make it a screw seat, nothing less does."""
+    SEGS = [{'d': 8.4, 'd2': 4.2, 'len': 2.1}, {'d': 4.2, 'len': 7.9}]
+    SCREW = ['HW / wood screw 4x20 countersunk (1)']
+
+    def klass(self, segs=None, coaxial=None, through=True):
+        return G.classify_stack(segs or self.SEGS, through, SHIPPED, self.SCREW if coaxial is None else coaxial)
+
+    def test_cone_and_screw_make_a_screw_seat(self):
+        self.assertEqual(self.klass(), {'table': 'screws', 'kind': 'M4', 'role': 'countersink', 'match': 'band'})
+        self.assertEqual(self.klass(through=False)['role'], 'countersink')
+        bundle = ['HW (screws, inserts, washers) / wood screw 4x20 countersunk (1)']                # a bundle names inserts; the body is the screw
+        self.assertEqual(self.klass(coaxial=bundle)['role'], 'countersink')
+        clr = [{'d': 8.38, 'd2': 4.4, 'len': 2.2}, {'d': 4.4, 'len': 2.8}]                       # over an M4 clearance hole: that screw row
+        self.assertEqual(self.klass(clr, coaxial=bundle), {'table': 'screws', 'kind': 'M4', 'role': 'countersink', 'match': 'exact'})
+        self.assertEqual(self.klass(clr, coaxial=['HW / insert M3x4x5 (1)', 'HW / screw M3x8 (1)'])['role'], 'insert_pocket')   # an insert: stays
+
+    def test_anything_less_stays_in_the_insert_band(self):
+        band = {'table': 'inserts', 'kind': 'M3x4x5', 'role': 'insert_pocket', 'match': 'band'}
+        self.assertEqual(self.klass(coaxial=[]), band)                                            # no screw on the axis
+        self.assertEqual(self.klass(coaxial=self.SCREW + ['HW / insert M3x4x5 (1)']), band)       # an insert is there too
+        self.assertNotEqual(self.klass([{'d': 5.2, 'd2': 4.2, 'len': 0.5}, {'d': 4.2, 'len': 7.9}])['role'], 'countersink')   # an edge chamfer is trimmed off
+        self.assertEqual(self.klass([{'d': 8.4, 'd2': 4.2, 'len': 3.6}, {'d': 4.2, 'len': 7.9}]), band)   # a 60 degree cone
+        self.assertEqual(self.klass([{'d': 8.4, 'd2': 5.0, 'len': 1.7}, {'d': 4.2, 'len': 7.9}]), band)   # cone not on the hole
+        lead = [{'d': 6.0, 'd2': 4.2, 'len': 0.9}, {'d': 4.2, 'len': 7.9}]                          # a 90 degree lead-in, narrower than an M4 head
+        self.assertNotEqual(self.klass(lead)['role'], 'countersink')

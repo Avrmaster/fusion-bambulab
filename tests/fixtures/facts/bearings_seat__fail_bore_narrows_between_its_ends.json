@@ -1,0 +1,143 @@
+{
+ "judge": "bearings_seat",
+ "case": "a bore 100.0 at its stop and 100.25 at its mouth that is 99.0 in between (median 99.0): the ring cannot pass",
+ "facts": {
+  "bearings": [
+   {
+    "ref": "ref bearing 61816 lower",
+    "designation": "61816",
+    "by": "geometry",
+    "d": 80.0,
+    "D": 100.0,
+    "B": 10.0,
+    "anchor": {
+     "kind": "bearing",
+     "axis": [
+      0,
+      0,
+      1
+     ],
+     "point": [
+      0.0,
+      0.0,
+      34.0
+     ]
+    },
+    "rings": {
+     "inner": {
+      "faces": [
+       {
+        "side": "+",
+        "covered": [
+         {
+          "name": "Base",
+          "kind": "printed",
+          "part": "demo/base",
+          "share": 1.0,
+          "points": 1,
+          "gap": 0.0,
+          "touches_other_ring": false
+         }
+        ]
+       },
+       {
+        "side": "-",
+        "covered": [
+         {
+          "name": "Base",
+          "kind": "printed",
+          "part": "demo/base",
+          "share": 1.0,
+          "points": 1,
+          "gap": 0.0,
+          "touches_other_ring": false
+         }
+        ]
+       }
+      ]
+     },
+     "outer": {
+      "faces": [
+       {
+        "side": "+",
+        "covered": [
+         {
+          "name": "ref washer M3 large (x6)",
+          "kind": "hardware",
+          "part": null,
+          "share": 0.22,
+          "points": 6,
+          "gap": 0.0,
+          "touches_other_ring": false
+         }
+        ]
+       },
+       {
+        "side": "-",
+        "covered": [
+         {
+          "name": "Column tube",
+          "kind": "printed",
+          "part": "demo/column_tube",
+          "share": 1.0,
+          "points": 1,
+          "gap": 0.0,
+          "touches_other_ring": false
+         }
+        ]
+       }
+      ]
+     }
+    },
+    "clamps": [],
+    "seat": {
+     "inner": {
+      "d": 79.99,
+      "entry_d": 78.0,
+      "entry_open": true,
+      "entry_other": 79.99,
+      "entry_side": "+",
+      "part": "demo/base",
+      "len": 10.0
+     },
+     "outer": {
+      "d": 99.0,
+      "part": "demo/base",
+      "len": 10.0,
+      "entry_d": 100.6,
+      "entry_open": false,
+      "entry_side": "+",
+      "rows": [
+       100.0,
+       99.0,
+       99.0,
+       99.0,
+       99.0,
+       99.0,
+       99.0,
+       99.0,
+       100.25
+      ]
+     }
+    }
+   }
+  ],
+  "seats_without_bearing": []
+ },
+ "params": {
+  "bearings.seat_d_tol": 0.3,
+  "bearings.seat_taper": 0.25,
+  "bearings.seat_taper_thick_base": 0.5,
+  "bearings.contact_gap_max": 0.05
+ },
+ "ctx": {
+  "part": "demo/base"
+ },
+ "expect": [
+  {
+   "verdict": "FAIL",
+   "measure": 99.0,
+   "limit": 100.0
+  }
+ ]
+}

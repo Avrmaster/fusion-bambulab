@@ -635,7 +635,8 @@ def probe(job):
                                 "room": 9.0         axial room between the two stops of that ring, mm
                                 "ring_width": 12.0}]
                     "seat": {"inner": S or None, "outer": S or None}
-                          S = {"d": 47.0, "part": id, "len": 12.0, "entry_d": 47.25}    the seat cylinder of a printed part}]
+                          S = {"d": 47.0, "part": id, "len": 12.0, "entry_d": 47.25, "rows": [9 diameters or None]}    the seat
+                          cylinder of a printed part; "rows" is its profile along the axis (seat_scan of _geom_rings.py)}]
       "seats_without_bearing": [{"hole": "h9", "anchor": the census anchor, "d": 47.0, "designation": "6005"}]
                census holes of this part classified as a bearing seat with no bearing in them
 

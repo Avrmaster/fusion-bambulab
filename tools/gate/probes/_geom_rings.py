@@ -702,12 +702,15 @@ def seat_scan(inside, centre, axis, r_nom, width, outer=True, window=1.0, look_i
     {"d": seat diameter at the ring (median), "len": mm of the width over which the wall is there (in ninths of B),
      "entry_d": the narrowest (outer) or widest (inner) diameter of this body on the more open side,
      "entry_side": "+" | "-", "entry_open": bool (nothing of this body stands in the way on that side: entry_d is then
-     the edge of the window, not a measured wall), "entry_other": the same diameter on the other side}."""
+     the edge of the window, not a measured wall), "entry_other": the same diameter on the other side,
+     "rows": the seat diameter (median of the directions) at each of the nine heights, from -0.4 B to +0.4 B along the
+     axis, None where fewer than half of the directions show a wall: the profile of a tapered seat. The same points
+     as "d": no point test more}."""
     window, dirs, r_air, r_mat = _rings_seat_frame(axis, r_nom, outer, window, n_ang)
     mid = [radial_edge(inside, centre, axis, 0.0, d, r_air, r_mat) for d in dirs]
     if sum(1 for r in mid if r is not None) < 0.75 * n_ang:
         return None
-    radii, held = [], 0
+    radii, held, rows = [], 0, []
     for i in range(9):
         s = width * (-0.4 + 0.1 * i)
         row = mid if i == 4 else [radial_edge(inside, centre, axis, s, d, r_air, r_mat) for d in dirs]
@@ -715,6 +718,8 @@ def seat_scan(inside, centre, axis, r_nom, width, outer=True, window=1.0, look_i
         radii += found
         if len(found) >= 0.5 * n_ang:
             held += 1
+        found.sort()
+        rows.append(round(2 * found[len(found) // 2], 2) if len(found) >= 0.5 * n_ang else None)
     radii.sort()
     L = entry_len if entry_len is not None else min(20.0, max(width, 6.0))
     n_st = max(1, int(math.ceil(L / entry_step)))
@@ -741,7 +746,7 @@ def seat_scan(inside, centre, axis, r_nom, width, outer=True, window=1.0, look_i
     other = '-' if best == '+' else '+'
     return {'d': round(2 * radii[len(radii) // 2], 2), 'len': round(width * held / 9.0, 2),
             'entry_d': round(2 * val(best), 2), 'entry_side': best, 'entry_open': sides[best] is None,
-            'entry_other': round(2 * val(other), 2)}
+            'entry_other': round(2 * val(other), 2), 'rows': rows}
 
 
 def seat_has_bearing(point, axis, depth, bearings, tol=0.5):

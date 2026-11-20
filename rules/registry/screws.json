@@ -175,7 +175,7 @@
     {
       "id": "screws.engagement",
       "title": "A screw reaches far enough into its thread",
-      "statement": "Every screw is engaged over at least {screws.min_engagement} (per thread size) in its insert, nut or tapped part. Its length comes from the stack: plastic under the head, the parts between, the engagement, ending short of the hole end. A change of length moves everything stacked on the screw: length and seat change together. A screw whose thread nothing receives (no insert, no nut, no hole narrower than the thread anywhere along it) is a finding with 0 mm: the row names the hole and the part its thread ends in and what lies on that axis.",
+      "statement": "Every screw is engaged over at least {screws.min_engagement} (per thread size) in its insert, nut or tapped part. Its length comes from the stack: plastic under the head, the parts between, the engagement, ending short of the hole end. A change of length moves everything stacked on the screw: length and seat change together. A screw whose thread nothing receives (no insert, no nut, no hole narrower than the thread anywhere along it) is a finding with 0 mm: the row names the hole and the part its thread ends in and what lies on that axis. A length found along a line by sampling meets the limit on the 0.05 mm measurement grid (a drawn 5.0 read as 4.99 is 5.0; a real 4.9 stays 4.9).",
       "why": "Screws with 2.4 mm of engagement were found in a finished model, and six refs were named 2 to 6 mm shorter than the screw the stack needed. Four different minimums were in use and none of them stopped an export.",
       "params": [
         "screws.min_engagement",
@@ -204,7 +204,7 @@
     {
       "id": "screws.under_head",
       "title": "Plastic under every screw head",
-      "statement": "Under every screw head at least {screws.min_under_head} of plastic stays, measured along the screw. A plate too thin for it is made thicker; neighbours of the project's own design move before the plate is thinned. A head that bears through its washer on a bought rigid body and on no plastic (a clamp washer on a bearing ring, within {washers.landing_gap_max}) crushes no plastic: it is judged as a clamp, not here.",
+      "statement": "Under every screw head at least {screws.min_under_head} of plastic stays, measured along the screw. A plate too thin for it is made thicker; neighbours of the project's own design move before the plate is thinned. A head that bears through its washer on a bought rigid body and on no plastic (a clamp washer on a bearing ring, within {washers.landing_gap_max}) crushes no plastic: it is judged as a clamp, not here. A length found along a line by sampling meets the limit on the 0.05 mm measurement grid (a drawn 5.0 read as 4.99 is 5.0; a real 4.9 stays 4.9).",
       "why": "A printed 2 mm retainer left about 0.1 mm under countersunk heads and was deleted. Deep counterbores left 2 to 3.6 mm under other heads.",
       "params": [
         "screws.min_under_head",
@@ -231,7 +231,7 @@
     {
       "id": "screws.tip_bottoming",
       "title": "A screw does not bottom",
-      "statement": "The tip of every screw stops at least {screws.tip_room_min} before the end of its hole, pocket or bought thread.",
+      "statement": "The tip of every screw stops at least {screws.tip_room_min} before the end of its hole, pocket or bought thread. A length found along a line by sampling meets the limit on the 0.05 mm measurement grid (a drawn 5.0 read as 4.99 is 5.0; a real 4.9 stays 4.9).",
       "why": "An M3x12 bottomed in a 6 mm pocket and the joint stayed loose. In a 4.5 mm motor face thread the next stock length after the one that fits bottoms.",
       "params": [
         "screws.tip_room_min"

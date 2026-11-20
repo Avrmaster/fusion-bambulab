@@ -1,0 +1,69 @@
+{
+ "judge": "inserts_pocket_shape",
+ "case": "a base screwed to a board with countersunk wood screws: a 90 degree countersink D8.4 > 4.2 x 2.1 over a D4.2 hole through, the wood screw on its axis. D4.2 lies in the band of an M3 insert and no clearance row fits a wood screw: it was read as an insert pocket with a D8.4 lead-in (20 false rows on one part)",
+ "facts": {
+  "holes": [
+   {
+    "id": "h3",
+    "anchor": {
+     "kind": "insert_pocket",
+     "axis": [
+      0,
+      0,
+      1
+     ],
+     "point": [
+      -85.7,
+      -15.1,
+      -30.0
+     ]
+    },
+    "segments": [
+     {
+      "d": 8.4,
+      "d2": 4.2,
+      "len": 2.1
+     },
+     {
+      "d": 4.2,
+      "len": 7.9
+     }
+    ],
+    "depth": 10.0,
+    "through": true,
+    "floor": null,
+    "exit": {
+     "kind": "hole",
+     "axis": [
+      0,
+      0,
+      -1
+     ],
+     "point": [
+      -85.7,
+      -15.1,
+      -40.0
+     ]
+    },
+    "class": {
+     "table": "inserts",
+     "kind": "M3x4x5",
+     "role": "insert_pocket",
+     "match": "band"
+    },
+    "coaxial": [
+     {
+      "name": "HW (screws, inserts, washers) / wood screw 4x20 countersunk (1)",
+      "kind": "hardware",
+      "part": null
+     }
+    ],
+    "arc": 1.0,
+    "behind": null
+   }
+  ],
+  "openings": [],
+  "counts": {}
+ },
+ "expect": []
+}

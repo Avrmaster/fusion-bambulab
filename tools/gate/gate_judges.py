@@ -46,6 +46,18 @@ import gate_features
 JUDGES = {}                 # name -> function; filled by @judge
 _HASHES = {}                # (name, function) -> judge_hash: the source of a function does not change while the process runs
 _EPS = 1e-6                 # float noise only: 3.9999999 is 4.0, 3.99 is not
+_GRID = 0.05                # mm: the measurement grid of lengths found along a line by sampling (_gridded)
+
+
+def _gridded(x):
+    """A length that a probe found along a line by sampling, on the measurement grid before it meets a limit: rounded
+    half up to _GRID (0.05 mm, the grid every anchor and context of the gate is rounded to). fusion_screws finds the
+    end of such a run to 0.02 mm (runs_along / first_hit, tol 0.02) on the side of the first sample and stores it to
+    0.01, so a drawn 5.0 reads 4.98 .. 5.0: compared raw, 4.99 against a limit of 5 was a FAIL on a correct part.
+    On the grid it is 5.0; a real 4.9 stays 4.9, and 4.97 (4.95) stays short. Only lengths measured that coarsely go
+    through it: walls measured by rays (refined to 0.005), bearing travel (0.002) and widths computed from the geometry
+    are compared as they are. The finding keeps the measured value."""
+    return round(math.floor(x / _GRID + 0.5 + 1e-9) * _GRID, 6)
 
 
 def judge(fn):
@@ -1128,10 +1140,15 @@ def _not_a_pocket(p, params, ctx):
     "bought"  its census hole is a pocket for a bought part at the size of its parameter (_bought_pocket: a magnet
               pocket can have the diameter of an insert pocket); fits.bought_part_pocket judges it
     "short"   the hole is too short to hold the insert of its kind (_too_short with the relief and recess the probe
-              named): the levels the walls are measured at do not exist in it. inserts.floor has the one row for it."""
+              named): the levels the walls are measured at do not exist in it. inserts.floor has the one row for it.
+    "screw_seat"  its census hole is, by today's tables, a countersunk screw seat (probes._geom._geo_countersunk_seat:
+              a 90 degree cone over a wood screw's hole with the screw on the axis): no insert goes there."""
     h = _census_hole(p, ctx)
     if h is not None and _bought_pocket(h, params, ctx):
         return 'bought'
+    c = _hole_class(h, ctx) if h is not None else None
+    if isinstance(c, dict) and c.get('table') == 'screws' and c.get('role') == 'countersink':
+        return 'screw_seat'
     table = _table(ctx, 'inserts')
     row = (table.get('kinds') or {}).get(p.get('kind')) if isinstance(p.get('kind'), str) else None
     segs = _segments(p)
@@ -1392,7 +1409,7 @@ def inserts_floor(facts, params, ctx):
     pockets, out = _rows(facts, 'pockets', ctx)
     for p in pockets:
         a, floor, kind = _anchor(p.get('anchor')), p.get('floor'), p.get('kind')
-        if _not_a_pocket(p, params, ctx) == 'bought':
+        if _not_a_pocket(p, params, ctx) in ('bought', 'screw_seat'):
             continue
         if 'floor' not in p or not (floor is None or _num(floor)):
             out.append(_not_run(ctx, '%s: the plastic under it was not measured' % _pocket(p, a), a))
@@ -1772,12 +1789,55 @@ def bearings_clamp_room(facts, params, ctx):
     return out
 
 
+def _seat_tapered(s, size, ring, tol, band):
+    """Is a seat whose median diameter is off its bearing by more than `tol` a tapered press fit inside its band?
+    A printed seat may be tapered on purpose: a post (inner ring) nominal at the end the ring enters and wider towards
+    the shoulder that stops it, by up to `band` on the diameter (the most a seat beside a thick base gets); a bore (outer
+    ring) nominal at the stop and wider towards its mouth by up to `band`. The end that grips must be right:
+      entry end   the row of the profile nearest the entry side, else (facts without "rows") "entry_d" where it is a
+                  measured wall ("entry_open" false) of the same body just past the ring face
+      stop end    the row nearest the other side, else the median "d"
+      post        entry end within `tol` of d; stop end from d to d + band; the stop end not narrower than the entry end
+      bore        stop end within `tol` of D; entry end from D to D + band; the entry end not narrower than the stop end
+      both        the median from the bearing's size to size + band, and every height of the profile from size - tol
+                  to size + band (a narrowing in the middle blocks the ring, a hollow lets it rock)
+    Known limit: facts without "rows" cannot tell a post that steps up right at the ring face from one that tapers;
+    new runs of fusion_bearings carry the profile.
+    A bore in facts without "rows" is never taken as tapered: nothing measured says which end is where. Every number is
+    on the side the facts measured; nothing is rounded."""
+    if not (_num(band) and _num(size)):
+        return False
+    rows = [r if _num(r) else None for r in _list(s.get('rows'))]
+    side = s.get('entry_side')
+    known = [r for r in rows if r is not None]
+    if len(rows) == 9 and len(known) >= 2 and side in ('+', '-'):
+        ordered = rows if side == '-' else rows[::-1]           # from the entry side to the stop side
+        seen = [r for r in ordered if r is not None]
+        entry, stop = seen[0], seen[-1]
+    elif ring == 'inner' and _num(s.get('entry_d')) and s.get('entry_open') is False:
+        entry, stop = s['entry_d'], s.get('d')
+    else:
+        return False
+    if not (_num(entry) and _num(stop)):
+        return False
+    if not size - _EPS <= s['d'] <= size + band + _EPS:
+        return False                                            # the seat as a whole is not inside the band
+    if any(r < size - tol - _EPS or r > size + band + _EPS for r in known):
+        return False                                            # one height of the profile is narrower or wider than the band allows
+    if ring == 'inner':
+        return abs(entry - size) <= tol + _EPS and size - _EPS <= stop <= size + band + _EPS and stop >= entry - _EPS and s['d'] <= size + band + _EPS
+    return abs(stop - size) <= tol + _EPS and size - _EPS <= entry <= size + band + _EPS and entry >= stop - _EPS and s['d'] <= size + band + _EPS
+
+
 @judge
 def bearings_seat(facts, params, ctx):
     """Rule bearings.seat. Reads fusion_bearings facts: "bearings"[].seat.inner / .outer ({"d", "part", "len", "entry_d"} or
     None), .d, .D, and "seats_without_bearing"[] ({"hole", "anchor", "d", "designation", "match", "bodies"}).
     Parameter bearings.seat_d_tol.
-    A seat whose diameter is off the bearing's by more than the tolerance: FAIL, measure = seat d, limit = bearing d or D.
+    A seat whose diameter is off the bearing's by more than the tolerance: FAIL, measure = seat d, limit = bearing d or D,
+    unless it is a tapered press fit inside its band (_seat_tapered): a post nominal at the end the ring enters and up
+    to bearings.seat_taper_thick_base wider towards its stop (the most a post gets, beside a thick base), a bore nominal
+    at its stop and up to bearings.seat_taper wider towards its mouth.
     A seat whose entry is in the bearing's way by more than the tolerance (an outer seat entered through something
     narrower than D, an inner seat over something wider than d): FAIL, measure = entry_d: the bearing cannot reach it.
     A seat in another printed part is that part's finding: it is not repeated here. A bearing that no printed part
@@ -1807,6 +1867,8 @@ def bearings_seat(facts, params, ctx):
                 out.append(_not_run(ctx, '%s: its %s seat or its own %s has no number' % (_bearing(b, a), ring, key), a))
                 continue
             entry = s.get('entry_d')
+            if abs(s['d'] - size) > tol + _EPS and _seat_tapered(s, size, ring, tol, pv(params, 'bearings.seat_taper_thick_base' if ring == 'inner' else 'bearings.seat_taper')):
+                continue                             # a tapered press fit inside its band: nominal where it must be
             if abs(s['d'] - size) > tol + _EPS:
                 out.append(finding(ctx['rule'], ctx['part'], 'FAIL', '%s: its %s seat is D%s, %s is D%s (tolerance %s)' % (_bearing(b, a), ring, _g(s['d']), what, _g(size), _g(tol)),
                                    anchor=a, measure=s['d'], limit=size, by=[str(s['part'])] if s.get('part') else [],
@@ -2968,7 +3030,7 @@ def screws_engagement(facts, params, ctx):
     """Rule screws.engagement. Reads fusion_screws facts: "screws"[] ({"ref", "size", "length", "anchor", "engagement",
     "into", "role", "tip_room", "tip_at"}) and "fastener_holes"[]. Parameters screws.min_engagement (per size:
     pv(params, "screws.min_engagement", size)), inserts.ref_pattern, screws.nut_ref_pattern.
-    engagement under the limit: FAIL. None on a screw that only has its head here (role "head"): nothing.
+    engagement under the limit on the measurement grid (_gridded): FAIL. None on a screw that only has its head here (role "head"): nothing.
     None with any other role (the thread ends in this part, or the role is not given): NOT_RUN.
     engagement 0.0 with "into" None: the unit followed the whole thread and found no insert, no nut and no body with a
     hole narrower than the thread round it. That is a measurement of the model as drawn, not a lack of data: FAIL,
@@ -2985,7 +3047,7 @@ def screws_engagement(facts, params, ctx):
             out.append(_not_run(ctx, '%s: its thread ends in this part (role %s) and the engagement was not measured' % (_screw(s, a), s.get('role')), a))
             continue
         need = pv(params, 'screws.min_engagement', size if isinstance(size, str) else None)
-        if e >= need - _EPS:
+        if _gridded(e) >= need - _EPS:
             continue
         into = s.get('into') if isinstance(s.get('into'), dict) else {}
         if not into and e <= _EPS:
@@ -3027,7 +3089,7 @@ def screws_under_head(facts, params, ctx):
     """Rule screws.under_head. Reads fusion_screws facts: "screws"[].under_head (mm, None when the head is not on this
     part), .seat, .role, .washer and "washers"[].landing ({"on_bearing", "covers": [{"kind", "part", "gap"}]}).
     Parameters screws.min_under_head, washers.landing_gap_max, screws.ref_pattern, inserts.ref_pattern,
-    screws.nut_ref_pattern. under_head under the limit: FAIL.
+    screws.nut_ref_pattern. under_head under the limit on the measurement grid (_gridded): FAIL.
     The rule is about plastic that a head crushes. A head that bears, through its washer, on a bought rigid body and
     on no plastic (_washer_on_steel: a clamp washer on a bearing ring, a washer on a steel sleeve) loads no plastic
     under it: not judged here; washers.landing and bearings.clamp_room judge that clamp. A washer that lies on
@@ -3045,7 +3107,7 @@ def screws_under_head(facts, params, ctx):
         if not _num(u):
             out.append(_not_run(ctx, '%s: its head sits on this part (role %s) and the plastic under it was not measured' % (_screw(s, a), s.get('role')), a))
             continue
-        if u >= need - _EPS:
+        if _gridded(u) >= need - _EPS:
             continue
         if isinstance(s.get('washer'), str) and _washer_on_steel(washers.get(s['washer']), touch, [w.get('ref') for w in washers.values()], fasteners):
             continue                                 # the head bears on steel through its washer: no plastic is loaded under it
@@ -3059,7 +3121,7 @@ def screws_under_head(facts, params, ctx):
 def screws_tip_bottoming(facts, params, ctx):
     """Rule screws.tip_bottoming. Reads fusion_screws facts: "screws"[].tip_room (mm; negative = the tip is past the end
     of the hole; None = the hole has no end in front of the tip). Parameter screws.tip_room_min.
-    tip_room under the limit: FAIL. No "tip_room" key, or a value that is neither a number nor None: NOT_RUN."""
+    tip_room under the limit on the measurement grid (_gridded): FAIL. No "tip_room" key, or a value that is neither a number nor None: NOT_RUN."""
     need = pv(params, 'screws.tip_room_min')
     screws, out = _rows(facts, 'screws', ctx)
     for s in screws:
@@ -3069,7 +3131,7 @@ def screws_tip_bottoming(facts, params, ctx):
         if not _num(t):
             out.append(_not_run(ctx, '%s: the room in front of its tip cannot be read' % _screw(s, a), a))
             continue
-        if t >= need - _EPS:
+        if _gridded(t) >= need - _EPS:
             continue
         why = 'its tip is %s mm past the end of its hole' % _g(-t) if t < 0 else '%s mm of room in front of its tip, under %s' % (_g(t), _g(need))
         out.append(finding(ctx['rule'], ctx['part'], 'FAIL', '%s: %s' % (_screw(s, a), why), anchor=a, measure=t, limit=need,

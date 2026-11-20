@@ -1,0 +1,299 @@
+{
+ "judge": "inserts_relief_missing",
+ "case": "the twin with nothing on the axis of the hole: it stays an insert pocket, and its missing relief stays a row",
+ "facts": {
+  "pockets": [
+   {
+    "anchor": {
+     "kind": "insert_pocket",
+     "axis": [
+      0,
+      0,
+      1
+     ],
+     "point": [
+      -85.7,
+      -15.1,
+      -30.0
+     ]
+    },
+    "depth": 10.0,
+    "end": "mouth",
+    "floor": null,
+    "hole": "h3",
+    "kind": "M3x4x5",
+    "levels": [
+     {
+      "depth": 0.27,
+      "from_r": 3.93,
+      "name": "relief"
+     },
+     {
+      "depth": 0.75,
+      "from_r": 3.45,
+      "name": "lead_in"
+     },
+     {
+      "depth": 2.4,
+      "from_r": 3.45,
+      "name": "insert"
+     },
+     {
+      "depth": 3.2,
+      "from_r": 3.45,
+      "name": "insert"
+     },
+     {
+      "depth": 4.0,
+      "from_r": 3.45,
+      "name": "insert"
+     }
+    ],
+    "match": "band",
+    "ray": {
+     "coarse_step": 0.5,
+     "fine_to": 4.3,
+     "max": 8.0,
+     "n": 48,
+     "refine": 0.005,
+     "start": 0.03,
+     "step": 0.1,
+     "thin_relief": 2.45,
+     "thin_wall": 4.0
+    },
+    "recess": null,
+    "relief": null,
+    "relief_room": [
+     {
+      "d": 7.5,
+      "wall": 7.38
+     },
+     {
+      "d": 6.5,
+      "wall": 7.88
+     },
+     {
+      "d": 5.9,
+      "wall": 8.18
+     }
+    ],
+    "segments": [
+     {
+      "d": 8.4,
+      "d2": 4.2,
+      "len": 2.1
+     },
+     {
+      "d": 4.2,
+      "len": 7.9
+     }
+    ],
+    "through": true,
+    "walls": {
+     "insert": {
+      "blocked_by": [],
+      "dir": [
+       0.0,
+       1.0,
+       0.0
+      ],
+      "free_arc_deg": 0.0,
+      "from_d": 6.9,
+      "min": 7.68,
+      "min_beyond": null,
+      "thin_arc_deg": 0.0,
+      "thin_under": 4.0,
+      "w": [
+       7.68,
+       7.76,
+       8.0,
+       8.0,
+       8.0,
+       8.0,
+       8.0,
+       8.0,
+       8.0,
+       8.0,
+       8.0,
+       8.0,
+       8.0,
+       8.0,
+       8.0,
+       8.0,
+       8.0,
+       8.0,
+       8.0,
+       8.0,
+       8.0,
+       8.0,
+       8.0,
+       8.0,
+       8.0,
+       8.0,
+       8.0,
+       8.0,
+       8.0,
+       8.0,
+       8.0,
+       8.0,
+       8.0,
+       8.0,
+       8.0,
+       8.0,
+       8.0,
+       8.0,
+       8.0,
+       8.0,
+       8.0,
+       8.0,
+       8.0,
+       8.0,
+       8.0,
+       8.0,
+       8.0,
+       8.0
+      ]
+     },
+     "lead_in": {
+      "blocked_by": [],
+      "dir": [
+       0.0,
+       1.0,
+       0.0
+      ],
+      "free_arc_deg": 0.0,
+      "from_d": 6.9,
+      "min": 7.68,
+      "min_beyond": null,
+      "thin_arc_deg": 0.0,
+      "thin_under": 4.0,
+      "w": [
+       7.68,
+       7.76,
+       8.0,
+       8.0,
+       8.0,
+       8.0,
+       8.0,
+       8.0,
+       8.0,
+       8.0,
+       8.0,
+       8.0,
+       8.0,
+       8.0,
+       8.0,
+       8.0,
+       8.0,
+       8.0,
+       8.0,
+       8.0,
+       8.0,
+       8.0,
+       8.0,
+       8.0,
+       8.0,
+       8.0,
+       8.0,
+       8.0,
+       8.0,
+       8.0,
+       8.0,
+       8.0,
+       8.0,
+       8.0,
+       8.0,
+       8.0,
+       8.0,
+       8.0,
+       8.0,
+       8.0,
+       8.0,
+       8.0,
+       8.0,
+       8.0,
+       8.0,
+       8.0,
+       8.0,
+       8.0
+      ]
+     },
+     "relief": null
+    }
+   }
+  ]
+ },
+ "params": {
+  "inserts.wall_target": 4.0,
+  "inserts.wall_floor": 1.6,
+  "inserts.relief_wall_min": 2.45,
+  "inserts.relief_depth_min": 0.4,
+  "inserts.relief_depth_max": 0.6
+ },
+ "ctx": {
+  "census": {
+   "holes": [
+    {
+     "id": "h3",
+     "anchor": {
+      "kind": "insert_pocket",
+      "axis": [
+       0,
+       0,
+       1
+      ],
+      "point": [
+       -85.7,
+       -15.1,
+       -30.0
+      ]
+     },
+     "segments": [
+      {
+       "d": 8.4,
+       "d2": 4.2,
+       "len": 2.1
+      },
+      {
+       "d": 4.2,
+       "len": 7.9
+      }
+     ],
+     "depth": 10.0,
+     "through": true,
+     "floor": null,
+     "exit": {
+      "kind": "hole",
+      "axis": [
+       0,
+       0,
+       -1
+      ],
+      "point": [
+       -85.7,
+       -15.1,
+       -40.0
+      ]
+     },
+     "class": {
+      "table": "inserts",
+      "kind": "M3x4x5",
+      "role": "insert_pocket",
+      "match": "band"
+     },
+     "coaxial": [],
+     "arc": 1.0,
+     "behind": null
+    }
+   ],
+   "openings": [],
+   "counts": {}
+  }
+ },
+ "expect": [
+  {
+   "verdict": "FAIL",
+   "measure": 0.0
+  }
+ ]
+}

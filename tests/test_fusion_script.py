@@ -390,6 +390,31 @@ class Prelude(Dir):
         env, _ = self.run_script([FakeDoc('Demo Assembly', 2)], 'def probe(job):\n    return {"facts": {"left": gate_left(job)}}\n', deadline_s=20, sent=time.time() + 500)
         self.assertGreater(env['facts']['left'], 19.0)                                           # a send time from the future is not believed
 
+    def test_the_call_tells_macos_that_fusion_is_busy_and_ends_that_with_the_call(self):
+        # A Fusion left alone for a minute in the background was put into App Nap: the first call after a pause ran
+        # 6 to 10 times slower from its start to its end (a point test 21 ms instead of 2). The activity lifts that.
+        spy = ('SEEN = []\n'
+               'def gate_awake_begin(reason="x"):\n    SEEN.append("begin"); return "token"\n'
+               'def gate_awake_end(h):\n    SEEN.append(("end", h))\n')
+        for body, err in (('    SEEN.append("probe"); return {"facts": {}}\n', None), ('    SEEN.append("probe"); raise RuntimeError("boom")\n', 'boom')):
+            with self.subTest(err=err):
+                env, g = self.run_script([FakeDoc('Demo Assembly', 2)], spy + 'def probe(job):\n' + body)
+                self.assertEqual(g['SEEN'], ['begin', 'probe', ('end', 'token')])
+                self.assertEqual(err is None, env['error'] is None)
+        env, g = self.run_script([FakeDoc('Demo Assembly', 2)], 'def _gate_objc():\n    raise OSError("no libobjc")\ndef probe(job):\n    return {"facts": {"a": 1}}\n')
+        self.assertEqual(env['facts'], {'a': 1}); self.assertIsNone(env['error'])                 # it never stops a unit
+        self.assertEqual(len(env['notes']), 1); self.assertIn('App Nap', env['notes'][0]); self.assertIn('OSError: no libobjc', env['notes'][0])
+        env, g = self.run_script([FakeDoc('Demo Assembly', 2)], 'def _gate_objc():\n    return None\ndef probe(job):\n    return {}\n')
+        self.assertEqual(env['notes'], [])                                                         # not macOS: nothing to do, nothing to say
+        g['gate_awake_end'](None); g['gate_awake_end'](('broken',))                                # ending never raises
+
+    @unittest.skipUnless(sys.platform == 'darwin', 'macOS only')
+    def test_the_activity_really_begins_and_ends_on_macos(self):
+        _, g = self.run_script([FakeDoc('Demo Assembly', 2)], 'def probe(job):\n    return {}\n')
+        h = g['gate_awake_begin']('fusion-bambulab test')
+        self.assertTrue(h); self.assertEqual(g['_GATE_NOTES'], [])
+        g['gate_awake_end'](h)
+
     def test_the_envelope_says_which_call_wrote_it_and_carries_a_timing_block_beside_the_facts(self):
         probe = 'def probe(job):\n    return {"facts": {"a": 1}, "cursor": {"i": 2}, "done": False, "timing": {"calls": 1, "faces": {"s": 0.5, "pc": 40}}}\n'
         env, _ = self.run_script([FakeDoc('Demo Assembly', 2)], probe, cursor={'i': 1, 'part': {}}, sig='ab' * 32, sent=12345.5)
