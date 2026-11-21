@@ -1114,16 +1114,44 @@ def inserts_pocket_shape(facts, params, ctx):
             continue
         kind = c.get('kind')
         row = (table.get('kinds') or {}).get(kind) if isinstance(kind, str) else None
-        if _piece_of(h, holes) or _too_short(segs, row, tol):
-            continue
+        named = _kind_named(h, ctx)
+        if _piece_of(h, holes) or (_too_short(segs, row, tol) and not named):
+            continue                                 # a pocket whose ref names another insert has its one row here, short or not
         off = _pocket_off(segs, row, tol, late) if segs and isinstance(row, dict) else None
         text = 'hole %s at %s is in the band of insert %s and is not its pocket' % (_shape(segs), _at(a), kind)
+        if named:
+            text = ('hole %s at %s is the exact pocket of insert %s, and the insert ref on its axis is %s (%s): the ref or the pocket is '
+                    'wrong. Cut the pocket of the insert that goes in, or name the ref after the insert the pocket is for' % (
+                        _shape(segs), _at(a), named[1], named[0], _some_names([n for n in _names(h.get('coaxial')) if 'insert' in n.lower()]) or 'by its name'))
         if off:
-            text += ': %s' % off[0]
+            text += ': %s' % off[0] if not named else '. For %s %s' % (named[0], off[0])
         out.append(finding(ctx['rule'], ctx['part'], 'FAIL', text, anchor=a, measure=off[1] if off else None,
                            limit=off[2] if off else None, by=[str(kind)],
                            context={'kind': kind, 'segments': [[s['d'], s['len']] for s in segs or []], 'through': bool(h.get('through'))}))
     return out
+
+
+def _kind_named(h, ctx):
+    """(kind the names on the axis give, kind the shape alone gives) of a census hole whose insert ref names another
+    insert than the one its pocket is cut for, or None. The classifier tells rows of the same diameters (a longer insert
+    of the same thread) apart by the insert named on the axis: a ref named "insert M3x6x5" in the exact pocket of an
+    M3x4x5 made the pocket an M3x6x5 in its band, and its walls were measured 6 mm deep, into the boss behind it (a wall
+    of 0.92 that said nothing about the pocket). One of the two is wrong, the ref or the pocket: that is the row."""
+    if not isinstance(h, dict):
+        return None
+    c = _hole_class(h, ctx)
+    segs = _segments(h)
+    if not (isinstance(c, dict) and c.get('table') == 'inserts' and c.get('role') == 'insert_pocket' and c.get('match') != 'exact' and segs and ctx.get('tables')):
+        return None
+    try:
+        from probes import _geom
+        bare = _geom.classify_stack(segs, bool(h.get('through')), ctx['tables'])
+    except Exception:
+        return None
+    if isinstance(bare, dict) and bare.get('table') == 'inserts' and bare.get('role') == 'insert_pocket' and bare.get('match') == 'exact' \
+            and bare.get('kind') != c.get('kind'):
+        return c.get('kind'), bare.get('kind')
+    return None
 
 
 def _census_hole(p, ctx):
@@ -1142,13 +1170,17 @@ def _not_a_pocket(p, params, ctx):
     "short"   the hole is too short to hold the insert of its kind (_too_short with the relief and recess the probe
               named): the levels the walls are measured at do not exist in it. inserts.floor has the one row for it.
     "screw_seat"  its census hole is, by today's tables, a countersunk screw seat (probes._geom._geo_countersunk_seat:
-              a 90 degree cone over a wood screw's hole with the screw on the axis): no insert goes there."""
+              a 90 degree cone over a wood screw's hole with the screw on the axis): no insert goes there.
+    "kind_named"  the insert ref on its axis names another insert than the pocket is cut for (_kind_named): its walls
+              were measured for the named one. inserts.pocket_shape has the row; inserts.wall says NOT_RUN."""
     h = _census_hole(p, ctx)
     if h is not None and _bought_pocket(h, params, ctx):
         return 'bought'
     c = _hole_class(h, ctx) if h is not None else None
     if isinstance(c, dict) and c.get('table') == 'screws' and c.get('role') == 'countersink':
         return 'screw_seat'
+    if h is not None and _kind_named(h, ctx):
+        return 'kind_named'
     table = _table(ctx, 'inserts')
     row = (table.get('kinds') or {}).get(p.get('kind')) if isinstance(p.get('kind'), str) else None
     segs = _segments(p)
@@ -1287,7 +1319,8 @@ def inserts_wall(facts, params, ctx):
     other level too. The context holds both, so a waiver ends when either level changes. (A relief wall that is thin
     for a reason of its own is a row of inserts.wall_at_relief besides the row here: two causes, two rows.)
     Not judged here (_not_a_pocket): a pocket for a bought part at the size of its parameter, and a hole too short to
-    hold the insert (inserts.floor has that row).
+    hold the insert (inserts.floor has that row). A pocket whose insert ref names another insert than the pocket is cut
+    for (_kind_named): NOT_RUN, its walls were measured for the wrong insert.
     With ctx["census"]: a hole that is an insert pocket by today's tables and has no measured pocket in these facts
     (the tables changed since the facts were collected, or the far end of a hole with a pocket at each end was not
     measured yet) is NOT_RUN: collect the facts of the part again."""
@@ -1295,7 +1328,13 @@ def inserts_wall(facts, params, ctx):
     pockets, out = _rows(facts, 'pockets', ctx)
     for p in pockets:
         a = _anchor(p.get('anchor'))
-        if _not_a_pocket(p, params, ctx):
+        why = _not_a_pocket(p, params, ctx)
+        if why == 'kind_named':
+            named = _kind_named(_census_hole(p, ctx), ctx)
+            out.append(_not_run(ctx, '%s: its walls were measured for insert %s, which the ref on its axis names; the pocket is cut for %s '
+                                     '(inserts.pocket_shape). Settle which insert goes there, then collect the facts again' % (_pocket(p, a), named[0], named[1]), a))
+            continue
+        if why:
             continue
         row = _wall_row(p, target, floor)
         if isinstance(row, str):
@@ -1409,7 +1448,7 @@ def inserts_floor(facts, params, ctx):
     pockets, out = _rows(facts, 'pockets', ctx)
     for p in pockets:
         a, floor, kind = _anchor(p.get('anchor')), p.get('floor'), p.get('kind')
-        if _not_a_pocket(p, params, ctx) in ('bought', 'screw_seat'):
+        if _not_a_pocket(p, params, ctx) in ('bought', 'screw_seat', 'kind_named'):
             continue
         if 'floor' not in p or not (floor is None or _num(floor)):
             out.append(_not_run(ctx, '%s: the plastic under it was not measured' % _pocket(p, a), a))
@@ -3255,6 +3294,12 @@ def screws_shell_bears(facts, params, ctx):
         a ring in a seat of one part that a lip of the other reaches across the gap onto) is said so in that row,
         with both distances and its distance from the screw axis: the owner looks at the seat and the lip, not
         into the empty gap.
+    A bearing met beside the gap that ONE of the two parts presses while the other stands off it can still carry the
+    screws, through its balls and its other ring to what stands against that ring (a bearing stack the screws preload:
+    a turret top on the outer ring of its upper bearing, a spacer, the lower bearing, the tube). When the other part
+    stands off it by the whole gap (closing the gap would not land it either: it is not meant to bear there) the probe
+    cannot follow that path: the row stays a FAIL and asks screws.load_through_bearing; the owner's answer closes it.
+    A part that stands off by less than the gap is a lip that falls short: the plain FAIL.
     A gap with nothing taken in it names the bodies the unit met beside it and passed over ("passed_over": no
     bearing), and a body Fusion could not answer on ("unreadable") is a FAIL that says so.
     A body that stands in the gap and that the two parts do NOT both press on bridges nothing: the gap is air the
@@ -3319,14 +3364,19 @@ def screws_shell_bears(facts, params, ctx):
         group = sorted(held[(name, sides)], key=lambda t: -t[2]['gap'])       # the widest first, else in the order of the facts
         s, a, row, c = group[0]
         n = len(group)
+        along = _gap_along(c)
+        stack = (bool(c.get('beside')) and len(along) == 2 and all(_num(x) for x in along) and min(along) <= touch + _EPS < max(along)
+                 and max(along) >= row['gap'] - touch - _EPS)  # it stands off by the whole gap: closing the gap would not land it, so it is not meant to
         out.append(finding(ctx['rule'], ctx['part'], 'FAIL',
                            '%s clamp%s across %s mm of air%s (at most %s). %s %s and does not carry %s: %s. The screw%s close%s that air first: the wall bends until it cracks, '
                            'or the body is never clamped. Let both parts land on the body (the part that stands off needs its shoulder at the body), or close the gap%s'
                            % ('%d screws of this part' % n if n > 1 else _screw(s, a), '' if n > 1 else 's', _g(row['gap']), _gap_between(row), _g(limit), name,
                               'sits beside that gap along the screw' if c.get('beside') else 'is near that gap' if c.get('unreadable') else 'stands in that gap',
                               'them' if n > 1 else 'it', _gap_loose(c, row, touch), 's' if n > 1 else '', '' if n > 1 else 's',
-                              '. First: %s' % _screw(s, a) if n > 1 else ''),
-                           anchor=a, measure=row['gap'], limit=limit, by=[name],
+                              '. First: %s' % _screw(s, a) if n > 1 else '') + (
+                               '. Unless the load goes on from that bearing, through its balls and its other ring and what stands against that ring, '
+                               'to the other part (a bearing stack the screws preload): the question asks that' if stack else ''),
+                           anchor=a, measure=row['gap'], limit=limit, by=[name], ask='screws.load_through_bearing' if stack else None,
                            context={'in_gap': name, 'between': list(sides), 'screws': sorted(key(t) for t in group), 'air_gap': row['gap'], 'along': _gap_along(c)}))
     if bridged:
         s, a, row = max(bridged, key=lambda t: t[2]['gap'])

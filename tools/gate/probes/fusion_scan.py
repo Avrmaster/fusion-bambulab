@@ -50,6 +50,38 @@ def _scan_linked(occ, own_name):
     return False, None
 
 
+def _scan_references(doc):
+    """[{"name", "version", "latest", "out_of_date"}] of the documents this document references (linked components), from
+    Document.documentReferences: "version" is the version this document uses, "latest" the newest version of that file
+    when Fusion gives it, "out_of_date" is DocumentReference.isOutOfDate (None when Fusion does not say). Read once per
+    scan (in its first call). Parts of a linked document are measured as this document holds them: an older version
+    of it than the one saved shows features that are no longer there and lacks the new ones."""
+    out = []
+    try:
+        refs = list(doc.documentReferences)
+    except Exception:
+        return out
+    for r in refs[:200]:
+        row = {'name': None, 'version': None, 'latest': None, 'out_of_date': None}
+        try:
+            row['out_of_date'] = bool(r.isOutOfDate)
+        except Exception:
+            pass
+        try:
+            row['version'] = int(r.version)
+        except Exception:
+            pass
+        try:
+            f = r.dataFile
+            row['name'] = str(f.name) if f is not None else None
+            row['latest'] = int(f.latestVersionNumber) if f is not None else None
+        except Exception:
+            pass
+        out.append(row)
+    out.sort(key=lambda x: (str(x['name']), x['version'] or 0))
+    return out
+
+
 def _scan_mesh(mb, matrix):
     """(signature, bbox in the document frame, triangles) of a mesh body, from its display mesh; Nones when it has none"""
     try:
@@ -92,7 +124,8 @@ def probe(job):
     _geom.py). A ref's name is the component name when the component holds one body, else "<component> / <body>".
     "copies" counts the occurrences whose path is not under a not-printed name (the same component inside a bought
     assembly is a ref there and is listed as one). A mesh ref without a display mesh has "sig" and "bbox_doc" None.
-    facts "occurrences" is the number of occurrences + 1 (the root component).
+    facts "occurrences" is the number of occurrences + 1 (the root component). The first call also gives "references"
+    (_scan_references: the documents this one links, the version it uses, the newest, and whether it is out of date).
 
     The cursor. A whole number i: go on with occurrence i (0 is the root component, i the occurrence i - 1 of
     rootComponent.allOccurrences). An object {"i", "b", "sign"}: occurrence i was begun; its solid bodies before index
@@ -103,6 +136,7 @@ def probe(job):
         return {'facts': {'parts': [], 'refs': []}, 'done': True, 'cursor': None, 'sig': None}
     root = gate_design(job).rootComponent
     own_name = _gate_doc_name(gate_document(job))
+    references = _scan_references(gate_document(job)) if job.get('cursor') is None else None
     occs = list(root.allOccurrences)
     first, paths = {}, {}
     for i, o in enumerate(occs):                        # cheap: the first occurrence of a component that can hold parts, and its copies
@@ -174,5 +208,8 @@ def probe(job):
         i += 1
         n_done += 1
     done = stop is None and i > len(occs)
-    return {'facts': {'parts': parts, 'refs': refs, 'occurrences': len(occs) + 1}, 'done': done,
+    facts = {'parts': parts, 'refs': refs, 'occurrences': len(occs) + 1}
+    if references is not None:
+        facts['references'] = references
+    return {'facts': facts, 'done': done,
             'cursor': None if done else (stop if stop is not None else i), 'sig': None}

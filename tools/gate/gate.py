@@ -40,7 +40,7 @@ import argparse, datetime, importlib, os, sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import gate_common                                                  # noqa: E402
-from gate_common import GateError, EXIT_INFRA, EXIT_PASS, find_root          # noqa: E402
+from gate_common import GateError, EXIT_INFRA, EXIT_MORE, EXIT_PASS, find_root          # noqa: E402
 
 COMMANDS = {                                   # sub-command -> (module, function)
     'doctor': ('gate_vendor', 'cmd_doctor'),
@@ -59,6 +59,10 @@ COMMANDS = {                                   # sub-command -> (module, functio
 NO_ROOT = ('doctor', 'rules')                  # these also work in a folder that is not gated (root is then None)
 # commands that judge, stamp or write: they do not run on a vendored copy that was changed by hand (gate/LOCK.json)
 NEEDS_INTACT = ('run', 'scan', 'export', 'verify', 'owner')
+# commands after which the digest the SessionStart hook prints is built again (gate_report.refresh_digest): those that
+# can change the state of the gate. `status` builds it itself; a `run` or `scan` that needs more calls (exit 3) does
+# not, it would add a judgement of every part to every short call: the hook then says the digest is stale.
+REFRESH_DIGEST = ('scan', 'run', 'attest', 'export', 'verify', 'triage', 'owner', 'params')
 DECISIONS = ('fix', 'waive', 'tolerate', 'rule_wrong')
 
 
@@ -491,6 +495,8 @@ def main(argv=None):
                 return EXIT_INFRA
         fn = cmd_owner if module == 'gate' else getattr(importlib.import_module(module), func)
         code = fn(root, args)
+        if root is not None and args.command in REFRESH_DIGEST and int(code or 0) != EXIT_MORE:
+            importlib.import_module('gate_report').refresh_digest(root)
     except NotImplementedError:
         sys.stderr.write('GATE ERROR  "%s" is not built yet (%s.%s)\n' % (args.command, module, func))
         return EXIT_INFRA

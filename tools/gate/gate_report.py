@@ -590,6 +590,15 @@ def cmd_triage(root, args):
     return EXIT_BLOCK if any(not i.get('decision') for i in items) else EXIT_PASS
 
 
+def _world_text(f):
+    """' (in the document: (x, y, z))' for a row whose part is placed off the document origin (gate_plan._with_world):
+    the coordinates of a text are in the part's own frame. '' otherwise."""
+    w = f.get('world')
+    if isinstance(w, (list, tuple)) and len(w) == 3 and all(isinstance(c, (int, float)) for c in w):
+        return ' (in the document: (%s))' % ', '.join('%g' % c for c in w)
+    return ''
+
+
 def group_lines(groups, limit=None, word=None):
     """One printed line per group: '  FAIL    part  rule  text  [F-id]' for a single row (as a finding was always
     printed), with ' x12' and '[F-id +11 more]' for a group. At most `limit` lines, then one line that says how many
@@ -602,6 +611,7 @@ def group_lines(groups, limit=None, word=None):
         text = str(f.get('text') or '')
         if len(text) > LINE_TEXT:
             text = text[:LINE_TEXT - 4].rstrip() + ' ...'
+        text += _world_text(f)
         if g['count'] == 1:
             out.append('  %-7s %s  %s  %s  [%s]' % (word or g['verdict'], f.get('part'), g['rule'], text, f.get('id')))
         else:
@@ -732,7 +742,7 @@ def _finding_md(f, fix=True):
         head += ': %s' % _measure(f)
         if f.get('limit') is not None:
             head += ' against %s' % (f.get('limit_text') or f.get('limit'))
-    lines = [head, '  - %s' % f.get('text'), '  - where: %s' % _where(f.get('anchor'))]
+    lines = [head, '  - %s' % f.get('text'), '  - where: %s%s' % (_where(f.get('anchor')), ' (part frame)%s' % _world_text(f) if _world_text(f) else '')]
     if f.get('of') and f.get('of') != f.get('part'):
         lines.append('  - part: %s' % f.get('part'))
     if f.get('by'):
@@ -999,7 +1009,8 @@ def status(root, reg=None, hash_budget_s=None):
     inherited: judged by the audit, not changed since, no stamp), "inherited_ids" (which), "over_budget" (the rows of
     gate_plan.over_budget() for the last scan and the current run: calls that worked longer than their unit's budget,
     calls that got no answer and left no result, units given up) and
-    "waiting_call" (a line about the unit that was sent and has not answered yet, or None). "changed" still lists
+    "waiting_call" (a line about the unit that was sent and has not answered yet, or None) and "stale_references"
+    (gate_plan.stale_references of every document: linked documents used in an older version than their newest). "changed" still lists
     them (they have no stamp); the text of the status counts and names them apart. hash_budget_s limits the time spent hashing STLs that
     are not in the cache yet; the ones left over are "unknown" and are not counted as unstamped."""
     import gate_plan
@@ -1043,7 +1054,8 @@ def status(root, reg=None, hash_budget_s=None):
             'stl_states': states, 'unfinished': unfinished, 'unreachable': sorted(k for k, d in census['docs'].items() if d.get('open') is False),
             'registered': len(layout.get('documents') or []) + len(layout.get('generators') or []), 'waiting': waiting,
             'inherited_parts': len(inherited_parts), 'inherited_ids': inherited_parts, 'over_budget': over,
-            'waiting_call': gate_plan.waiting_line(root)}
+            'waiting_call': gate_plan.waiting_line(root),
+            'stale_references': [line for k in sorted(census['docs']) for line in gate_plan.stale_references(census, k)]}
 
 
 def _some(names, n=4):
@@ -1066,6 +1078,8 @@ def _status_lines(st, rows=None):
         out.append('  run %s is not finished: %d/%d units (`gate.py run` goes on with it)' % (st['unfinished']['run'], st['unfinished']['done'], st['unfinished']['total']))
     if st.get('waiting_call'):
         out.append('  ' + st['waiting_call'])
+    for line in st.get('stale_references') or []:   # measured against an old version of a linked document: said before any row
+        out.append('  OUT OF DATE ' + line)
     if st.get('over_budget'):                       # a defect of a probe, said until the next run: one line each (the digest: the first two)
         import gate_plan
         lines = gate_plan.over_lines(st['over_budget'])
@@ -1108,17 +1122,47 @@ def _status_lines(st, rows=None):
     return out
 
 
-def digest(root):
-    """The text the SessionStart hook prints: at most 15 lines. Mode, counts of status(), the first open rows, and the
-    three commands (gate.py status, gate.py run --changed, gate.py export PART). Must take well under a second and never
-    raise: any problem gives a one-line "gate: status unavailable (<why>)"."""
+def digest(root, st=None):
+    """The text the SessionStart hook prints: at most 15 lines. Mode, counts of status() (or of `st`, a status() the
+    caller has), the first open rows, and the three commands (gate.py status, gate.py run --changed, gate.py export
+    PART). Never raises: any problem gives a one-line "gate: status unavailable (<why>)". It judges every part: in a
+    large project that takes seconds, so the hook reads the copy refresh_digest() keeps (gate_digest.py)."""
     try:
-        lines = _status_lines(status(root, hash_budget_s=0.3), rows=4)
+        lines = _status_lines(st if isinstance(st, dict) else status(root, hash_budget_s=0.3), rows=4)
         if len(lines) > DIGEST_LINES - 1:
             lines = lines[:DIGEST_LINES - 2] + ['  ... (`gate.py status` shows the rest)']
         return '\n'.join(lines + [COMMANDS_LINE])
     except Exception as e:                       # the hook must never fail a session start
         return 'gate: status unavailable (%s: %s)' % (type(e).__name__, str(e).splitlines()[0][:200] if str(e) else '')
+
+
+def _digest_by():
+    """"<plugin> <version>" of the code that runs: the plugin's own version, or the one gate/LOCK.json beside a vendored
+    copy names."""
+    import gate_vendor
+    try:
+        own = gate_vendor.own_plugin_root()
+        version = gate_vendor.plugin_version(own) if own else (read_json(os.path.join(gate_common.tools_dir(), '..', 'LOCK.json'), {}) or {}).get('version')
+    except Exception:
+        version = None
+    return '%s %s' % (gate_vendor.PLUGIN_NAME, version or '?')
+
+
+def refresh_digest(root, st=None, state=None):
+    """Build the digest of `root` (from `st` when the caller has a status()) and keep it in gate/run/digest.json with
+    the state of its inputs (gate_digest.py), for the SessionStart hook. `state`: gate_digest.inputs() taken BEFORE
+    the status was computed, else taken here before the digest: a file that changes meanwhile makes the kept digest
+    stale, never a stale digest look fresh. Never raises. Returns the text, or None."""
+    try:
+        import gate_digest
+        tools, rules = gate_common.tools_dir(), gate_common.rules_dir()
+        if state is None:
+            state = gate_digest.inputs(root, tools, rules)
+        text = digest(root, st)
+        gate_digest.write(root, text, tools, rules, _digest_by(), state)
+        return text
+    except Exception:
+        return None
 
 
 def cmd_status(root, args):
@@ -1128,9 +1172,15 @@ def cmd_status(root, args):
     A changed part whose present geometry no run has judged counts as open: what was not checked has not passed.
     The same holds for a project with registered documents that was never scanned, and for an STL in a registered
     folder that has no valid stamp (`gate.py verify` fails on it as project.stl_without_stamp)."""
-    if args.digest:
-        print(digest(root))
+    import gate_digest
+    try:
+        state = gate_digest.inputs(root, gate_common.tools_dir(), gate_common.rules_dir())
+    except Exception:
+        state = None
     st = status(root)
+    text = (refresh_digest(root, st, state) if state is not None else None) or digest(root, st)    # the hook prints this copy
+    if args.digest:
+        print(text)
     if args.json:
         print(json.dumps(st, indent=1, sort_keys=True))
     elif not args.digest:

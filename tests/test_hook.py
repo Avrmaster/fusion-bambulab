@@ -247,3 +247,93 @@ class HooksFile(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class KeptDigest(Digest):
+    """The digest the gate keeps (gate_digest.py): a project with dozens of judged parts needs seconds to compute it, and
+    a digest left out at every session start (the 0.7 s budget) meant no session saw the state of the gate."""
+
+    def keep(self, root, text='gate [observe]: kept digest\npython3 gate/tools/gate.py status'):
+        import gate_digest
+        tools, rules = gate_common.tools_dir(), gate_common.rules_dir()
+        self.assertTrue(gate_digest.write(root, text, tools, rules, 'fusion-bambulab test'))
+        return gate_digest
+
+    def slow(self):
+        self.patch('digest', lambda r, st=None: time.sleep(3) or 'late')
+
+    def test_a_kept_digest_that_holds_is_printed_without_judging(self):
+        root = self.gated(); self.keep(root); self.slow()
+        t = time.time()
+        text = self.hook(root)
+        self.assertLess(time.time() - t, 0.5)
+        self.assertIn('kept digest', text); self.assertNotIn('late', text); self.assertNotIn('may be out of date', text)
+
+    def test_a_kept_digest_that_no_longer_holds_is_printed_with_what_changed(self):
+        for group, change in (('model', lambda r: gate_common.write_json(gate_common.gate_path(r, 'census.json'), {'parts': {}})),
+                              ('facts', lambda r: gate_common.write_json(gate_common.gate_path(r, 'facts', 'demo', 'a', 'x.json'), {})),
+                              ('decisions', lambda r: gate_common.write_json(gate_common.gate_path(r, 'owner', 'params.json'), {'a': 1})),
+                              ('run', lambda r: gate_common.write_json(gate_common.gate_path(r, 'run', 'pending.json'), {'unit': 'u-1'}))):
+            with self.subTest(group=group):
+                root = self.gated(group); dg = self.keep(root); self.slow()
+                change(root)
+                self.assertEqual(dg.changed(root, dg.read(root)), [group])
+                text = self.hook(root)
+                self.assertIn('kept digest', text); self.assertIn('may be out of date', text)
+                self.assertIn(dg.WORDS[group], text); self.assertNotIn('late', text)
+
+    def test_a_stale_kept_digest_gives_way_to_one_computed_in_time(self):
+        root = self.gated(); dg = self.keep(root)
+        gate_common.write_json(gate_common.gate_path(root, 'census.json'), {'parts': {}})
+        self.patch('digest', lambda r, st=None: 'gate [observe]: computed now')
+        text = self.hook(root)
+        self.assertIn('computed now', text); self.assertNotIn('kept digest', text); self.assertNotIn('may be out of date', text)
+
+    def test_no_kept_digest_and_a_slow_one_is_left_out_with_one_line(self):
+        root = self.gated(); self.slow()
+        text = self.hook(root)
+        self.assertIn('took longer', text); self.assertIn('keeps none yet', text); self.assertNotIn('late', text)
+
+    def test_an_stl_or_the_code_changing_makes_it_stale(self):
+        root = self.gated()
+        gate_common.write_json(gate_common.gate_path(root, 'layout.json'), {'documents': [{'key': 'demo', 'stl_dir': 'stl'}]})
+        os.makedirs(os.path.join(root, 'stl'))
+        tools = os.path.join(self.d, 'tools_copy'); os.makedirs(tools)
+        with open(os.path.join(tools, 'gate_judges.py'), 'w') as f: f.write('# v1\n')
+        import gate_digest
+        gate_digest.write(root, 'gate [observe]: kept', tools, gate_common.rules_dir(), 'test')
+        rec = gate_digest.read(root)
+        self.assertEqual(gate_digest.changed(root, rec), [])
+        with open(os.path.join(root, 'stl', 'part.stl'), 'w') as f: f.write('solid x\n')
+        self.assertEqual(gate_digest.changed(root, rec), ['stls'])
+        with open(os.path.join(tools, 'gate_judges.py'), 'w') as f: f.write('# v2, another judge\n')
+        self.assertEqual(gate_digest.changed(root, rec), ['stls', 'code'])
+
+    def test_a_broken_or_foreign_file_is_no_kept_digest(self):
+        import gate_digest
+        root = self.gated()
+        for text in ('{not json', '[]', json.dumps({'v': 99, 'text': 'x', 'inputs': {}}), json.dumps({'v': 1, 'text': 5, 'inputs': {}})):
+            os.makedirs(os.path.dirname(gate_digest.path(root)), exist_ok=True)
+            with open(gate_digest.path(root), 'w') as f: f.write(text)
+            self.assertIsNone(gate_digest.read(root), text)
+
+    def test_the_gate_keeps_its_digest_after_a_command_and_not_between_the_calls_of_a_run(self):
+        import contextlib, gate, gate_digest
+        root = self.gated()
+        quiet = contextlib.redirect_stdout(io.StringIO()); quiet.__enter__(); self.addCleanup(quiet.__exit__, None, None, None)
+        self.assertIn(gate.main(['--root', root, 'status']), (0, 1, 2))
+        rec = gate_digest.read(root)
+        self.assertTrue(rec and 'gate [observe]' in rec['text']); self.assertEqual(gate_digest.changed(root, rec), [])
+        os.remove(gate_digest.path(root))
+        gate.main(['--root', root, 'verify'])                    # nothing registered to verify: it still says what the gate holds
+        self.assertIsNotNone(gate_digest.read(root))
+        os.remove(gate_digest.path(root))
+        import gate_plan
+        old = gate_plan.cmd_run
+        gate_plan.cmd_run = lambda r, a: gate_common.EXIT_MORE
+        self.addCleanup(setattr, gate_plan, 'cmd_run', old)
+        self.assertEqual(gate.main(['--root', root, 'run', '--changed']), gate_common.EXIT_MORE)
+        self.assertIsNone(gate_digest.read(root))                 # a run that needs more calls does not judge every part each call
+        gate_plan.cmd_run = lambda r, a: 0
+        gate.main(['--root', root, 'run', '--changed'])
+        self.assertIsNotNone(gate_digest.read(root))

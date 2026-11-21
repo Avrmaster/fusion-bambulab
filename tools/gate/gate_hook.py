@@ -11,16 +11,23 @@ The project folder is taken from the hook input on stdin (JSON with "cwd"), else
 CLAUDE_PROJECT_DIR, else from the working directory; gate/project.json is looked for at that folder and above it.
 What is printed on stdout becomes context of the session: the text of gate_report.digest(root).
 
+Every gate command that can change the state of the gate keeps the digest in gate/run/digest.json with the state of its
+inputs (gate_digest.py, gate_report.refresh_digest). The hook reads that file first and checks, by sizes and
+modification times only, that it still holds: then it prints it, in milliseconds however large the project is. When
+it no longer holds (or none is kept), the digest is computed now; when that takes longer than BUDGET_S (a project with
+dozens of judged parts), the kept digest is printed with one line that says when it was built and what changed since.
+Only with no kept digest at all is it left out, with one line.
+
 The digest is computed by THIS copy of the gate (the plugin's), never by code of the project: a hook runs without a
 prompt, so it must not run what a cloned folder brings along. When the project's vendored copy is forked or older than
 the plugin, one more line says so; `python3 gate/tools/gate.py status` is then the project's own word.
 
-Time: the work runs in a helper thread. When it has not answered within BUDGET_S the hook prints one line that names
-the status command and leaves. Nothing is printed for a folder that is not gated, however long the look took."""
+Time: the work runs in helper threads (KEPT_S for the kept digest, BUDGET_S for computing it now). Nothing is printed for a folder that is not gated, however long the look took."""
 import sys
 
 EVENTS = ('session-start',)
-BUDGET_S = 0.7                  # for the digest; with STDIN_S and the interpreter start the whole hook stays under a second
+KEPT_S = 0.3                    # for reading the digest the gate keeps (gate_digest.py) and checking that it holds
+BUDGET_S = 0.7                  # for computing the digest now; with STDIN_S and the interpreter start the hook stays near a second
 STDIN_S = 0.2                   # a hook input that never ends must not hold the session
 MAX_CHARS = 9000                # Claude Code keeps 10,000 characters of a hook's output
 STATUS_COMMAND = 'python3 gate/tools/gate.py status'
@@ -74,17 +81,36 @@ def _lock_line(root):
     return ''
 
 
-def output(root):
-    """The text to print for a gated project: gate_report.digest(root). '' when there is nothing to say."""
+def _here_on_path():
     import os
     here = os.path.dirname(os.path.abspath(__file__))
     if here not in sys.path:
         sys.path.insert(0, here)
-    import gate_report
-    text = (gate_report.digest(root) or '').rstrip('\n')
+
+
+def kept(root):
+    """(text, stale line or '') of the digest the gate keeps for `root` (gate_digest.py), or None when it keeps none.
+    Only sizes and modification times are read: milliseconds, also in a project with many parts."""
+    _here_on_path()
+    import gate_digest
+    rec = gate_digest.read(root)
+    if rec is None:
+        return None
+    groups = gate_digest.changed(root, rec)
+    return rec['text'].rstrip('\n'), (gate_digest.stale_line(rec, groups) if groups else '')
+
+
+def output(root, text=None, note=''):
+    """The text to print for a gated project: `text` (a kept digest), else gate_report.digest(root) computed now, with
+    `note` under it. '' when there is nothing to say."""
+    if text is None:
+        _here_on_path()
+        import gate_report
+        text = gate_report.digest(root)
+    text = (text or '').rstrip('\n')
     if not text:
         return ''
-    lines = ['Print gate of %s (fusion-bambulab; skill: gate)' % root, text]
+    lines = ['Print gate of %s (fusion-bambulab; skill: gate)' % root, text] + ([note] if note else [])
     lock = _lock_line(root)
     if lock:
         lines.append(lock)
@@ -153,10 +179,17 @@ def main(argv=None, stdin=None, stdout=None):
         root = find_project(text, os.environ, os.getcwd())
         if not root:
             return 0
-        done, out = _within(lambda: output(root), BUDGET_S)
-        if not done:
-            out = ('Print gate of %s (fusion-bambulab; skill: gate): the digest took longer than %.1f s and was left '
-                   'out. Run `%s` before changing or exporting a part.' % (root, BUDGET_S, STATUS_COMMAND))
+        done, have = _within(lambda: kept(root), KEPT_S)
+        have = have if done else None
+        if have is not None and not have[1]:
+            out = output(root, have[0])                        # the digest the gate kept still holds: print it
+        else:
+            done, out = _within(lambda: output(root), BUDGET_S)
+            if not done and have is not None:
+                out = output(root, have[0], have[1])           # computing it now is too slow: the kept one, said to be stale
+            elif not done:
+                out = ('Print gate of %s (fusion-bambulab; skill: gate): the digest took longer than %.1f s and was left '
+                       'out, and the gate keeps none yet (`%s` builds it). Run it before changing or exporting a part.' % (root, BUDGET_S, STATUS_COMMAND))
         if out:
             dst = stdout or sys.stdout
             dst.write(out.rstrip('\n') + '\n')

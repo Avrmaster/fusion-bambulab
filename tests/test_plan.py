@@ -912,3 +912,81 @@ class Rpc(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class WorldCoordinates(unittest.TestCase):
+    """The coordinates in a finding are in the part's own frame; a part placed off the document origin got rows a reader
+    looked for in the wrong place (an occurrence raised by 10 mm). Its rows also say where the place is in the document."""
+
+    def test_a_placed_part_gets_document_coordinates_and_keeps_its_anchor(self):
+        import gate_plan, gate_report
+        f = {'id': 'F-1', 'anchor': {'kind': 'hole', 'point': [1.0, 2.0, 3.0], 'axis': [0, 0, 1]}, 'text': 'hole at (1, 2, 3)'}
+        moved = [1, 0, 0, 5.0, 0, 1, 0, 0.0, 0, 0, 1, 10.0, 0, 0, 0, 1]
+        turned = [0, -1, 0, 0.0, 1, 0, 0, 0.0, 0, 0, 1, 0.0, 0, 0, 0, 1]                 # 90 degrees about z
+        self.assertEqual(gate_plan._with_world(f, moved)['world'], [6.0, 2.0, 13.0])
+        self.assertEqual(gate_plan._with_world(f, turned)['world'], [-2.0, 1.0, 3.0])
+        self.assertEqual(gate_plan._with_world(f, moved)['anchor'], f['anchor'])             # the id, the waivers and the answers stay tied to it
+        for m in ([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1], None, [1, 2], 'x'):
+            self.assertNotIn('world', gate_plan._with_world(f, m), m)
+        self.assertNotIn('world', gate_plan._with_world({'anchor': {'kind': 'part'}}, moved))
+        line = gate_report.group_lines(gate_report.group_rows([dict(gate_plan._with_world(f, moved), rule='r', part='demo/p', verdict='FAIL')]))[0]
+        self.assertIn('(in the document: (6, 2, 13))', line)
+        self.assertIn('where: hole at (1, 2, 3), axis (0, 0, 1) (part frame) (in the document: (6, 2, 13))',
+                      '\n'.join(gate_report._finding_md(gate_plan._with_world(f, moved))))
+
+
+class StaleReferences(unittest.TestCase):
+    """A document that uses an older version of a linked document than its newest holds old geometry of it: a screw ref
+    looked dead because the pocket it belongs to existed only in the newer version. The scan and the status say so."""
+
+    def census(self, refs):
+        return {'docs': {'demo': {'name': 'Demo', 'references': refs}}, 'parts': {}}
+
+    def test_an_old_version_is_said_once_per_document(self):
+        c = self.census([{'name': 'Gearbox', 'version': 26, 'latest': 33, 'out_of_date': True},
+                         {'name': 'Motor', 'version': 4, 'latest': 4, 'out_of_date': False}])
+        lines = gate_plan.stale_references(c, 'demo')
+        self.assertEqual(len(lines), 1)
+        self.assertIn("'Gearbox' in version 26, the newest is 33", lines[0])
+        self.assertEqual(len(gate_plan.stale_references(self.census([{'name': 'G', 'version': 2, 'latest': None, 'out_of_date': True}]), 'demo')), 1)
+        self.assertEqual(len(gate_plan.stale_references(self.census([{'name': 'G', 'version': 2, 'latest': 5, 'out_of_date': None}]), 'demo')), 1)
+        for refs in ([], [{'name': 'G', 'version': 5, 'latest': 5, 'out_of_date': False}], [{'name': 'G', 'out_of_date': None}], ['x']):
+            self.assertEqual(gate_plan.stale_references(self.census(refs), 'demo'), [], refs)
+        self.assertEqual(gate_plan.stale_references({'docs': {}, 'parts': {}}, 'demo'), [])
+
+    def test_the_scan_keeps_them_and_the_status_says_it_before_the_rows(self):
+        census = {'docs': {}, 'parts': {}}
+        result = {'new': [], 'changed': [], 'gone': [], 'clashes': []}
+        env = {'facts': {'parts': [], 'refs': [], 'references': [{'name': 'Gearbox', 'version': 26, 'latest': 33, 'out_of_date': True}]}}
+        gate_plan._merge_doc('/nonexistent', census, {'key': 'demo', 'name': 'Demo'}, env, result)
+        self.assertEqual(census['docs']['demo']['references'][0]['version'], 26)
+        notes = gate_plan.scan_notes('/nonexistent', {'documents': [{'key': 'demo', 'name': 'Demo'}]}, census, ['demo'])
+        self.assertTrue(any(n.startswith('OUT OF DATE demo:') for n in notes), notes)
+        st = {'mode': 'observe', 'parts': 0, 'changed': [], 'open': [{'id': 'F-1', 'rule': 'r', 'part': 'demo/p', 'verdict': 'FAIL', 'text': 'x'}],
+              'questions': [], 'unstamped_stls': [], 'triage_open': 0, 'inherited': 0, 'last_scan': 'now', 'unchecked': [], 'stale': [],
+              'stl_states': {}, 'unfinished': None, 'unreachable': [], 'stale_references': gate_plan.stale_references(census, 'demo')}
+        lines = gate_report._status_lines(st, rows=4)
+        self.assertTrue(lines[1].startswith('  OUT OF DATE demo:'), lines)
+
+    def test_the_probe_reads_the_references_once_and_never_fails_on_them(self):
+        with open(os.path.join(ROOT, 'tools', 'gate', 'probes', 'fusion_scan.py'), encoding='utf-8') as f:
+            text = f.read()
+        g = {}
+        exec(compile(text, 'fusion_scan', 'exec'), g)
+
+        class Ref:
+            def __init__(self, name, v, latest, old):
+                self.version, self.isOutOfDate = v, old
+                self.dataFile = type('F', (), {'name': name, 'latestVersionNumber': latest})()
+
+        class Broken:
+            @property
+            def isOutOfDate(self): raise RuntimeError('no')
+            version = 'x'
+            dataFile = None
+
+        doc = type('D', (), {'documentReferences': [Ref('Gearbox', 26, 33, True), Broken()]})()
+        rows = g['_scan_references'](doc)
+        self.assertEqual(rows[0] if rows[0]['name'] else rows[1], {'name': 'Gearbox', 'version': 26, 'latest': 33, 'out_of_date': True})
+        self.assertIn({'name': None, 'version': None, 'latest': None, 'out_of_date': None}, rows)
+        self.assertEqual(g['_scan_references'](object()), [])

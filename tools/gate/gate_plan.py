@@ -700,6 +700,9 @@ def _merge_doc(root, census, doc, env, result, registered=None):
                            'parts': len(seen), 'refs': len(facts.get('refs') or [])}
     if linked:
         census['docs'][key]['linked'] = linked
+    refs = [r for r in facts.get('references') or [] if isinstance(r, dict)]
+    if refs:
+        census['docs'][key]['references'] = refs
 
 
 def _merge_generators(root, census, layout, doc_key, result, only=None):
@@ -854,11 +857,30 @@ def parts_in_no_group(parts, groups):
     return sorted(pid for pid, e in parts.items() if _geom_rings.group_of(e.get('occurrence') or e.get('name') or '', groups, search) is None)
 
 
+def stale_references(census, key):
+    """Lines for the linked documents that document `key` uses in an older version than the newest one (the census
+    "references" of its last scan: DocumentReference.isOutOfDate, or a version under the newest): its parts from that
+    document are measured as they were. [] when none is, or the scan did not say."""
+    out = []
+    for r in (census['docs'].get(key) or {}).get('references') or []:
+        if not isinstance(r, dict):
+            continue
+        v, latest = r.get('version'), r.get('latest')
+        old = r.get('out_of_date') is True or (isinstance(v, int) and isinstance(latest, int) and v < latest)
+        if old:
+            out.append('%s: it uses the linked document %r in version %s, %s: what it holds of that document is measured as '
+                       'it was. Get the latest version in Fusion (the out-of-date reference), save, and scan again'
+                       % (key, r.get('name') or '?', v if v is not None else '?',
+                          'the newest is %s' % latest if isinstance(latest, int) else 'Fusion says it is out of date'))
+    return out
+
+
 def scan_notes(root, layout, census, doc_keys):
     """What a finished scan tells the reader ONCE per document, never once per part (lines of text):
 
       LINKED     how many printed bodies come from which linked document, and who judges them: this document, or the
                  linked document itself when it is registered in gate/layout.json (then they are not parts here);
+      OUT OF DATE  a linked document this one uses in an older version than its newest (stale_references);
       HINT       families of equal bodies in one component (fusion.bought_hint_same_bodies): probably bought, the
                  owner adds a "not_printed" pattern or leaves them. Nothing is left out by this;
       NO GROUP   parts that match no motion group, or a document that declares none: clearance.min_gap_moving does
@@ -875,6 +897,8 @@ def scan_notes(root, layout, census, doc_keys):
             else:
                 out.append('LINKED   %s: %d parts come from %s, which gate/layout.json does not register: they are judged here. '
                            'Its bought parts carry no prefix of this project: check the "not_printed" patterns' % (key, row.get('parts', 0), what))
+        for line in stale_references(census, key):
+            out.append('OUT OF DATE %s' % line)
         families = same_bodies(mine, n_same)
         if families:
             names = sorted({'%d x %r' % (len(v), (mine[v[0]].get('name') or v[0]).split(' / ')[0]) for v in families.values()})
@@ -1140,6 +1164,25 @@ def _waivers(root):
     return list(data.get('waivers') or []) if isinstance(data, dict) else []
 
 
+def _with_world(f, matrix):
+    """The finding with "world": its anchor point in the frame of the DOCUMENT (the census matrix of the part: component
+    -> document, translation in mm), when the part is placed off the document origin. The anchor itself stays in the
+    part's own frame (the id, the waivers and the answers are tied to it); "world" is only what a reader needs to find
+    the place in the assembly, and nothing reads it but the text of a row."""
+    try:
+        p = (f.get('anchor') or {}).get('point')
+        if not (isinstance(matrix, (list, tuple)) and len(matrix) == 16 and isinstance(p, (list, tuple)) and len(p) == 3):
+            return f
+        m = [float(v) for v in matrix]
+        if m == [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0]:
+            return f
+        x, y, z = (float(v) for v in p)
+        w = [round(m[4 * i] * x + m[4 * i + 1] * y + m[4 * i + 2] * z + m[4 * i + 3], 2) + 0.0 for i in range(3)]
+        return dict(f, world=w)
+    except (TypeError, ValueError):
+        return f
+
+
 def part_verdict(root, reg, part, sig=None, stages=('design',), defer_inherited=False):
     """What the stored judgements of one part add up to, with no Fusion call and no judging.
 
@@ -1188,7 +1231,7 @@ def part_verdict(root, reg, part, sig=None, stages=('design',), defer_inherited=
             name = rule['check']['judge']
             if name in gate_judges.JUDGES and j.get('judge_hash') != _judge_hash(name):
                 stale.append(rule['id'])
-            findings += [dict(f, id=gate_features.finding_id(f)) for f in j.get('findings') or [] if f.get('part', part) == part]
+            findings += [_with_world(dict(f, id=gate_features.finding_id(f)), entry.get('matrix')) for f in j.get('findings') or [] if f.get('part', part) == part]
     census_facts = _probe_facts(data, 'fusion_census')
     features = ((census_facts.get('holes') or []) + (census_facts.get('openings') or [])) if census_facts else None
     info = [f for f in findings if f.get('verdict') == 'INFO' and not f.get('ask')]

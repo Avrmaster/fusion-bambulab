@@ -2,6 +2,39 @@
 
 What each version of the plugin changes. Skills update with the plugin; the tools copied into a project do not. Read the section of a version before you refresh a project with `python3 <plugin>/tools/setup_project.py <dir> --update-tools`, and review `git diff` afterwards.
 
+## 0.2.4
+
+### Fixed
+
+- **The SessionStart digest was left out in a large project.** `gate_report.digest()` judges the stored facts of every part again; with some fifty parts and hundreds of open rows that takes seconds, the hook had 0.7 s, and every session started with "the digest took longer than 0.7 s and was left out" instead of the state of the gate. Now the gate keeps the digest: `gate.py status` and every command that can change the state (`scan`, `run`, `attest`, `export`, `verify`, `triage`, `owner`, `params`) write `gate/run/digest.json` when they end, with the state of its inputs taken before the digest was computed (`gate_digest.py`: sizes and modification times of the census, the facts, the owner's files, the answers, the stamps, the registered STL folders, the run in progress, and the code and rules that built it). The hook reads that file and checks the same inputs in milliseconds: when they are unchanged it prints the kept digest; when they changed it computes the digest now if that fits its budget, else it prints the kept digest with one line that says when it was built and what changed since (the scan, the facts, the run in progress, ...). Only a project with no kept digest yet gets the old one-line message, which now says that `gate.py status` builds it. A `run` or `scan` that needs more calls (exit 3) does not rebuild it: that would judge every part in every short call. Measured on a copy of a project with 49 parts: the hook takes 0.04 s with python3 and 0.09 s with /usr/bin/python3 (it was left out after 0.7 s); a stale digest is printed in about 1 s; `gate.py status` builds it in 1.4 s.
+- **The insert ref and the pocket named two different inserts, and the wall row said something else.** A ref named "insert M3x6x5" on the axis of the exact pocket of an M3x4x5 made the classifier take the pocket for an M3x6x5 in its band (rows of the same diameters are told apart by the insert named on the axis); its walls were measured 6 mm deep, into the boss behind it, and `inserts.wall` said 0.92 mm. Now (`_kind_named`): `inserts.pocket_shape` says that the hole is the exact pocket of one insert and the ref names another, and that one of the two is wrong, also when the hole is too short for the named insert (the row keeps its measure, limit, `by` and context, so its id and any triage item stay); `inserts.wall` gives NOT_RUN for that pocket (its walls were measured for the wrong insert) instead of a wall; `inserts.wall_at_relief`, `inserts.relief_missing` and `inserts.floor` say nothing about it. With the ref named after the pocket, every rule judges it as before.
+- **A clamp that preloads a bearing stack was a plain FAIL.** A turret top screwed to its tube across 1 mm of clamp room presses the outer ring of the upper bearing; the tube stands off that ring by the whole gap on purpose, and the load reaches the tube through the balls, the inner ring, a spacer and the lower bearing. `screws.shell_bears` failed those screws as air a wall bends into. The probe cannot follow that path, so the row stays a FAIL (same text, context and id) and now asks the new question `screws.load_through_bearing` (level attest): the owner's answer that the screws preload a bearing stack closes it. It is asked only when one part presses the bearing and the other stands off it by at least the whole gap: a part that stands off by less (a lip that falls short of the ring) stays the plain FAIL.
+
+### Added
+
+- Finding rows of a part placed off the document origin also say where the place is in the document: `"world"` beside the anchor (the census matrix of the part applied to the anchor point), ` (in the document: (x, y, z))` on the status and run lines and in the report. The anchor, the id, the waivers and the answers stay in the part's own frame.
+- `fusion_scan` reads, in its first call, the documents the document links (`Document.documentReferences`: name, the version it uses, the newest version, `isOutOfDate`) into `"references"`; the census keeps them per document, and the scan, the status and the digest say `OUT OF DATE <doc>: it uses the linked document 'X' in version 26, the newest is 33 ...` before any row: the parts of that document are measured as the old version holds them.
+
+### Not done
+
+- `screws.shell_bears` on a ring that one part's lip presses beside the screw axis at another radius, outside the slab of the gap ("Nothing bought stands in the gap within 8 mm" while a bearing stack does carry the clamp): the probe would need to follow bodies beyond the gap, which needs a measurement in a real Fusion. Still a FAIL.
+
+### Changes for a project after `--update-tools`
+
+- New file `gate/tools/gate_digest.py`; `gate/run/digest.json` appears after the first `gate.py status` (gate/run/ is git-ignored).
+- Judges changed (`inserts_pocket_shape`, `inserts_wall`, `inserts_wall_at_relief`, `inserts_relief_missing`, `inserts_floor`, `screws_shell_bears`): `gate.py run --all --offline` judges the stored facts again. The new question is asked at the part's next check, and for an inherited part at its export.
+- The `"references"` of a document appear with its next scan.
+
+### Privacy and side effects
+
+- The hook prints the text of `gate/run/digest.json` as it is: a file the gate wrote in that checkout. It runs no code of the project, as before.
+- `fusion_scan` reads the names and version numbers of the linked documents: no download, nothing written.
+
+### Tested
+
+- Without Fusion: the kept digest printed when it holds, printed with the stale line per group of inputs (census, facts, decisions, run, STL folders, code), giving way to one computed in time, left out with one line when none is kept; `gate.py status` and `verify` keep it, a `run` that needs more calls does not; a broken or foreign file is no kept digest. Kind mismatch, stack question, world coordinates and linked references each have fixtures or tests and their twins; each guard removed on a scratch copy failed its tests. Python 3.9 and 3.14.
+- In a real Fusion (macOS): `fusion_scan` of a document with one linked document, 1 call of 5 s, `"references"` read with its name, the version in use, the newest version and `isOutOfDate`.
+
 ## 0.2.3
 
 ### Fixed

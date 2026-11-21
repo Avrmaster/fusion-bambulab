@@ -409,6 +409,32 @@
       "note": "The air gap is measured along every screw whose head is on the part. The screw of a clamp washer on a bearing ring is left out (bearings.clamp_room). What stands in a gap is read by the screw unit (\"gaps\" of a screw: the two bodies either side, and the bought bodies in the gap, each with the air between it and either part on one line parallel to the screw). A gap that a bought body bridges is one INFO row per part that names the body, so the exception can be checked by eye; the ring itself is judged by the bearing rules. The screws of one part across a gap with the same body in it that does not bridge it are one row: one cause, one decision. Facts of an older unit hold no \"gaps\": the finding stays as it was and says to collect the facts again. The wall round the screw (screws.local_wall_min) is not measured yet: text only."
     },
     {
+      "id": "screws.load_through_bearing",
+      "title": "A clamp that goes on through a bearing is meant",
+      "statement": "Screws may clamp across an open gap between two parts when one part presses a bearing ring and the load goes on through the bearing to the other part: through its balls to the other ring, and on through what stands against that ring (a spacer, a second bearing) to the other part, so the screws preload a bearing stack. The gate measures only the bodies at the screw: it sees the ring one part presses and the other part standing off it, and asks.",
+      "why": "A turret preloads two bearings through a spacer with the screws of its top: the top presses the outer ring of the upper bearing, the tube stands off it on purpose, and the load reaches the tube through the balls, the inner ring, the spacer and the lower bearing. The gate failed every one of those screws as a gap the wall bends into.",
+      "params": [],
+      "check": null,
+      "level": "attest",
+      "stage": "design",
+      "fix_order": [
+        "A stack that is meant: write the load path into the build notes and answer the question with it.",
+        "No such path: let the part that stands off land on the ring, or close the gap (screws.shell_bears)."
+      ],
+      "attest": {
+        "question": "The screws of this part clamp across an open gap; {by} is pressed by one of the two parts, and the other stands off it (the finding says by how much). Does the load go on from that bearing, through its balls and its other ring and what stands against that ring, to the other part, so that the screws preload a bearing stack?",
+        "evidence": [
+          "label",
+          "waiver"
+        ],
+        "per": "finding",
+        "labels": [
+          "the screws preload a bearing stack: the load goes through the bearing and what stands against its other ring to the other part, and the build notes say so"
+        ]
+      },
+      "note": "Asked through the finding of screws.shell_bears for a bearing met beside the gap that only one of the two parts presses. With no such path no label is true, and the finding stays."
+    },
+    {
       "id": "screws.hole_through",
       "title": "The whole screw path is open",
       "statement": "For every screw the path head seat, clearance hole, thread is open: no more than {screws.solid_shank_max} of the shank lies in solid printed plastic. Holes are cut through-all or {screws.hole_overcut} past the face, never to a typed depth that a later growth of the body can close. Holes and pockets are checked again after every join or fill. One skin is meant: the sacrificial bridge right under a head whose counterbore prints facing the bed, up to one bridge step ({overhang.bridge_step}) thick. It is told with its bench step and does not fail here; whether it is a bridge layer or a leftover skin is asked once, by access.hole_closed. The same skin anywhere else along the screw fails.",
