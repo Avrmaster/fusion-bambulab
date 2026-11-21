@@ -50,6 +50,13 @@ class Base(unittest.TestCase):
 
 
 class Bundle(Base):
+    def test_the_dry_run_of_enforce_warns_that_every_save_of_a_file_with_unstamped_objects_is_refused(self):
+        gate_common.write_json(gate_common.gate_path(self.d, 'run', 'saves.json'), {'projects': {'bambulab/Demo.3mf': {'unchecked': ['bracket', 'cover']}}})
+        code, out, err = self.gate('owner', 'bundle', self.proposal([{'kind': 'mode', 'mode': 'enforce'}]), '--dry-run')
+        self.assertEqual(code, 0, err)
+        self.assertIn('WARNING bambulab/Demo.3mf: 2 object(s) have no stamp', out); self.assertIn('every save of this file', out)
+        self.assertNotIn('still let through', out)
+
     def test_a_dry_run_shows_every_change_and_writes_nothing(self):
         before = self.files()
         os.remove(os.path.join(self.d, '.claude', 'settings.json'))         # no prompt is needed for it, and no quote

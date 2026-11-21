@@ -458,9 +458,12 @@ class WholeChain(Lamp):
         code, out = self.run_gate('--part', FOOT)
         facts = self.by_facts(FOOT)
         self.assertEqual(code, 2); self.assertIn('1 parts, 0 open, %d questions' % (self.n_design - facts), out)     # its questions are asked again for the new body
-        bed = gate_attest.fact_answer(self.root, self.reg, self.reg['rules']['print.bed_face'], FOOT, new)       # the project holds the foot: its bed face is measured
-        self.assertEqual((bed['kind'], bed['as']), ('facts', 'label')); self.assertIn('measured on the saved project: %s: Lamp foot' % PROJ, bed['proof'])
-        self.assertEqual(self.answer_all(printed_interface_change='a copy is printed; no interface moved, the printed copies still fit'), self.n_asked - facts - 1)
+        # the project still places the v2 foot and stl/lamp_foot.stl is the v2 export: the bed face of v3 is earlier geometry, not measured,
+        # so print.bed_face is asked for the new body instead of being answered by the facts (and a stamp never rests on that false proof)
+        self.assertIsNone(gate_attest.fact_answer(self.root, self.reg, self.reg['rules']['print.bed_face'], FOOT, new))
+        frame = gate_plan.print_frame(self.root, FOOT, gate_common.load_census(self.root)['parts'][FOOT])
+        self.assertEqual(frame['from'], 'earlier geometry')
+        self.assertEqual(self.answer_all(printed_interface_change='a copy is printed; no interface moved, the printed copies still fit'), self.n_asked - facts)
         self.assertEqual(self.run_gate('--offline', '--part', FOOT)[0], 0)
         self.fusion.clear('fusion_export', FOOT); self.fusion.set_export(FOOT, stl_bytes(MESHES['foot v3'](), 'Lamp foot'))
         code, out, err = self.gate('export', FOOT)
@@ -480,10 +483,11 @@ class WholeChain(Lamp):
     def step_9_the_session_start_digest_names_what_is_open(self):
         text = gate_hook.output(self.root)
         self.assertEqual(text.splitlines()[0], 'Print gate of %s (fusion-bambulab; skill: gate)' % self.root)
-        # the foot was exported again and the project still places its earlier mesh: its bed face is known, but what faces down on the
-        # new geometry is not placed, pre-checked or sliced yet, so print.bed_face is asked again, not answered by the facts
-        self.assertIn('gate [enforce]: 3 parts | 0 changed, not checked | 1 checked, no stamp | 2 stamped | 1 open findings | 1 questions | 1 STLs without a valid stamp', text)
-        self.assertRegex(text, r'  ASK     %s  print.bed_face  ' % FOOT)
+        # the foot was exported again while the project still placed its earlier mesh: print.bed_face was asked for the new body and
+        # answered by a label before the export (step 8), so its stamp, status and export say the same: stamped, no question open
+        self.assertIn('gate [enforce]: 3 parts | 0 changed, not checked | 1 checked, no stamp | 2 stamped | 1 open findings | 0 questions | 1 STLs without a valid stamp', text)
+        self.assertNotRegex(text, r'  ASK     %s  print.bed_face  ' % FOOT)
+        self.assertEqual(gate_stamp.verify(self.root, self.reg, self.stamp(FOOT))[0], 'valid')
         self.assertRegex(text, r'  FAIL    %s  walls.min_material  wall 0.86 mm .* under 1.5  \[F-[0-9a-f]{6}\]' % CLIP)
         self.assertIn('  checked, no stamp yet (not exported): %s' % CLIP, text); self.assertIn('  STLs without a valid stamp: stl/cable_clip.stl', text)
         self.assertIn('python3 gate/tools/gate.py run --changed', text); self.assertNotIn('forked', text); self.assertNotIn('older than', text)

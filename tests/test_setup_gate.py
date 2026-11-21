@@ -189,6 +189,17 @@ class ExistingProject(Tmp):
 
 
 class UpdateTools(Tmp):
+    def test_an_update_writes_rules_md_again_and_names_the_rules_of_an_older_template(self):
+        self.setup('--name', 'Demo', '--gate')
+        os.makedirs(self.path('.claude'))
+        gate_common.write_json(self.path('.claude', 'settings.json'), {'permissions': {'ask': ['Edit(/gate/owner/**)', 'Bash(*gate.py * owner *)']}})
+        with open(self.path('gate', 'RULES.md'), 'w', encoding='utf-8') as f: f.write('the rules of an older copy\n')
+        r = self.setup('--update-tools')
+        self.assertIn('PROPOSED REMOVAL', r.stdout); self.assertIn('Bash(*gate.py * owner *)', r.stdout); self.assertIn('"ask": Edit(/gate/owner/**)', r.stdout)
+        self.assertIn(json.dumps(DENY[0]), r.stdout)                                     # and the deny rules of this version
+        self.assertNotEqual(read(self.path('gate', 'RULES.md')), 'the rules of an older copy\n')      # generated: it follows the vendored rules
+        self.assertIn('warn  settings', self.gate('doctor').stdout)
+
     def test_update_tools_refreshes_the_gate_and_its_lock(self):
         self.setup('--name', 'Demo', '--gate')
         gate_vendor.write_lock(self.p, '0.0.1')

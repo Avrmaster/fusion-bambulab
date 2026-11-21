@@ -556,24 +556,68 @@ def _check(root, path, meshes, files=None, asked=None, via=None):
     remember = (lambda facts: None) if outside else (lambda facts: _remember(root, prel, facts))
     try:
         res = _check_meshes(root, path, meshes, project, layout, entry, res, prel, via)
-        _slice_line(root, path, files, mode, entry, res)    # before _remember: a refused save leaves the memory of the file on disk
-        _overhang_line(root, path, files, mode, entry, res)
+        # an unregistered file or one outside the tree is judged like a registered project in enforce mode (no declared
+        # target, no slice record of its own): the overhang pre-check runs on it all the same
+        used = entry if entry is not None else ({} if mode == 'enforce' else None)
+        turned = _turned(root, path, files, res, outside)
+        _slice_line(root, path, files, mode, used, res, turned)    # before _remember: a refused save leaves the memory of the file on disk
+        _overhang_line(root, path, files, mode, used, res, turned)
     except GuardRefusal:                                    # refused: the file stays as it is on disk
         remember(got.get('disk'))
+        _restore_slice(root, res)
         raise
     except Exception:                                       # the judging broke: enforce refuses, observe writes (check())
         remember(got.get('disk') if mode == 'enforce' else (got.get('after') or got.get('disk')))
+        if mode == 'enforce':
+            _restore_slice(root, res)
         raise
     remember(got.get('after') or got.get('disk'))           # the save goes on: this is what the file holds next
     return res
 
 
-def _slice_line(root, path, files, mode, entry, res):
-    """print.slice_support_growth on the archive of a save that brings new meshes (gate_slice.before_write): one line,
-    logged and printed; a refusal only in enforce mode with the owner's "slice_before_write". A save that brings nothing
-    new says nothing here. Any other trouble is logged and the save goes on."""
-    if not entry or not isinstance(files, dict) or not res.get('new'):
+def _turned(root, path, files, res, outside):
+    """Names of the objects of the archive that bring no new mesh and still lie otherwise than in the file on disk: a
+    stamped part placed in a new pose, turned in its build item, or under other per-object or support settings (the slice
+    key of probes.project_slice differs). The overhang pre-check and the slice look at them like at a new mesh."""
+    if not isinstance(files, dict):
+        return []
+    try:
+        from probes import project_slice
+        now = project_slice.slice_keys(files)
+        before = project_slice.slice_keys(path) if not outside and os.path.isfile(path) else {}
+    except Exception:
+        return []
+    new = set(res.get('new') or [])
+    return sorted({name for (index, name), (_pose, k) in now.items() if name not in new and (before.get((index, name)) or (None, None))[1] != k})
+
+
+def _restore_slice(root, res):
+    """A save refused after its changed plates were sliced into the record: those plates get back what the record held
+    for the file on disk (gate_slice.restore)."""
+    back = res.get('slice_restore') if isinstance(res, dict) else None
+    if back:
+        try:
+            import gate_slice
+            gate_slice.restore(root, back[0], back[1])
+        except Exception as e:
+            log(root, 'the slice record could not be put back after the refusal: %s: %s' % (type(e).__name__, e))
+
+
+def _slice_line(root, path, files, mode, entry, res, turned=()):
+    """print.slice_support_growth on the archive of a save whose plates change (gate_slice.before_write): one line,
+    logged and printed; a refusal only in enforce mode with the owner's "slice_before_write". A plate changes with a new
+    mesh, a turn of an object or a support setting (project_slice.changed_plates); a save that changes no plate says
+    nothing here. Any other trouble is logged and the save goes on. entry {}: a file judged like a registered project
+    (no record of its own: only the pre-check of the overhangs runs)."""
+    if entry is None or not isinstance(files, dict) or not entry.get('key'):
         return
+    if not res.get('new') and not turned:
+        try:
+            from probes import project_slice
+            if not project_slice.changed_plates(root, entry, source=files):
+                return
+        except Exception:
+            pass
     try:
         import gate_slice
         got = gate_slice.before_write(root, path, files, mode, entry)
@@ -584,20 +628,24 @@ def _slice_line(root, path, files, mode, entry, res):
         got = {'line': 'gate slice: the supports of this save were not judged (%s)' % e, 'error': True}
     except Exception as e:
         got = {'line': 'gate slice: the supports of this save were not judged (%s: %s)' % (type(e).__name__, e), 'error': True}
-    res['slice'] = {k: v for k, v in got.items() if k != 'open'}
+    if got.get('restore') is not None:
+        res['slice_restore'] = (entry.get('key'), got['restore'])
+    res['slice'] = {k: v for k, v in got.items() if k not in ('open', 'restore')}
     if got.get('line') and (got.get('grew') or got.get('error')):         # loud when a support grew; a slice still owed is said by verify
         log(root, got['line'])
         print(got['line'])
 
 
-def _overhang_line(root, path, files, mode, entry, res):
-    """print.overhang_angle on the objects of a save that bring new meshes (gate_slice.overhangs_before_write): loud
-    for every object that hangs over air, a refusal in enforce mode. Other trouble is logged and the save goes on."""
-    if not entry or not isinstance(files, dict) or not res.get('new'):
+def _overhang_line(root, path, files, mode, entry, res, turned=()):
+    """print.overhang_angle on the objects of a save that bring new meshes or lie otherwise than on disk (_turned)
+    (gate_slice.overhangs_before_write): loud for every object that hangs over air, a refusal in enforce mode. Other
+    trouble is logged and the save goes on. entry {}: a file judged like a registered project."""
+    names = list(res.get('new') or []) + [n for n in turned or () if n not in (res.get('new') or [])]
+    if entry is None or not isinstance(files, dict) or not names:
         return
     try:
         import gate_slice
-        got = gate_slice.overhangs_before_write(root, path, files, mode, entry, res['new'])
+        got = gate_slice.overhangs_before_write(root, path, files, mode, entry, names)
     except GateError as e:
         if type(e).__name__ == 'SliceRefusal':
             log(root, '%s REFUSED (overhangs)' % mode)
@@ -885,6 +933,16 @@ def cmd_verify(root, args):
     except NotImplementedError:                             # the report module is not built: the result is still said
         print('gate verify: %d project(s), %d open' % (len(results), n_open))
     for r in results:
-        for f in r['open']:
+        owed = 'project %s was never sliced by the gate' % r['project']
+        rows = r['open']
+        if any(owed in (f.get('text') or '') for f in rows):     # one cause, one row: the NOT_RUNs of every object it leaves unmeasured fold into it
+            folded = [f for f in rows if f.get('verdict') == 'NOT_RUN' and f.get('rule') == 'print.overhang_angle' and 'never sliced' in (f.get('text') or '')]
+            rows = [f for f in rows if f not in folded]
+            if folded:
+                print('  NOT_RUN print.overhang_angle %s: %d object row(s) wait for the first slice (gate.py slice %s)' % (r['project'], len(folded), r['project']))
+        cap = int(getattr(args, 'all_rows', 0) or 0) or 40
+        for f in rows[:cap]:
             print('  %s %s %s: %s' % (f.get('verdict'), f.get('rule'), f.get('part'), f.get('text')))
+        if len(rows) > cap:
+            print('  ... and %d more rows of %s (the report gate/reports/latest.json holds every one)' % (len(rows) - cap, r['project']))
     return EXIT_BLOCK if n_open else EXIT_PASS

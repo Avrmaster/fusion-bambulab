@@ -102,7 +102,18 @@ def live_answers(root, part, reg=None):
     if reg is not None:
         out = [a for a in out if not ((a.get('anchor') or {}).get('kind') == 'part' and a.get('sig')
                                       and stored_contradicted(root, reg, a.get('rule'), part, a['sig'], a.get('kind'), a.get('value')))]
+        out = [a for a in out if a.get('kind') != FACTS or _facts_still(root, reg, part, a)]
     return out
+
+
+def _facts_still(root, reg, part, a):
+    """Do the facts still give the stored answer `a` of kind "facts" (fact_answer: the same value)? The test status and
+    export make (questions_for_part), so that a stamp never rests on an answer they show as an open question."""
+    rule = (reg.get('rules') or {}).get(a.get('rule'))
+    if not isinstance(rule, dict) or not a.get('sig'):
+        return False
+    got = fact_answer(root, reg, rule, part, a['sig'])
+    return isinstance(got, dict) and got.get('value') == a.get('value') and got.get('as', a.get('as')) == a.get('as', got.get('as'))
 
 
 def answers_gone(root, part, qids, reg=None):

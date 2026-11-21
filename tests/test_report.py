@@ -154,7 +154,7 @@ class Report(Reported):
         self.assertEqual((r['exit'], r['parts'][0]['part'], r['parts'][0]['units'], r['findings'][0]['of'], r['params']), (1, 'main:', {'done': 0, 'total': 0}, 'main:', []))
         md = gate_report.render_md(r)
         self.assertIn('## main:: fail', md); self.assertIn('stl/bracket.stl has no stamp', md); self.assertIn('part: demo/bracket', md)
-        self.assertTrue(gate_report.summary_line(r).startswith('gate verify r-verify: 1 parts, 1 open'))
+        self.assertTrue(gate_report.summary_line(r).startswith('gate verify r-verify: 1 projects, 1 open'))
 
 
 class Triage(Reported):
@@ -371,6 +371,23 @@ class Status(Reported):
         os.remove(self.demo.path('gate', 'run', 'stl_hashes.json'))
         st = gate_report.status(self.root, hash_budget_s=-1)                                 # no time to hash: unknown, not "unstamped"
         self.assertEqual((set(st['stl_states'].values()), st['unstamped_stls']), ({'unknown'}, []))
+
+    def test_an_stl_whose_stamp_no_longer_holds_is_stale_and_a_project_owed_a_slice_is_said(self):
+        self.stl('bracket.stl'); self.stl('cover.stl', 12.0)
+        self.stamp(BRACKET, 'stl/bracket.stl'); self.stamp(COVER, 'stl/cover.stl')
+        self.assertEqual(gate_report.status(self.root)['stl_states']['stl/cover.stl'], 'valid')
+        s = gate_common.read_json(gate_common.stamp_path(self.root, COVER, self.sigs[COVER]))
+        s['checks'][sorted(s['checks'])[0]]['judge_hash'] = 'an older judge'             # the same bytes, a stamp that no longer verifies
+        gate_common.write_json(gate_common.stamp_path(self.root, COVER, self.sigs[COVER]), s)
+        st = gate_report.status(self.root)
+        self.assertEqual((st['stl_states']['stl/cover.stl'], st['stl_states']['stl/bracket.stl']), ('stale', 'valid'))
+        layout = self.demo.read('gate', 'layout.json')
+        os.makedirs(self.demo.path('bambulab'), exist_ok=True)
+        with open(self.demo.path('bambulab', 'Demo.3mf'), 'w') as f: f.write('x')
+        gate_common.write_json(self.demo.path('gate', 'layout.json'), dict(layout, projects=[{'key': 'main', 'file': 'bambulab/Demo.3mf', 'stl_dir': 'stl'}]))
+        st = gate_report.status(self.root)
+        self.assertEqual(st['slice_owed'], [('main', 'never')])
+        self.assertIn('project main was never sliced by the gate: python3 gate/tools/gate.py slice main', '\n'.join(gate_report._status_lines(st)))
 
     def test_the_status_command_and_its_exit_codes(self):
         code, out, err = self.demo.gate('status')

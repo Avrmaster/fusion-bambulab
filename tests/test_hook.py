@@ -326,6 +326,21 @@ class KeptDigest(Digest):
         with open(os.path.join(tools, 'gate_judges.py'), 'w') as f: f.write('# v2, another judge\n')
         self.assertEqual(gate_digest.changed(root, rec), ['stls', 'code'])
 
+    def test_a_write_of_a_registered_project_or_a_slice_makes_it_stale(self):
+        root = self.gated()
+        gate_common.write_json(gate_common.gate_path(root, 'layout.json'), {'projects': [{'key': 'main', 'file': 'bambulab/Demo.3mf', 'stl_dir': 'stl'}]})
+        os.makedirs(os.path.join(root, 'bambulab'))
+        with open(os.path.join(root, 'bambulab', 'Demo.3mf'), 'w') as f: f.write('v1')
+        import gate_digest
+        gate_digest.write(root, 'gate [observe]: kept', gate_common.tools_dir(), gate_common.rules_dir(), 'test')
+        rec = gate_digest.read(root)
+        self.assertEqual(gate_digest.changed(root, rec), [])
+        with open(os.path.join(root, 'bambulab', 'Demo.3mf'), 'w') as f: f.write('v2, a guarded save')
+        self.assertEqual(gate_digest.changed(root, rec), ['projects'])          # the bed face of a part is read from it
+        gate_digest.write(root, 'gate [observe]: kept', gate_common.tools_dir(), gate_common.rules_dir(), 'test')
+        gate_common.write_json(gate_common.gate_path(root, 'run', 'slice', 'main.json'), {'v': 1})
+        self.assertEqual(gate_digest.changed(root, gate_digest.read(root)), ['projects'])
+
     def test_a_broken_or_foreign_file_is_no_kept_digest(self):
         import gate_digest
         root = self.gated()

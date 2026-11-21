@@ -35,9 +35,15 @@ A stamp is VALID for a mesh when all hold (verify):
     neighbour that can close a hole of the part re-opens its stamp. Facts measured by a copy of the gate older than
     gate_deps.py hold no record of what they read: for them only the first test applies, and `gate.py run --changed`
     measures them again.
+  - the print orientation and the tables each check was judged with (its "inputs": gate_plan.judge_inputs) are today's,
+    or the checks whose inputs changed still pass when they are judged again from the stored facts (a part turned on its
+    bed, or placed on a face after an export while it lay nowhere, is judged on that face; a stock list the owner
+    changed in gate/owner/tables.json is held against the part).
 Anything else is "stale" with the reason; no stamp at all is "none".
 What does NOT kill a stamp: a new version of the plugin or of the vendored copy (the lock only says whether the copy is
-intact), a change to a judge of another rule, a change to a rule's text, a new attest or advice rule.
+intact; a probe text or a Fusion version that changed makes `run --changed` measure the units again, and the stamp goes
+stale only when the facts then come out otherwise), a change to a judge of another rule, a change to a rule's text, a
+new attest or advice rule.
 
 A dead stamp is replaced, never edited: export writes the next stamp of the same signature beside the first one as
 <sig12>.2.json, <sig12>.3.json, ... (write(..., supersede=True)). The same is how one geometry holds a stamp for two
@@ -305,6 +311,9 @@ def build(root, reg, resolved, part, sig, judged, stl_path, target, attested=0, 
         tolerated += len(still) - len(left)
         checks[rid] = {'judge_hash': j['judge_hash'], 'params': dict(j.get('params') or {}),
                        'result': 'pass' if not blocking else 'waived' if not still else 'tolerated' if len(left) < len(still) else 'attested'}
+        inputs = {k: j[k] for k in ('print', 'tables') if isinstance(j.get(k), str)}
+        if inputs:
+            checks[rid]['inputs'] = inputs              # the print orientation and the tables it was judged with (verify)
     ids = gate_common.sibling('meshid').stl_ids(stl_path)
     n = max(int(attested or 0), by_answers)
     stamp = {'part': part, 'sig': sig, 'verdict': 'pass_attested' if (n or tolerated) else 'pass', 'attested': n, 'checks': checks,
@@ -367,9 +376,64 @@ def _neighbours_moved(root, reg, stamp, census):
         units = gate_plan.stale_units(root, reg, census=census, parts=[stamp['part']]).get(stamp['part']) or {}
     except GateError as e:
         return 'what the part was measured against cannot be read back (%s)' % e
+    import gate_deps
     for probe, why in sorted(units.items()):
-        if why and isinstance(probes.get(probe), dict) and isinstance(probes[probe].get('deps'), dict):
-            return '%s: %s' % (probe, why)
+        if why and not gate_deps.tool_reason(why) and isinstance(probes.get(probe), dict) and isinstance(probes[probe].get('deps'), dict):
+            return '%s: %s' % (probe, why)              # a new probe text or Fusion version measures again (stale_units) but kills nothing
+    return None
+
+
+def _advice(root, stamp):
+    """What a stale check of this stamp needs: the stored facts judged again (`run --offline`), or, when facts of the
+    stamped geometry hold no record of what they read (measured by an older copy of the gate), measured again first."""
+    probes = gate_common.load_facts(root, stamp.get('part'), stamp.get('sig')).get('probes') or {}
+    old = [k for k, e in probes.items() if k.startswith('fusion_') and isinstance(e, dict) and not isinstance(e.get('deps'), dict)]
+    return 'gate.py run --changed, then export' if old else 'gate.py run --offline, then export'
+
+
+def _open_findings(root, part, findings):
+    """The blocking findings out of `findings` that no waiver, triage decision or answer closes today."""
+    import gate_features
+    waivers = (gate_common.read_json(gate_common.gate_path(root, 'owner', 'waivers.json'), {}) or {}).get('waivers') or []
+    blocking = [f for f in findings or [] if f.get('verdict') in BLOCKING and f.get('part', part) == part]
+    still, _w, _r = gate_features.apply_waivers(blocking, waivers, part=part)
+    cache = {}
+    return [f for f in still if not _closed_by_triage(root, part, f, cache) and not _closed_by_answer(root, part, f, cache)]
+
+
+def _inputs_moved(root, reg, stamp, entry, resolved, target):
+    """Why a check of the stamp no longer passes because the print orientation or the tables it was judged with changed
+    (the part turned on its bed in a saved project, placed on a face for the first time, a row of gate/owner/tables.json),
+    or None. Only the checks whose stored inputs differ from today's are judged again, from the stored facts, in memory
+    (a judgement stored since with today's inputs is taken over); the stamp holds while every one of them still passes."""
+    import gate_plan
+    held = {rid: c.get('inputs') for rid, c in stamp['checks'].items() if isinstance(c, dict) and isinstance(c.get('inputs'), dict)}
+    if not held or not entry:
+        return None
+    today = gate_plan.judge_inputs(root, reg, stamp['part'], entry)
+    moved = {rid: [k for k in ('print', 'tables') if k in got and got[k] != today[k]] for rid, got in held.items()}
+    moved = {rid: ks for rid, ks in moved.items() if ks}
+    if not moved:
+        return None
+    judged = gate_common.load_facts(root, stamp['part'], stamp['sig']).get('judged') or {}
+    again = []
+    for rid in sorted(moved):
+        j = judged.get(rid)
+        if isinstance(j, dict) and all(j.get(k) == today[k] for k in ('print', 'tables')) and isinstance(j.get('findings'), list) \
+                and j.get('judge_hash') == stamp['checks'][rid].get('judge_hash'):
+            if _open_findings(root, stamp['part'], j['findings']):
+                return rid, moved[rid], _open_findings(root, stamp['part'], j['findings'])[0]
+        else:
+            again.append(rid)
+    if again:
+        try:
+            got = gate_plan.judge_part(root, reg, resolved, stamp['part'], sig=stamp['sig'], target=target, rules=set(again), store=False)
+        except GateError as e:
+            return again[0], moved[again[0]], {'text': 'it cannot be judged again (%s)' % e}
+        for rid in again:
+            left = _open_findings(root, stamp['part'], got.get(rid))
+            if left:
+                return rid, moved[rid], left[0]
     return None
 
 
@@ -475,7 +539,7 @@ def verify(root, reg, stamp, geom_hash=None, census=None, target=None, resolved=
         except KeyError:
             return 'stale', 'the judge of %s (%s) does not exist' % (rid, name)
         if check.get('judge_hash') != today:
-            return 'stale', 'the judge of %s changed since the stamp: that check is open again (gate.py run --offline, then export)' % rid
+            return 'stale', 'the judge of %s changed since the stamp: that check is open again (%s)' % (rid, _advice(root, stamp))
         if resolved is None:
             try:
                 resolved = _resolved_for(root, reg, _target_today(root, stamp, target))
@@ -484,10 +548,20 @@ def verify(root, reg, stamp, geom_hash=None, census=None, target=None, resolved=
         moved = _stricter_params(reg, resolved, reg['rules'][rid], check.get('params'))
         if moved:
             name_, then, now = moved[0]
-            return 'stale', ('%s was judged with %s = %s, today it is %s: that check is open again (gate.py run --offline, then export)'
-                             % (rid, name_, 'nothing' if then is None else then, now))
+            return 'stale', ('%s was judged with %s = %s, today it is %s: that check is open again (%s)'
+                             % (rid, name_, 'nothing' if then is None else then, now, _advice(root, stamp)))
         if check['result'] != 'pass' and _still_closed(root, part, sig, rid) is False:
             return 'stale', 'the %s result of %s no longer holds: a finding of that check is open again (its waiver, answer or decision is gone)' % (check['result'], rid)
+    if entry and entry.get('sig') == sig:
+        try:
+            got = _inputs_moved(root, reg, stamp, entry, resolved if resolved is not None else _resolved_for(root, reg, _target_today(root, stamp, target)),
+                                _target_today(root, stamp, target))
+        except GateError as e:
+            got = (None, ['print'], {'text': 'the print orientation cannot be worked out (%s)' % e})
+        if got:
+            rid, what, f = got
+            return 'stale', ('the %s that %s was judged with changed since the stamp, and today it does not pass: %s (gate.py run --offline, then export)'
+                             % (' and the '.join({'print': 'print orientation', 'tables': 'tables'}[k] for k in what), rid or 'a check', f.get('text') or f.get('verdict')))
     if stamp.get('answers'):
         import gate_attest
         gone = gate_attest.answers_gone(root, part, stamp['answers'], reg)
@@ -795,7 +869,7 @@ def export_part(root, reg, resolved, part, target_key=None, wall_s=20.0, transpo
     job = gate_fusion_rpc.new_job('u-0001', run, 'fusion_export', doc.get('name'), doc_key,
                                   os.path.join(gate_common.run_dir(root, run), 'units', 'u-0001.json'), part=part,
                                   component_id=entry.get('component_id'), occurrence=entry.get('occurrence'), body=entry.get('body'),
-                                  sig=sig, deadline_s=budget, params=gate_params.values(resolved), tables=reg.get('tables'), target=target,
+                                  sig=sig, deadline_s=budget, params=gate_params.values(resolved), tables=gate_plan._probe_tables(reg), target=target,
                                   not_printed=project.get('not_printed'), motion_groups=doc.get('motion_groups'),
                                   args={'stl': quarantine, 'name': entry.get('name') or slug})
     os.makedirs(os.path.dirname(job['out']), exist_ok=True)

@@ -86,7 +86,8 @@ INJECTED = re.compile(r'<(system-reminder|task-notification|cross-session-messag
 # code an interpreter runs (python -c, node -e, a here-document fed to one) that writes files. Shell code is not
 # matched by this: it is parsed for its targets (written_paths), so a "->" in a text is no write
 WRITE_MARKERS = re.compile(r'open\([^)]*[\'"][wax]b?\+?[\'"]|write_text|write_bytes|json\.dump\(|\.write\(|shutil\.(copy|move|rmtree)|os\.(replace|rename|remove|unlink|truncate)|'
-                           r'\.unlink\(|\bfs\.write|writeFileSync|copyFileSync|renameSync|unlinkSync|rmSync')
+                           r'\.unlink\(|\bfs\.write|writeFileSync|copyFileSync|renameSync|unlinkSync|rmSync|'
+                           r'\bwrite_jsonl?\(|\bappend_jsonl\(|_write_json\(|_append\(|_locked_update\(')     # the gate's own writers (gate_common)
 TO_STDOUT = re.compile(r'sys\.std(?:out|err)\.write\(|json\.dump\((?=[^\n]*\bsys\.std(?:out|err)\b)')
 HEREDOC = re.compile(r'<<-?[ \t]*([\'"]?)([A-Za-z_][A-Za-z0-9_]*)\1[^\n]*\n(.*?)(?:\n[ \t]*\2[ \t]*(?=\n|$)|$)', re.S)
 INTERPRETERS = ('python', 'python3', 'python2', 'node', 'ruby', 'perl', 'php', 'osascript')
@@ -299,14 +300,17 @@ def target_keys(root):
         return []
 
 
-def run_command(root):
-    """The exact command that checks the changed parts."""
+def run_command(root, cwd=None):
+    """The exact command that checks the changed parts; from a folder `cwd` outside the root it starts with cd root."""
     keys = target_keys(root)
+    cd = ''
+    if cwd and root and _rel_in(root, cwd) is None:
+        cd = 'cd %s && ' % shlex.quote(root)
     if len(keys) == 1:
-        return 'python3 gate/tools/gate.py run --changed --for %s' % keys[0]
+        return cd + 'python3 gate/tools/gate.py run --changed --for %s' % keys[0]
     if keys:
-        return 'python3 gate/tools/gate.py run --changed --for <KEY> (KEY: any of %s; --changed takes every changed part whatever the key)' % ', '.join(keys)
-    return 'python3 gate/tools/gate.py run --changed'
+        return cd + 'python3 gate/tools/gate.py run --changed --for <KEY> (KEY: any of %s; --changed takes every changed part whatever the key)' % ', '.join(keys)
+    return cd + 'python3 gate/tools/gate.py run --changed'
 
 
 def can_record(root):
@@ -371,6 +375,13 @@ def _scan(text):
                 j = text.find('\n', i)                      # a comment: to the end of the line
                 i = n if j < 0 else j
                 continue
+            if c.isdigit() and (i == 0 or text[i - 1] in ' \t\n;&|()'):
+                j = i
+                while j < n and text[j].isdigit():
+                    j += 1
+                if j < n and text[j] in '<>':
+                    i = j                                   # 2>/dev/null, 3<in: the number names a file descriptor, it is no word
+                    continue
         elif c == '"':
             q = None
             out.append(c)
@@ -627,6 +638,8 @@ def _dest(name, argv, rest, join):
     t_opt = _opt(argv, '-t', '--target-directory')
     if t_opt is not None:
         target, srcs = t_opt, [r for r in rest if r != t_opt]
+    elif name == 'ln' and len(rest) == 1:
+        target, srcs = '.', rest                            # `ln -s SRC`: the link lands in the folder the command runs in
     elif rest:
         target, srcs = rest[-1], rest[:-1]
     else:
@@ -658,10 +671,16 @@ def command_paths(cmds):
         rest = _args(argv)
         if name in ('rm', 'rmdir', 'unlink', 'shred'):
             paths += [(join(p), 'remove') for p in rest]
+        elif name in ('touch', 'truncate'):
+            vals = ('-r', '--reference', '-d', '--date', '-t', '-s', '--size')     # a reference file, a date, a size: no target
+            skip = {k + 1 for k, a in enumerate(argv) if a in vals}
+            paths += [(join(a), 'write') for k, a in enumerate(argv) if k > 0 and k not in skip and not a.startswith('-')]
         elif name in WRITERS_ALL:
             paths += [(join(p), 'write') for p in rest]
         elif name == 'mv':
-            paths += [(join(p), 'remove') for p in rest[:-1]] + _dest(name, argv, rest, join)
+            t_opt = _opt(argv, '-t', '--target-directory')
+            gone = [p for p in rest if p != t_opt] if t_opt is not None else rest[:-1]
+            paths += [(join(p), 'remove') for p in gone] + _dest(name, argv, rest, join)
         elif name in WRITERS_LAST:
             paths += _dest(name, argv, rest, join)
         elif name == 'dd':
@@ -679,7 +698,8 @@ def command_paths(cmds):
                 paths.append((join(o), 'write'))
         elif name == 'unzip' and not any(a in argv for a in ('-l', '-t', '-p', '-v', '-Z', '-z')):
             paths.append((join(_opt(argv, '-d') or '.'), 'tree'))
-        elif name in ('tar', 'bsdtar', 'gtar') and any(a in ('-x', '--extract') or (re.match(r'^-?[a-zA-Z]+$', a) and 'x' in a and k == 1) for k, a in enumerate(argv[1:], 1)):
+        elif name in ('tar', 'bsdtar', 'gtar') and any(a in ('-x', '--extract', '--get') or (re.match(r'^-[a-zA-Z]+$', a) and 'x' in a)
+                                                       or (re.match(r'^[a-zA-Z]+$', a) and 'x' in a and k == 1) for k, a in enumerate(argv[1:], 1)):
             paths.append((join(_opt(argv, '-C', '--directory') or '.'), 'tree'))
         elif name == 'zip':
             if rest:
@@ -699,21 +719,63 @@ def written_paths(cmd, cwd, environ=None):
     return command_paths(cmds), '\n'.join(c for c, _, _ in code if c)
 
 
-def _mentions(text, root):
+def _joined(text):
+    """The text with paths joined from pieces made one: os.path.join('gate', 'project.json') -> 'gate/project.json'."""
+    joined = re.sub(r'([\'"])\s*\)?\s*(?:,|\+|/)\s*(?:[\'"]/[\'"]\s*\+\s*)?([\'"])', '/', text)
+    return re.sub(r'/{2,}', '/', joined)
+
+
+def _literals(p):
+    """A regular expression of a whole string literal that names the protected path `p` (or a path under it)."""
+    return re.compile(r'([\'"])([^\'"\n]*?(?<![\w.-])%s(?:/[^\'"\n]*)?)\1' % re.escape(p))
+
+
+def _literal_use(text, p, root, here):
+    """(writes, reads, elsewhere): how the whole string literals of `text` that name `p` use it. A literal resolves
+    against `here` (the folder the code runs in): one that is another root's file (a scratch copy's gate/project.json)
+    is "elsewhere". One in a read position is a read: open(X) or open(X, 'r'), the source of shutil.copy*(X, ...),
+    read_json(X), Path(X).read_text(). Every other use counts as a write."""
+    writes = reads = elsewhere = 0
+    want = os.path.realpath(os.path.join(root, p))
+    for m in _literals(p).finditer(text):
+        lit = m.group(2)
+        cut = os.path.expanduser(lit[:lit.index(p) + len(p)])
+        full = cut if os.path.isabs(cut) else os.path.join(here or root, cut)
+        if os.path.realpath(full) != want:
+            elsewhere += 1
+            continue
+        before, after = text[:m.start()], text[m.end():]
+        if (re.search(r'\bopen\(\s*$', before) and re.match(r'\s*(?:\)|,\s*[\'"]r[bt]?[\'"]\s*\))', after)
+                or re.search(r'\b(?:shutil\.copy\w*|copyfile|read_json|read_jsonl)\(\s*$', before) and re.match(r'\s*[,)]', after)
+                or re.search(r'\bPath\(\s*$', before) and re.match(r'\s*\)\s*\.(?:read_text|read_bytes)\(', after)):
+            reads += 1
+        else:
+            writes += 1
+    return writes, reads, elsewhere
+
+
+def _mentions(text, root, here=None, writing=False):
     """Protected paths of `root` that a piece of code names: by its path relative to the root, its absolute path, a
     path joined from pieces (os.path.join('gate', 'project.json'), 'gate' + '/' + ..., Path('gate') / ...), or, in
-    code that names "gate" at all, the name of one of the gate's own files."""
-    joined = re.sub(r'([\'"])\s*\)?\s*(?:,|\+|/)\s*(?:[\'"]/[\'"]\s*\+\s*)?([\'"])', '/', text)
-    joined = re.sub(r'/{2,}', '/', joined)
-    hits = []
+    code that names "gate" at all, the name of one of the gate's own files. `writing`: the text is one line that writes;
+    then a file named only by whole string literals that read it (open(X), the source of a copy) or that are another
+    root's file is no hit."""
+    joined = _joined(text)
+    hits, left = [], text
     for p, tree in GATE_STATE + (('gate/layout.json', False),):
+        if writing and p in text:
+            w, _, _ = _literal_use(text, p, root, here)
+            rest = _literals(p).sub('""', text)
+            if not w and p not in rest and p not in _joined(rest):
+                left = _literals(p).sub('""', left)
+                continue                                    # named only where it is read, or as another root's file
         for spell in (p, os.path.join(root, p)):
             if spell in text or spell in joined:
                 hits.append(p)
                 break
-    if not hits and re.search(r'[\'"/]gate[\'"/]', text):
+    if not hits and re.search(r'[\'"/]gate[\'"/]', left):
         for b in GATE_FILES:
-            if re.search(r'[\'"/]%s[\'"]' % re.escape(b), text):
+            if re.search(r'[\'"/]%s[\'"]' % re.escape(b), left):
                 hits.append('gate/.../%s' % b)
     return hits
 
@@ -968,11 +1030,11 @@ def _rel_in(root, path):
 GATE_STATE = (('gate/owner', True), ('gate/project.json', False), ('gate/stamps', True), ('gate/tools', True), ('gate/rules', True),
               ('gate/LOCK.json', False), ('gate/fit_settings.json', False), ('gate/census.json', False), ('gate/facts', True), ('gate/attest', True),
               ('gate/run/dirty.jsonl', False), ('gate/run/checks.jsonl', False), ('gate/run/hook_state.json', False), ('gate/run/saves.json', False),
-              ('gate/run/owner_tickets.json', False),
+              ('gate/run/owner_tickets.json', False), ('gate/run/slice', True), ('gate/run/bed_faces.json', False), ('gate/run/placed_cache.json', False),
               ('bambulab/ledger', True), ('bambulab/tools/bambu3mf.py', False), ('bambulab/tools/ledger.py', False), ('bambulab/tools/meshid.py', False),
               ('.claude/settings.json', False), ('.claude/settings.local.json', False), ('.claude-plugin', True))
-HOME_STATE = re.compile(r'\.claude/settings(\.local)?\.json|\.claude/projects/.+\.jsonl|\.claude/plugins(/.*)?|\.claude\.json|\.claude/managed-settings.*'
-                        r'|Library/Application Support/ClaudeCode(/.*)?')
+HOME_STATE = re.compile(r'\.claude/settings(\.local)?\.json|\.claude/projects/.+\.jsonl|\.claude/plugins(/[^/]+\.json|/.*%s.*)?|\.claude\.json'
+                        r'|\.claude/managed-settings.*|Library/Application Support/ClaudeCode(/.*)?' % re.escape(OWN_NAME))
 
 
 def _print_dirs(root):
@@ -1041,21 +1103,37 @@ STATE_WHY = ('{rel} is the gate\'s own state (owner decisions, stamps, the vendo
              'setup_project.py --update-tools; STLs and stamps through `gate.py export`. A plugin or its hooks are switched off by the owner himself.')
 
 
+def _where(root, rel):
+    """A protected path as a denial names it: with its root, so that a command that touches two gated roots (a scratch copy
+    of a project) says which one."""
+    return rel if rel.startswith(('~/', '/')) or not root else os.path.join(root, rel)
+
+
+def _remember_touched(root, own, cwd, environ):
+    """Put a root a call writes in on the list only when it is the session's own or lies inside the session's folder: a
+    scratch copy reached through a written path elsewhere does not join it."""
+    if root == own or (cwd and _rel_in(cwd, root) is not None):
+        remember_root(root, environ)
+
+
 def _print_write(root, rel, how):
     """deny (enforce) or warn (observe) for an STL or .3mf written past the gate."""
     text = ('%s is a printed file of a gated project, written here %s. STLs are written by `python3 gate/tools/gate.py export <part> --for <key>` '
-            '(it stamps them), .3mf files by bambu3mf.save() (it runs the guard); a .3mf taken back from git is rebuilt by the build script instead. ' % (rel, how))
+            '(it stamps them), .3mf files by bambu3mf.save() (it runs the guard); a .3mf taken back from git is rebuilt by the build script instead. ' % (_where(root, rel), how))
     if mode_of(root) == 'enforce':
         return _deny(text + 'Refused: gate/project.json says enforce.')
     return _warn('print gate (observe mode): ' + text + 'In enforce mode this call is refused.')
 
 
-def _fusion_script(root, script, what):
-    """deny (enforce) / warn (observe) for a Fusion script that writes STL files, unless it is a unit of the gate."""
+def _fusion_script(root, script, what, may_deny=True):
+    """deny (enforce) / warn (observe) for a Fusion script that writes STL files, unless it is a unit of the gate.
+    `may_deny` False (a session whose own folder is not gated: the root is only one the hooks know): a warning at most."""
     if not script or GATE_UNIT.search(script) or not STL_WRITERS.search(script):
         return ''
     text = ('%s writes STL files from inside Fusion (MeshCalculator / exportManager / an .stl opened for writing): such a file has no stamp and the '
             'next .3mf save is refused for it. Export through `python3 gate/tools/gate.py export <part> --for <key>`.' % what)
+    if not may_deny:
+        return _warn('print gate: if this writes an STL of the gated project %s: %s' % (root, text))
     if mode_of(root) == 'enforce':
         return _deny(text + ' Refused: gate/project.json says enforce.')
     return _warn('print gate (observe mode): ' + text + ' In enforce mode this call is refused.')
@@ -1073,6 +1151,8 @@ def _claude_switch(cmds):
         words = argv[1:]
         if words[:1] == ['plugin'] or words[:1] == ['plugins']:
             w = [a for a in words[1:] if not a.startswith('-')]
+            if w[:1] and w[0] in ('disable', 'uninstall', 'remove', 'rm') and len(w) > 1 and w[1].split('@')[0] != OWN_NAME:
+                continue                                    # another plugin: none of the gate's business
             if w[:1] and w[0] in ('disable', 'uninstall', 'remove', 'rm') or w[:2] in (['marketplace', 'remove'], ['marketplace', 'rm']):
                 return '`claude plugin %s` switches the gate\'s hooks off' % ' '.join(w[:2])
         if any(a == '--setting-sources' or a.startswith('--setting-sources=') for a in words):
@@ -1131,8 +1211,6 @@ def changes_fusion(tool_name, tool_input, cwd=None):
     if tool_name != 'Bash' or not isinstance(tool_input, dict):
         return False
     cmd = str(tool_input.get('command') or '')
-    if re.search(r'\bgate\.py\b', cmd) and not re.search(r'fusion_mcp\.py|27182', cmd):
-        return False                                        # the gate's own commands send read-only units (and its export) themselves
     if re.search(r'fusion_mcp\.py\b[^|;&\n]*\brun\b[^|;&\n]*--write\b', cmd):
         return True
     call = re.search(r'fusion_mcp\.py\b[^|;&\n]*\bcall\s+fusion_mcp_(execute|update)\b([^|;&\n]*)', cmd)
@@ -1182,7 +1260,7 @@ def post_tool(data, environ):
     event = data.get('hook_event_name') if data.get('hook_event_name') in ('PostToolUse', 'PostToolUseFailure') else 'PostToolUse'
     return json.dumps({'hookSpecificOutput': {'hookEventName': event, 'additionalContext':
                        'print gate: this call changed (or may have changed) the model in Fusion. Before the turn ends: %s until it no longer exits 3, '
-                       'then tell the owner every open row of the parts you changed.' % run_command(roots[0])}})
+                       'then tell the owner every open row of the parts you changed.' % run_command(roots[0], data.get('cwd'))}})
 
 
 # ---- Stop / SubagentStop ---------------------------------------------------------------------------------------------------
@@ -1225,14 +1303,14 @@ def _stop_root(root, data, environ, subagent, state):
     if not can_record(root):
         return 'say', ('print gate: %d change(s) made in Fusion in %s are NOT checked, and this project\'s vendored gate is older than the hooks (it keeps no '
                        'gate/run/checks.jsonl, so no run can clear them): run setup_project.py %s --update-tools, then %s. Nothing of them is a pass.'
-                       % (len(left), root, root, run_command(root)))
+                       % (len(left), root, root, run_command(root, data.get('cwd'))))
     if hook_switch(root, 'stop') is False:
         return 'say', ('print gate: %d change(s) made in Fusion are NOT checked (the owner switched the Stop hook off in gate/project.json): %s'
-                       % (len(left), run_command(root)))
+                       % (len(left), run_command(root, data.get('cwd'))))
     fresh = [m for m in left if m['ts'] > gone]
     if not fresh:
         return 'say', ('print gate: %d change(s) made in Fusion in this session are still NOT checked (the reminders ran out earlier): %s'
-                       % (len(left), run_command(root)))
+                       % (len(left), run_command(root, data.get('cwd'))))
     entry = blocks.get(key) if isinstance(blocks.get(key), dict) else {}
     now = time.time()
     row = bool(data.get('stop_hook_active')) if 'stop_hook_active' in data else (now - float(entry.get('t') or 0) < STOP_WINDOW_S)
@@ -1241,13 +1319,13 @@ def _stop_root(root, data, environ, subagent, state):
         blocks.pop(key, None)
         released[key] = max(m['ts'] for m in fresh)
         return 'say', ('print gate: %d change(s) made in Fusion in this session are NOT checked, and the turn ends anyway after %d reminders. '
-                       'Nothing of them is a pass: %s' % (len(left), STOP_CAP, run_command(root)))
+                       'Nothing of them is a pass: %s' % (len(left), STOP_CAP, run_command(root, data.get('cwd'))))
     blocks[key] = {'n': n + 1, 't': now}
     more = ' The last run (%s) needs more calls (exit 3): call it again.' % last.get('t') if last is not None and last.get('exit') == 3 else ''
     return 'block', ('print gate: parts changed in Fusion in this %s (%d call(s), the last at %s) and are not checked. '
                      'Run %s until it no longer exits 3, then tell the owner every open row of the parts you changed '
                      '(a row marked inherited was there before). Exit 4 means the gate could not run: say "NOT checked".%s'
-                     % ('subagent' if subagent else 'session', len(left), left[-1].get('t'), run_command(root), more))
+                     % ('subagent' if subagent else 'session', len(left), left[-1].get('t'), run_command(root, data.get('cwd')), more))
 
 
 def stop(data, environ, subagent=False):
@@ -1494,32 +1572,32 @@ def _pre_tool(data, environ):
     if isinstance(tool, str) and FUSION_TOOL.match(tool):
         obj = ti.get('object') if isinstance(ti.get('object'), dict) else {}
         script = obj.get('script') if isinstance(obj.get('script'), str) else ''
-        return _fusion_script(known, script, 'this Fusion call') if known else ''
+        return _fusion_script(known, script, 'this Fusion call', may_deny=bool(own)) if known else ''
     if tool in ('Write', 'Edit', 'MultiEdit', 'NotebookEdit'):
         path = ti.get('file_path') or ti.get('notebook_path')
         if not isinstance(path, str) or not path:
             return ''
         full = os.path.abspath(os.path.expanduser(path if os.path.isabs(path) else os.path.join(cwd, path)))
-        hit = protected(full, known)
+        hit = protected(full, own)
         if not hit:
             return ''
         r, rel, kind = hit
-        remember_root(r, environ)
+        _remember_touched(r, own, cwd, environ)
         if kind == 'print':
             return _print_write(r, rel, 'with the %s tool' % tool)
         if kind == 'layout':
             old, new = _new_text(tool, ti, full)
             if new is not None and _layout_kept(old, new):
                 return ''
-            return _deny('gate/layout.json: this edit removes a registered project, STL folder or document (or cannot be read as JSON). A project that is no '
-                         'longer registered is not guarded: only the owner removes one (a proposal in gate/proposals/).')
+            return _deny('%s: this edit removes a registered project, STL folder or document (or cannot be read as JSON). A project that is no '
+                         'longer registered is not guarded: only the owner removes one (a proposal in gate/proposals/).' % _where(r, rel))
         if re.search(r'(^|/)\.claude/settings(\.local)?\.json$', rel):
             old, new = _new_text(tool, ti, full)
             if new is not None and _settings_kept(old, new):
                 return ''
             return _deny('%s: this edit changes the hooks, the plugins or the permission rules (or cannot be read as JSON): they keep the print gate '
-                         'running. Only the owner changes them, in his editor.' % rel)
-        return _deny(STATE_WHY.format(rel=rel))
+                         'running. Only the owner changes them, in his editor.' % _where(r, rel))
+        return _deny(STATE_WHY.format(rel=_where(r, rel)))
     if tool != 'Bash':
         return ''
     cmd = str(ti.get('command') or '')
@@ -1528,39 +1606,39 @@ def _pre_tool(data, environ):
     why = _owner_checks(calls, hidden, ok, cmd, data)
     if why:
         return _deny(why)
-    if known:
+    if own:
         off = _claude_switch(cmds)
         if off:
             return _deny('%s: the hooks keep the print gate running. Only the owner switches them off, in his own terminal.' % off)
     for p, verb in command_paths(cmds):
-        hit = protected(p, known, verb)
+        hit = protected(p, own, verb)
         if not hit and '$' in p and known and re.search(r'(%s|\.stl|\.3mf)$' % '|'.join(re.escape(b) for b in GATE_FILES), p, re.I):
             return _deny('this command writes %s through a variable the gate cannot read, and the name is one of a gate file or a printed file: name '
                          'the path in full' % os.path.basename(p))
         if not hit:
             continue
         r, rel, kind = hit
-        remember_root(r, environ)
+        _remember_touched(r, own, cwd, environ)
         if kind == 'print':
             if verb == 'remove':
                 continue                                    # a file that goes prints nothing wrong
             return _print_write(r, rel, 'by a shell command')
         if kind == 'layout':
-            return _deny('gate/layout.json is changed with the Edit tool, so that the change can be checked (a registered project may not go): '
-                         'not by a shell command')
-        return _deny(STATE_WHY.format(rel=rel))
+            return _deny('%s is changed with the Edit tool, so that the change can be checked (a registered project may not go): '
+                         'not by a shell command' % _where(r, rel))
+        return _deny(STATE_WHY.format(rel=_where(r, rel)))
     for text, args, here in code:
         if not text or not any(_writes(l) for l in text.splitlines()):
             continue
         by_arg = any(_writes(l) and re.search(r'argv|ARGV|\$ARGV|process\.argv', l) for l in text.splitlines())
         for a in args:                                      # a path handed to the code: it writes what its arguments name
-            hit = protected(os.path.join(here, os.path.expanduser(a)), known)
+            hit = protected(os.path.join(here, os.path.expanduser(a)), own)
             if hit and hit[2] != 'print' and by_arg:
                 return _deny('this command runs code that writes a path from its arguments and hands it %s. %s' % (hit[1], STATE_WHY.format(rel=hit[1])))
             if hit and hit[2] != 'print':
                 return _warn('print gate: this command hands %s to code that writes files. If it writes %s, stop: %s' % (hit[1], hit[1], STATE_WHY.format(rel=hit[1])))
         roots = {gated_root(here), known} - {None}
-        same = [h for root in roots for line in text.splitlines() if _writes(line) for h in _mentions(line, root)]
+        same = [h for root in roots for line in text.splitlines() if _writes(line) for h in _mentions(line, root, here, writing=True)]
         if same:                                            # one line names the file and writes: that is a write of it
             return _deny('this command runs code that writes %s. %s' % (', '.join(dict.fromkeys(same)), STATE_WHY.format(rel=same[0])))
         hits = [h for root in roots for h in _mentions(text, root)]
@@ -1579,9 +1657,9 @@ def _pre_tool(data, environ):
             f = os.path.join(here, os.path.expanduser(argv[k + 1]))
             try:
                 with open(f, encoding='utf-8', errors='replace') as fh:
-                    out = _fusion_script(known, fh.read(SCRIPT_BYTES), 'the script %s' % argv[k + 1])
+                    out = _fusion_script(known, fh.read(SCRIPT_BYTES), 'the script %s' % argv[k + 1], may_deny=bool(own))
             except OSError:
-                if mode_of(known) == 'enforce':
+                if own and mode_of(known) == 'enforce':
                     return _deny('the Fusion script %s cannot be read by the gate, so it cannot tell whether it writes STL files: name it by its full path' % argv[k + 1])
                 out = ''
             if out:

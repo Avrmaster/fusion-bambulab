@@ -517,5 +517,80 @@ class HookFailures(Watch):
             self.assertIn('the stop hook failed', json.loads(out.getvalue())['systemMessage'])
 
 
+class IntegrationReview(Watch):
+    """The parser and hook cases the 0.3.0 integration review found."""
+
+    def test_a_file_descriptor_in_front_of_a_redirection_hides_no_target(self):
+        self.project('enforce')
+        for cmd in ('cp /x/w.json gate/owner/support_baseline.json', 'cp /x/w.json gate/project.json', 'ln -sf /x/w.json gate/project.json',
+                    'install -m 644 /x/w.json gate/project.json', 'rsync /x/w.json gate/project.json', 'cp /x/part.stl stl/part.stl',
+                    'mv /x/new.3mf bambulab/Demo.3mf'):
+            for tail in ('', ' 2>/dev/null', ' 2>&1', ' 2> /dev/null', ' >/dev/null 2>&1', ' 3>/dev/null'):
+                self.assertTrue(self.denied(self.bash(cmd + tail)), cmd + tail)
+        self.assertIsNone(self.bash('ls gate 2>/dev/null'))
+
+    def test_the_gate_own_json_writers_are_writes(self):
+        pre = "import sys; sys.path.insert(0, 'gate/tools'); import gate_common as g; "
+        for code in ("g.write_json('gate/owner/support_baseline.json', {})", "g.write_json('gate/project.json', {'mode': 'observe'})",
+                     "g.append_jsonl('gate/owner/events.jsonl', {})", "g.write_jsonl('gate/owner/events.jsonl', [])"):
+            self.assertTrue(self.denied(self.bash('python3 -c "%s%s"' % (pre, code))), code)
+            self.assertTrue(self.denied(self.bash("python3 - <<'EOF'\n%s\n%s\nEOF" % (pre.replace('; ', '\n'), code))), code)
+
+    def test_the_slice_record_and_the_bed_faces_are_the_gate_state(self):
+        for rel in ('gate/run/slice/main.json', 'gate/run/bed_faces.json'):
+            self.assertTrue(self.denied(self.pre('Write', file_path=os.path.join(self.root, rel), content='{}')), rel)
+            self.assertTrue(self.denied(self.pre('Edit', file_path=os.path.join(self.root, rel), old_string='9', new_string='4')), rel)
+            self.assertTrue(self.denied(self.bash('cp /x/s.json %s' % rel)), rel)
+        self.assertTrue(self.denied(self.bash("python3 -c \"import json; json.dump({}, open('gate/run/slice/main.json', 'w'))\"")))
+
+    def test_a_writing_fusion_script_chained_with_a_gate_command_is_a_mark(self):
+        path = os.path.join(self.root, 'edit_part.py')
+        with open(path, 'w') as f: f.write("import urllib.request\nurllib.request.urlopen('http://127.0.0.1:27182/mcp', data=b'fusion_mcp_execute')\n")
+        for cmd in ('python3 gate/tools/gate.py verify && python3 edit_part.py', 'python3 gate/tools/gate.py status; python3 edit_part.py',
+                    'python3 edit_part.py; python3 gate/tools/gate.py slice --changed'):
+            self.assertTrue(gate_watch.changes_fusion('Bash', {'command': cmd}, self.root), cmd)
+        self.assertFalse(gate_watch.changes_fusion('Bash', {'command': 'python3 gate/tools/gate.py run --changed --for main'}, self.root))
+
+    def test_a_denial_names_the_root_and_a_scratch_copy_stays_off_the_list(self):
+        scratch = os.path.join(self.d, 'scratch')
+        gate_common.write_json(os.path.join(scratch, 'gate', 'project.json'), {'mode': 'observe'})
+        index = os.path.join(self.d, 'roots.json'); env = {gate_watch.INDEX_ENV: index}
+        out = json.loads(gate_watch.pre_tool(self.data(tool_name='Bash', tool_input={'command': 'cp gate/layout.json gate/project.json %s/gate/' % scratch}), env))
+        self.assertIn(os.path.join(scratch, 'gate', 'layout.json'), out['hookSpecificOutput']['permissionDecisionReason'])
+        self.assertEqual(gate_watch.known_roots(env), [self.root])       # the scratch copy is not on the list
+
+    def test_sources_and_options_are_no_targets_and_targets_are_not_missed(self):
+        s = os.path.join(self.d, 'scratch'); os.makedirs(s)
+        for cmd in ('cd %s && ln -s %s/gate/project.json' % (s, self.root), 'touch -r gate/project.json %s/stamp' % s,
+                    "python3 -c \"import shutil; shutil.copy('gate/project.json', '%s/p.json')\"" % s,
+                    "python3 -c \"import json; json.dump(json.load(open('gate/layout.json')), open('%s/l.json', 'w'))\"" % s,
+                    "python3 -c \"open('%s/B/gate/project.json', 'w').write('x')\"" % s):
+            out = self.bash(cmd)
+            self.assertFalse(self.denied(out), cmd)
+        for cmd in ('mv -t %s gate/owner/waivers.json' % s, 'tar -C gate/owner -xf /x/a.tar', 'tar -xf /x/a.tar -C gate/owner', 'tar xf /x/a.tar -C gate/owner'):
+            self.assertTrue(self.denied(self.bash(cmd)), cmd)
+        self.assertTrue(self.denied(self.bash("python3 -c \"import shutil; shutil.copy('/x/p.json', 'gate/project.json')\"")))
+
+    def test_a_session_whose_folder_is_not_gated_keeps_its_own_home_and_its_own_exports(self):
+        index = os.path.join(self.d, 'roots.json'); env = {gate_watch.INDEX_ENV: index}
+        self.project('enforce')
+        gate_watch.pre_tool(self.data(tool_name='Bash', tool_input={'command': 'ls'}), env)      # the project's session: the root goes on the list
+        other = {'session_id': 's9', 'cwd': self.d, 'transcript_path': self.transcript}
+        script = 'em = design.exportManager\nopts = em.createSTLExportOptions(body, "/x/a.stl")\nem.execute(opts)'
+        out = json.loads(gate_watch.pre_tool(dict(other, tool_name=EXEC, tool_input={'object': {'script': script}}), env))['hookSpecificOutput']
+        self.assertNotIn('permissionDecision', out)                      # a warning that names the project, never another project's enforce
+        self.assertIn(self.root, out['additionalContext'])
+        block = json.loads(gate_watch.stop({'session_id': 's9', 'cwd': self.d}, env))
+        self.assertIn('cd %s && python3 gate/tools/gate.py run --changed --for main' % self.root, block['reason'])
+        home = os.path.expanduser('~')
+        for ti, tool in (({'file_path': os.path.join(home, '.claude', 'settings.json'), 'content': '{"permissions": {"allow": ["Bash(ls)"]}}'}, 'Write'),
+                         ({'file_path': os.path.join(home, '.claude', 'plugins', 'data', 'other', 's.json'), 'content': '{}'}, 'Write'),
+                         ({'command': 'claude plugin disable some-other'}, 'Bash')):
+            self.assertEqual(gate_watch.pre_tool(dict(other, tool_name=tool, tool_input=ti), env), '', ti)
+        self.assertIsNone(self.bash('claude plugin disable some-other@market'))            # the project's own session: another plugin is no business either
+        self.assertTrue(self.denied(self.bash('claude plugin disable %s' % gate_watch.OWN_NAME)))
+        self.assertTrue(self.denied(self.pre('Write', file_path=os.path.join(home, '.claude', 'plugins', 'data', 'fusion-bambulab-gate', 'roots.json'), content='{}')))
+
+
 if __name__ == '__main__':
     unittest.main()

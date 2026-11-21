@@ -682,6 +682,16 @@ def _unit_args(probe, vals):
 
 
 _LOAD = object()
+_PROBE_TABLES = {}
+
+
+def _probe_tables(reg):
+    """gate_deps.probe_tables() of the registry's tables, made once per registry: what a unit is sent."""
+    key = (id(reg.get('tables')), reg.get('sha256'))
+    if key not in _PROBE_TABLES:
+        _PROBE_TABLES.clear()
+        _PROBE_TABLES[key] = gate_deps.probe_tables(reg.get('tables') or {})
+    return _PROBE_TABLES[key]
 
 
 def _job(root, reg, vals, target, layout, project, census, run, u, features=_LOAD):
@@ -695,7 +705,7 @@ def _job(root, reg, vals, target, layout, project, census, run, u, features=_LOA
     return gate_fusion_rpc.new_job(
         u['id'], run, u['probe'], doc.get('name'), u['doc'], _abs(root, u['out']), part=u['part'],
         component_id=entry.get('component_id'), occurrence=entry.get('occurrence'), body=entry.get('body'), sig=u['sig'],
-        cursor=u.get('cursor'), deadline_s=u.get('budget_s') or 20, params=vals, tables=reg['tables'], target=target, features=features,
+        cursor=u.get('cursor'), deadline_s=u.get('budget_s') or 20, params=vals, tables=_probe_tables(reg), target=target, features=features,
         not_printed=project['not_printed'], motion_groups=doc.get('motion_groups'), args=_unit_args(u['probe'], vals))
 
 
@@ -1235,6 +1245,32 @@ def _prev_facts(root, part, entry, sig, probe):
     return None
 
 
+_STL_SHA = {}
+
+
+def _stl_is_export(root, part, entry):
+    """Can the STL the census names for the part be the export of its present signature? False when the part went
+    through the gate's export before and no stamp of entry["sig"] holds the file's bytes: before a re-export the file,
+    and the mesh a project places from it, is the earlier geometry. A part the gate never exported (an STL of an older
+    exporter) has no stamp to tell: its file is taken as it is, as before."""
+    import gate_stamp
+    stamps = gate_stamp.all_stamps(root, part)
+    if not stamps:
+        return True
+    path = os.path.join(root, *str(entry.get('stl') or '').replace(os.sep, '/').split('/'))
+    try:
+        st = os.stat(path)
+    except OSError:
+        return False
+    key = (os.path.abspath(path), st.st_mtime_ns, st.st_size)
+    if key not in _STL_SHA:
+        if len(_STL_SHA) > 512:
+            _STL_SHA.clear()
+        _STL_SHA[key] = gate_common.sha256_file(path)
+    sha = _STL_SHA[key]
+    return any(s.get('sig') == entry.get('sig') and s.get('stl_sha256') == sha for s in stamps)
+
+
 def print_frame(root, part, entry, layout=None):
     """How one part lies on the bed, for the judges that count layers (ctx["print"]):
     {"up": unit vector of the print axis in the PART frame, pointing away from the bed, or None,
@@ -1278,6 +1314,8 @@ def print_frame(root, part, entry, layout=None):
     out['source'] = '%s: %s on plate "%s", orient %r' % (rows[0]['table'], rows[0]['object'], rows[0]['plate'], rows[0]['orient'])
     sources = {r.get('source') or 'table' for r in rows}
     out['from'] = 'project' if sources == {'project'} else 'table' if 'table' in sources else 'earlier geometry'      # gate_attest bed_face_measured
+    if out['from'] == 'project' and entry.get('source') != 'generated' and not _stl_is_export(root, part, entry):
+        out['from'] = 'earlier geometry'            # the STL on disk (and the mesh placed from it) is not the export of this signature yet
     m = _geom.IDENTITY if entry.get('source') == 'generated' else entry.get('matrix')     # an STL made by code is its own frame
     if not (isinstance(m, (list, tuple)) and len(m) == 16 and all(isinstance(c, (int, float)) and not isinstance(c, bool) for c in m)):
         out['why'] = 'the census holds no pose of this part (its matrix): scan the document again'
@@ -1295,7 +1333,26 @@ def print_frame(root, part, entry, layout=None):
     return out
 
 
-def judge_part(root, reg, resolved, part, sig=None, stage='design', intent=None, target=None, reuse=True):
+def judge_inputs(root, reg, part, entry):
+    """{"print": 16 hex over print_frame() of the part today, "tables": 16 hex over the tables the judges read today}: the
+    two judgement inputs that are no facts of the part. judge_part keeps them beside each judged row (and a stamp in each
+    check), so that a part turned on its bed or a table the owner changed is judged again (judgement_out_of_date,
+    gate_stamp.verify)."""
+    try:
+        frame = print_frame(root, part, entry)
+    except Exception as e:
+        frame = {'up': None, 'bed': None, 'source': None, 'why': 'the print orientation could not be worked out (%s: %s)' % (type(e).__name__, e)}
+    return {'print': frame_digest(frame), 'tables': gate_common.digest(reg['tables'])}
+
+
+def frame_digest(frame):
+    """16 hex over what of a print frame can change a verdict: the print axis and the height of the bed face (its texts
+    only say where it comes from)."""
+    f = frame if isinstance(frame, dict) else {}
+    return gate_common.digest({'up': f.get('up'), 'bed': f.get('bed')})
+
+
+def judge_part(root, reg, resolved, part, sig=None, stage='design', intent=None, target=None, reuse=True, rules=None, store=True):
     """Judge the stored facts of one part with today's judges and parameters and store the result.
     reuse: a stored judgement made from exactly what the judge would read now, by the same judging code
     (judging_code) and rule, is taken over (False: every judge runs again, `run --fresh`).
@@ -1307,7 +1364,9 @@ def judge_part(root, reg, resolved, part, sig=None, stage='design', intent=None,
     "print" from print_frame()).
     regression.unintended gets {"changed": [...]} built from the census.
 
-    sig None = the part's current census signature. Returns {rule id: [findings]}."""
+    sig None = the part's current census signature. Returns {rule id: [findings]}.
+    rules: judge only these rule ids; store False: store nothing (gate_stamp.verify judges a stamped part again in
+    memory when its print orientation or the tables changed)."""
     import gate_judges
     census = load_census(root)
     entry = part_entry(root, part, census)
@@ -1328,6 +1387,8 @@ def judge_part(root, reg, resolved, part, sig=None, stage='design', intent=None,
             dg[name] = gate_common.digest(value)
         return dg[name]
     for rule in _stage_rules(reg, stage, entry.get('source', 'fusion')):
+        if rules is not None and rule['id'] not in rules:
+            continue
         probe, name = rule['check']['probe'], rule['check']['judge']
         if probe == 'fusion_scan':               # a document unit: its facts for one part come from the census
             stamped = os.path.isfile(gate_common.stamp_path(root, part, sig))
@@ -1360,8 +1421,11 @@ def judge_part(root, reg, resolved, part, sig=None, stage='design', intent=None,
             out[rule['id']] = old['findings']
             continue
         findings = gate_judges.run_judge(rule, facts, params, ctx)
-        rows[rule['id']] = {'judge_hash': jh, 'params': params, 'findings': findings, 'time': gate_common.now(), 'input': key, 'code': judging_code()}
+        rows[rule['id']] = {'judge_hash': jh, 'params': params, 'findings': findings, 'time': gate_common.now(), 'input': key, 'code': judging_code(),
+                            'print': frame_digest(frame), 'tables': digest_of('tables', ctx['tables'])}
         out[rule['id']] = findings
+    if not store:
+        return out
     if rows:
         gate_common.save_judged_many(root, part, sig, rows)     # one write per part, not one per rule
     import gate_attest
@@ -1576,18 +1640,28 @@ def _settled(root, census):
 
 def judgement_out_of_date(root, reg, part, sig, resolved, stages=('design',), entry=None):
     """Rule ids of these stages whose stored judgement at this signature was made by another judge, by other judging
-    code (judging_code) or with other parameter values than today's (judge_part judges them again; their facts may be
-    as they were)."""
+    code (judging_code), with other parameter values than today's, or with another print orientation or other tables
+    than today's (judge_inputs: the part was turned on its bed, the owner changed gate/owner/tables.json): judge_part
+    judges them again, offline; their facts may be as they were."""
     import gate_judges
     entry = entry if entry is not None else (load_census(root)['parts'].get(part) or {})
     judged = load_facts(root, part, sig).get('judged') or {}
+    today = [None]
+
+    def inputs_moved(j):
+        if not any(k in j for k in ('print', 'tables')):
+            return False                                # a row of an older gate: its other keys decide
+        if today[0] is None:
+            today[0] = judge_inputs(root, reg, part, entry)
+        return any(k in j and j[k] != today[0][k] for k in ('print', 'tables'))
     out = []
     for stage in stages:
         for rule in _stage_rules(reg, stage, entry.get('source', 'fusion')):
             j = judged.get(rule['id'])
             name = rule['check']['judge']
             if not isinstance(j, dict) or (name in gate_judges.JUDGES and j.get('judge_hash') != _judge_hash(name)) \
-                    or ('code' in j and j['code'] != judging_code()) or j.get('params') != gate_params.values(resolved, rule.get('params') or []):
+                    or ('code' in j and j['code'] != judging_code()) or j.get('params') != gate_params.values(resolved, rule.get('params') or []) \
+                    or inputs_moved(j):
                 out.append(rule['id'])
     return out
 

@@ -6226,30 +6226,31 @@ def print_slice_support_growth(facts, params, ctx):
         if not isinstance(o, dict) or o.get('printable') is False or o.get('plate_index') is None:
             continue                                     # project.object_not_printable and project.object_on_no_plate hold these
         part, name = _project_part(facts, o, o.get('name')), o.get('name')
+        label = '%s plate %s: %s' % (key, o.get('plate_index'), name)     # one part in two projects: two rows, two ids
         got, base = o.get('sliced'), o.get('baseline')
         if not isinstance(got, dict) or not _num(got.get('support_e')) or got['support_e'] < 0:
-            out.append(_not_run(ctx, '%s: %s: gate.py slice %s --changed' % (name, o.get('why') or 'not sliced', key), part=part))
+            out.append(_not_run(ctx, '%s: %s: gate.py slice %s --changed' % (label, o.get('why') or 'not sliced', key), part=part))
             continue
         e, z = got['support_e'], got.get('top_z') if _num(got.get('top_z')) else None
         where = 'plate %s, sliced %s' % (got.get('plate_index'), str(got.get('time') or '')[:16])
         if not isinstance(base, dict) or not _num(base.get('support_e')) or base['support_e'] < 0:
             if e <= 0:
-                out.append(finding(ctx['rule'], part, 'INFO', '%s: sliced (%s): no support at all; no baseline is needed' % (name, where),
-                                   context={'object': name, 'pose': o.get('pose'), 'support': 0}))
+                out.append(finding(ctx['rule'], part, 'INFO', '%s: sliced (%s): no support at all; no baseline is needed' % (label, where),
+                                   context={'object': name, 'pose': o.get('pose'), 'support': 0, 'project': key}))
             else:
                 out.append(_not_run(ctx, '%s gets %s mm of support (filament, %s, up to z %s) and has no baseline: the owner looks at the sliced plate and '
-                                         'records it (gate.py owner baseline %s "%s" --quote "...")' % (name, _g(e), where, _g(z), key, name), part=part))
+                                         'records it (gate.py owner baseline %s "%s" --quote "...")' % (label, _g(e), where, _g(z), key, name), part=part))
             continue
         b, bz = base['support_e'], base.get('top_z') if _num(base.get('top_z')) else None
         limit = 0.0 if b <= 0 else min(b * (1.0 + share), b + add)
-        ctxt = {'object': name, 'pose': o.get('pose'), 'baseline': b, 'baseline_top': bz}
+        ctxt = {'object': name, 'pose': o.get('pose'), 'baseline': b, 'baseline_top': bz, 'project': key}
         if e > limit + 1e-9:
             why = ('it had none in the baseline' if b <= 0 else 'more than %s %% or %s mm over the baseline of %s mm' % (_g(share * 100), _g(add), _g(b)))
             out.append(finding(ctx['rule'], part, 'FAIL', '%s: the slicer now puts %s mm of support (filament) under it, %s (%s). Look at the plate in the slicer: '
-                                                          'what grew is the overhang to fix' % (name, _g(e), why, where), measure=e, limit=round(limit, 3), unit='mm',
+                                                          'what grew is the overhang to fix' % (label, _g(e), why, where), measure=e, limit=round(limit, 3), unit='mm',
                                context=dict(ctxt, kind='line')))
         if _num(z) and (not _num(bz) or z > bz + top + 1e-9) and not (b <= 0 and e > limit + 1e-9):
-            out.append(finding(ctx['rule'], part, 'FAIL', '%s: its support now reaches z %s, the baseline ended at %s (%s)' % (name, _g(z), _g(bz) if _num(bz) else 'no height', where),
+            out.append(finding(ctx['rule'], part, 'FAIL', '%s: its support now reaches z %s, the baseline ended at %s (%s)' % (label, _g(z), _g(bz) if _num(bz) else 'no height', where),
                                measure=z, limit=round(bz + top, 3) if _num(bz) else None, unit='mm', context=dict(ctxt, kind='top')))
     return out
 
@@ -6305,14 +6306,15 @@ def print_overhang_angle(facts, params, ctx):
         if not isinstance(o, dict) or o.get('printable') is False or o.get('plate_index') is None:
             continue
         part, name = _project_part(facts, o, o.get('name')), o.get('name')
+        label = '%s plate %s: %s' % (key, o.get('plate_index'), name)     # one part in two projects: two rows, two ids
         if o.get('error'):
-            out.append(_not_run(ctx, '%s: %s' % (name, o['error']), part=part))
+            out.append(_not_run(ctx, '%s: %s' % (label, o['error']), part=part))
             continue
         faces, ridges, bridges = ([r for r in _list(o.get(k)) if isinstance(r, dict)] for k in ('faces', 'ridges', 'bridges'))
         tot = o.get('totals') if isinstance(o.get('totals'), dict) else {}
         if not faces and not ridges and not bridges:
             if any(not isinstance(o.get(k), list) for k in ('faces', 'ridges', 'bridges')):
-                out.append(_not_run(ctx, '%s: the pre-check holds no rows for it' % name, part=part))
+                out.append(_not_run(ctx, '%s: the pre-check holds no rows for it' % label, part=part))
             continue
         num = lambda r, k: r.get(k) if _num(r.get(k)) else 0.0
         count = lambda k, rows: tot.get(k) if _num(tot.get(k)) else len(rows)
@@ -6335,17 +6337,19 @@ def print_overhang_angle(facts, params, ctx):
         sup, how = o.get('support'), o.get('support_how') if isinstance(o.get('support_how'), str) else ''
         sl = slices.get((str(name), str(o.get('plate_index'))))
         got = sl.get('sliced') if isinstance(sl, dict) else None
+        if sup is None and isinstance(got, dict) and isinstance(got.get('cells'), list):
+            sup, how = True, 'the setting is not listed (%s), and the slice of this mesh, turn and settings shows what the slicer did' % (how or 'no support setting was read')
         for kind, text, measure, limit, unit in kinds:
-            ctxt = {'object': name, 'pose': o.get('pose'), 'kind': kind}
+            ctxt = {'object': name, 'pose': o.get('pose'), 'kind': kind, 'project': key}
             if sup is True:
                 every = (o.get('all') or {}).get(kind) if isinstance(o.get('all'), dict) else None
                 if not isinstance(got, dict):
                     out.append(_not_run(ctx, '%s: %s. Supports are on for it (%s), but whether the slicer puts support under it is not measured: %s: gate.py slice %s --changed'
-                                        % (name, text, how, (sl or {}).get('why') or 'no slice of the gate holds this object', key), part=part))
+                                        % (label, text, how, (sl or {}).get('why') or 'no slice of the gate holds this object', key), part=part))
                     continue
                 if not isinstance(got.get('cells'), list) or not isinstance(every, list):
                     out.append(_not_run(ctx, '%s: %s. Supports are on for it (%s); %s: gate.py slice %s --plates %s'
-                                        % (name, text, how, 'the slice holds no support positions (a record of an older gate, or no walls found)' if not isinstance(got.get('cells'), list)
+                                        % (label, text, how, 'the slice holds no support positions (a record of an older gate, or no walls found)' if not isinstance(got.get('cells'), list)
                                            else 'the pre-check holds no position of each region (facts of an older gate)', key, got.get('plate_index')), part=part))
                     continue
                 cells = [c for c in got['cells'] if isinstance(c, list) and len(c) == 3 and all(_num(x) for x in c)]
@@ -6357,31 +6361,32 @@ def print_overhang_angle(facts, params, ctx):
                 where_sl = 'plate %s, sliced %s' % (got.get('plate_index'), str(got.get('time') or '')[:16])
                 if not regs:
                     out.append(finding(ctx['rule'], part, 'INFO', '%s: %s. Every region lies under the middle of the first layer (%s): the slicer prints it from the bed (%s)'
-                                       % (name, text, _g(first), where_sl), measure=measure, limit=limit, unit=unit, context=dict(ctxt, support=True, on_bed=True)))
+                                       % (label, text, _g(first), where_sl), measure=measure, limit=limit, unit=unit, context=dict(ctxt, support=True, on_bed=True)))
                 elif not bare and len(narrow) == len(regs):
                     out.append(finding(ctx['rule'], part, 'INFO', '%s: %s. Every one of the %d region(s) is narrower than a line (%s): they print from the layer below (%s)'
-                                       % (name, text, len(regs), _g(line), where_sl), measure=measure, limit=limit, unit=unit, context=dict(ctxt, support=True, narrow=True)))
+                                       % (label, text, len(regs), _g(line), where_sl), measure=measure, limit=limit, unit=unit, context=dict(ctxt, support=True, narrow=True)))
                 elif _num(got.get('support_e')) and got['support_e'] <= 0:
                     out.append(finding(ctx['rule'], part, 'FAIL', '%s: %s. Supports are on for it (%s), and the slicer puts no support under it at all (%s): this prints over air'
-                                       % (name, text, how, where_sl), measure=measure, limit=limit, unit=unit, context=dict(ctxt, support=True, sliced=0)))
+                                       % (label, text, how, where_sl), measure=measure, limit=limit, unit=unit, context=dict(ctxt, support=True, sliced=0)))
                 elif bare and got.get('cells_cut'):
                     out.append(_not_run(ctx, '%s: %s. The slice kept only the highest %d support cells of this object, and %d region(s) have none of them under them: not a measurement'
-                                        % (name, text, len(cells), len(bare)), part=part))
+                                        % (label, text, len(cells), len(bare)), part=part))
                 elif bare:
                     b0 = bare[0]
                     out.append(finding(ctx['rule'], part, 'FAIL', '%s: %s. Supports are on for it (%s), but the slice leaves %d of %d such region(s) with no support under them (%s), '
                                                                   'the first over x %s..%s, y %s..%s from the low corner of the part, from z %s: this prints over air%s'
-                                       % (name, text, how, len(bare), len(regs), where_sl, _g(b0[0]), _g(b0[2]), _g(b0[1]), _g(b0[3]), _g(b0[4]),
+                                       % (label, text, how, len(bare), len(regs), where_sl, _g(b0[0]), _g(b0[2]), _g(b0[1]), _g(b0[3]), _g(b0[4]),
                                           '; %d narrower than a line (%s) print from the layer below' % (len(narrow), _g(line)) if narrow else ''),
                                        measure=measure, limit=limit, unit=unit, context=dict(ctxt, support=True, bare=len(bare))))
                 else:
                     out.append(finding(ctx['rule'], part, 'INFO', '%s: %s. Supports are on for it (%s), and the slice puts support under each of the %d region(s)%s (%s): '
                                                                   'print.slice_support_growth judges how much'
-                                       % (name, text, how, len(regs) - len(narrow), ' wider than a line (%d narrower print from the layer below)' % len(narrow) if narrow else '', where_sl),
+                                       % (label, text, how, len(regs) - len(narrow), ' wider than a line (%d narrower print from the layer below)' % len(narrow) if narrow else '', where_sl),
                                        measure=measure, limit=limit, unit=unit, context=dict(ctxt, support=True)))
             elif sup is False:
-                out.append(finding(ctx['rule'], part, 'FAIL', '%s: %s. Supports are off for it (%s): this prints over air' % (name, text, how),
+                out.append(finding(ctx['rule'], part, 'FAIL', '%s: %s. Supports are off for it (%s): this prints over air' % (label, text, how),
                                    measure=measure, limit=limit, unit=unit, context=dict(ctxt, support=False)))
             else:
-                out.append(_not_run(ctx, '%s: %s. Whether the slicer supports it is not known: %s' % (name, text, how or 'no support setting was read'), part=part))
+                out.append(_not_run(ctx, '%s: %s. Whether the slicer supports it is not known: %s. Set enable_support in the project (bambu3mf.set_project, so that it '
+                                         'is listed), or slice it: gate.py slice %s --changed' % (label, text, how or 'no support setting was read', key), part=part))
     return out

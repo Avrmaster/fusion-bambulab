@@ -20,6 +20,8 @@ folders, so a check of a project with fifty parts takes milliseconds):
     decisions  gate/project.json, gate/layout.json, gate/fit_settings.json and every file under gate/owner, gate/attest,
                gate/proposals and gate/stamps (parameters, waivers, triage, answers, stamps)
     stls       the files of every STL folder gate/layout.json registers (an STL replaced or written without a stamp)
+    projects   the .3mf file of every project gate/layout.json registers, gate/run/bed_faces.json and the slice records
+               (gate/run/slice/*.json): the bed face of a part is measured on the saved projects, and a write changes it
     run        gate/reports/latest.json, gate/run/current.json, gate/run/scan.json, gate/run/pending.json and the plan of
                the current run (a run that goes on, a call that was sent)
     code       the tools that built the digest and the rules they read (a judge or a rule that changed)
@@ -27,9 +29,9 @@ Standard library only: the hook imports this module and nothing else of the gate
 import hashlib, json, os, time
 
 VERSION = 1
-GROUPS = ('model', 'facts', 'decisions', 'stls', 'run', 'code')
+GROUPS = ('model', 'facts', 'decisions', 'stls', 'projects', 'run', 'code')
 WORDS = {'model': 'the scan (census)', 'facts': 'the measured facts', 'decisions': 'parameters, answers, waivers or stamps',
-         'stls': 'the STL folders', 'run': 'the run in progress', 'code': 'the gate code or its rules'}
+         'stls': 'the STL folders', 'projects': 'the .3mf projects or their slices', 'run': 'the run in progress', 'code': 'the gate code or its rules'}
 
 
 def path(root):
@@ -73,6 +75,21 @@ def _stl_folders(root):
     return sorted(found)
 
 
+def _project_files(root):
+    """The .3mf files gate/layout.json registers, as written there (relative to the root, or absolute)."""
+    try:
+        with open(os.path.join(root, 'gate', 'layout.json'), encoding='utf-8') as f:
+            layout = json.load(f)
+    except (OSError, ValueError):
+        return []
+    out = []
+    for e in (layout.get('projects') or []) if isinstance(layout, dict) else []:
+        f = e.get('file') if isinstance(e, dict) else None
+        if isinstance(f, str) and f and f not in out:
+            out.append(f)
+    return sorted(out)
+
+
 def _current_plan(root):
     try:
         with open(os.path.join(root, 'gate', 'run', 'current.json'), encoding='utf-8') as f:
@@ -96,6 +113,10 @@ def entries(root, tools_dir, rules_dir):
         _walk(os.path.join(g, d), 'gate/' + d, out['decisions'])
     for d in _stl_folders(root):
         _walk(os.path.join(root, *d.split('/')), d, out['stls'], ('.stl', '.STL'))
+    for f in _project_files(root):
+        _stat(f if os.path.isabs(f) else os.path.join(root, *f.split('/')), f, out['projects'])
+    _stat(os.path.join(g, 'run', 'bed_faces.json'), 'gate/run/bed_faces.json', out['projects'])
+    _walk(os.path.join(g, 'run', 'slice'), 'gate/run/slice', out['projects'], ('.json',))
     for rel in ['gate/reports/latest.json', 'gate/run/current.json', 'gate/run/scan.json', 'gate/run/pending.json'] + ([_current_plan(root).replace(os.sep, '/')] if _current_plan(root) else []):
         _stat(os.path.join(root, *rel.split('/')), rel, out['run'])
     for base, label in ((tools_dir, 'tools'), (rules_dir, 'rules')):

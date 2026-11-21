@@ -48,9 +48,49 @@ from gate_common import digest
 DEPS_V = 1
 GIVEN_UP = 'over budget, not run'   # how the error of a unit that was given up begins (gate_plan.OVER_BUDGET)
 INCOMPLETE_KEYS = ('screws_cut', 'late')    # a fact that says the probe's look was cut short by time (openings, screws)
+LATE_REASON = 'measured with a look cut short by time'
 SLACK_MM = 0.5                  # a census box and the box Fusion gives a body in a walk may differ by rounding: regions are this much wider
 JOB_INPUTS = ('doc', 'doc_key', 'component_id', 'occurrence', 'body', 'features', 'not_printed', 'motion_groups', 'args', 'target', 'legacy')
 WORLD_KINDS = ('part', 'copy', 'ref', 'mesh')
+# reasons of why_stale() that are about the measuring tool, not about the model: they plan a measurement again, but
+# they kill no stamp by themselves (gate_stamp._neighbours_moved): the facts measured again decide (_measured_since)
+TOOL_REASONS = ('no record of what it read', 'the probe changed', 'measured in another version of Fusion')
+
+
+def tool_reason(why):
+    """Is this why_stale() text about the measuring tool (the probe's code, the Fusion version, an older record, a
+    look cut short by time) rather than about the model?"""
+    return isinstance(why, str) and (why.startswith(TOOL_REASONS) or why.startswith(LATE_REASON))
+
+
+def probe_tables(tables):
+    """The tables as a probe gets them (gate_plan._job) and as the record of what a unit read digests them: without
+    what only the judges read, so that a print the owner records (gate/owner/tables.json: inserts measured_under, a
+    bearing seat fit, the screws and pins he stocks, where a measured bearing came from) measures nothing again. The
+    measured d / D / B of a bearing stay: they can change a classification. The judges keep the whole tables (ctx)."""
+    import copy
+    if not isinstance(tables, dict):
+        return tables
+    t = copy.deepcopy(tables)
+    for row in ((t.get('inserts') or {}).get('kinds') or {}).values() if isinstance(t.get('inserts'), dict) else []:
+        if isinstance(row, dict):
+            row.pop('measured_under', None)
+    b = t.get('bearings')
+    if isinstance(b, dict):
+        b.pop('seat_fit', None)
+        for row in (b.get('sizes') or {}).values() if isinstance(b.get('sizes'), dict) else []:
+            if isinstance(row, dict):
+                row.pop('measured', None)
+    s = t.get('screws')
+    if isinstance(s, dict):
+        for k in ('stock_lengths', 'stock_lengths_set', 'stock_from_project'):
+            s.pop(k, None)
+    pins = t.get('pins')
+    if isinstance(pins, dict):
+        for row in (pins.get('sizes') or {}).values() if isinstance(pins.get('sizes'), dict) else []:
+            if isinstance(row, dict):
+                row.pop('lengths', None); row.pop('stock', None)
+    return t
 
 
 def body_key(occurrence, body, mesh=False):
@@ -235,7 +275,7 @@ def incomplete(facts):
         if isinstance(x, dict):
             for k, v in x.items():
                 if k in INCOMPLETE_KEYS and v is True:
-                    return 'measured with a look cut short by time (%s)' % k
+                    return '%s (%s)' % (LATE_REASON, k)
                 if isinstance(v, (dict, list)):
                     stack.append(v)
         elif isinstance(x, list):

@@ -253,11 +253,12 @@ The proposal is a `.json` file, or a Markdown file (the text for him, in his lan
   {"kind": "waive", "finding": "F-9c1e04", "reason": "why the feature may stay"},
   {"kind": "decide", "item": "G-5d0c1a", "decision": "tolerate", "note": "next reprint", "part": null},
   {"kind": "adopt"},
+  {"kind": "baseline", "project": "main", "objects": ["Cover"], "expect": {"Cover": {"support_e": 40.0, "top_z": 2.0, "pose": "<pose hash>"}}},
   {"kind": "mode", "mode": "enforce"}
 ]}
 ```
 
-- `param` takes the fields of `owner param` (`key`, `under` optional); `target` sets (and with `unset` removes) keys of the declared target of a registered .3mf project, or of one object of it under `"objects"`, a `"print"` block merged key by key; `waive`, `decide` and `adopt` are the owner commands of the same name; `mode` is `observe` or `enforce`. `why` is never applied: it is the evidence he reads.
+- `param` takes the fields of `owner param` (`key`, `under` optional); `target` sets (and with `unset` removes) keys of the declared target of a registered .3mf project, or of one object of it under `"objects"`, a `"print"` block merged key by key; `waive`, `decide` and `adopt` are the owner commands of the same name; `baseline` is `owner baseline`, with `expect` holding the numbers he is shown (copy the `bundle_entry` that `gate.py slice` writes into `gate/proposals/support_baseline.json`: the apply is refused when the slice record moved since); `mode` is `observe` or `enforce`. `why` is never applied: it is the evidence he reads.
 - Every entry is checked as the single command checks it (a looser number needs M or U, a fit tagged M needs the project it was printed from, a waiver needs an open finding and a reason that is not an order), and the end state as a whole is checked once more. `gate/project.json` is written last.
 - Write the bundle; never apply it without his quote. Applying it is his yes, word for word.
 

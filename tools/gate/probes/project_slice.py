@@ -237,10 +237,10 @@ def load_record(root, key):
 def load_baseline(root):
     """(the baseline file's "projects" {key: {object name: entry}}, problem or None). A missing file is an empty baseline;
     a file that is not an object with "projects" is a problem (nothing in it counts)."""
-    path = baseline_path(root)
-    if not os.path.isfile(path):
+    missing = object()
+    data = gate_common.read_json(baseline_path(root), missing)      # no isfile test: inside `owner bundle` a staged write is read
+    if data is missing:
         return {}, None
-    data = gate_common.read_json(path, None)
     if not isinstance(data, dict) or not isinstance(data.get('projects'), dict):
         return {}, 'gate/owner/support_baseline.json must be an object with "projects": {key: {object name: entry}}'
     return data['projects'], None
@@ -266,6 +266,7 @@ def _members(source):
         raise GateError('%s cannot be read as a .3mf project (%s: %s)' % (source, type(e).__name__, e))
 
 
+_KEYS = {}                 # (path, mtime_ns, size) -> slice_keys() of that file state
 _OBJ_BLOCK = re.compile(r'<object\s+id="([^"]*)"[^>]*>(.*?)</object>', re.S)
 
 
@@ -276,6 +277,15 @@ def slice_keys(source):
     in the vertices), the object's whole block of Metadata/model_settings.config (its per-object settings, its parts and
     modifiers) and the process settings that move support (SUPPORT_SETTING). A slice is this object's slice only while
     its key is the same: an object turned on its plate, or a support setting changed, is sliced again."""
+    key = None
+    if not isinstance(source, dict):
+        try:
+            st = os.stat(source)
+            key = (os.path.abspath(source), st.st_mtime_ns, st.st_size)
+        except OSError:
+            key = None
+        if key is not None and key in _KEYS:
+            return dict(_KEYS[key])
     meshid = gate_common.sibling('meshid')
     from probes import project_bed
     files = _members(source)
@@ -292,6 +302,10 @@ def slice_keys(source):
         lin = items.get(str(m.get('id')), (project_bed._IDENTITY, None))[0]
         text = json.dumps([pose, [round(c, 6) + 0.0 for c in lin], blocks.get(str(m.get('id'))), glob_], sort_keys=True, default=str)
         out[(m.get('plate_index'), m['object'])] = (pose, hashlib.sha1(text.encode('utf-8')).hexdigest()[:16])
+    if key is not None:
+        if len(_KEYS) > 16:
+            _KEYS.clear()
+        _KEYS[key] = dict(out)                       # verify reads each project for its slice keys more than once
     return out
 
 

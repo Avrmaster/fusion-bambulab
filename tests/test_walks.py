@@ -12,7 +12,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, 'tools', 'gate'))
 for d in (os.path.join(ROOT, 'tools', 'bambu'), os.path.dirname(os.path.abspath(__file__))):
     if d not in sys.path: sys.path.insert(0, d)
-import bambu3mf, fake_fusion, fake_slicer, gate_common, gate_plan, gate_report, gate_stamp
+import bambu3mf, fake_fusion, fake_slicer, gate_common, gate_params, gate_plan, gate_registry, gate_report, gate_stamp
 from gate_guard import GuardRefusal
 import test_guard as G
 import test_end_to_end as E
@@ -281,6 +281,7 @@ class SeveralTargets(Walk):
         # as the shipped probes do: no unit reads the target or a parameter of it, so its facts hold for every target
         # (a unit that says it read everything would be measured again for the other target, and its export refused)
         self.fusion.default_inputs = {'params': [], 'tables': [], 'job': ['doc', 'component_id', 'occurrence', 'body', 'features']}
+        shipped_table_reads(self.fusion)                # and the tables they do read: a coupon the owner records measures nothing again
 
     def test_a_run_names_its_target_and_one_part_is_exported_for_both(self):
         self.model(foot='v2', hub='v1', clip='v1')
@@ -298,6 +299,7 @@ class SeveralTargets(Walk):
         tables = self.read('gate', 'owner', 'tables.json')                       # the owner prints the coupon plate of the coarse project too
         tables['inserts']['measured_under']['M3x4x5'].append(dict(tables['inserts']['measured_under']['M3x4x5'][0], layer_height=0.3))
         gate_common.write_json(self.path('gate', 'owner', 'tables.json'), tables)
+        self.reg = gate_registry.load_default(self.root)                         # the tables a stamp is verified against are the owner's of today
         code, out, err = self.gate('export', FOOT, '--for', 'coarse')            # the other project: the stored facts are judged again for it
         self.assertEqual((code, err), (0, ''), out); self.assertIn('stamped -> stl/lamp_foot.stl', out)
         s = self.stamp(FOOT)
@@ -495,6 +497,96 @@ class Forked(Walk):
         r = self.own(GATE, 'doctor')
         self.assertEqual(r.returncode, 4); self.assertIn('changed: tools/gate_judges.py', r.stdout)
         self.assertEqual(self.fusion.calls, [])
+
+
+def shipped_table_reads(fusion):
+    """Make the fake units say they read the tables the shipped probes read (OwnerTablesAndTheBed.READS)."""
+    orig = fusion.set_facts
+
+    def set_facts(probe, part, facts, **kw):
+        if kw.get('inputs_read') is None:
+            kw['inputs_read'] = {'params': [], 'tables': OwnerTablesAndTheBed.READS.get(probe, []), 'job': ['doc', 'component_id', 'occurrence', 'body', 'features']}
+        return orig(probe, part, facts, **kw)
+    fusion.set_facts = set_facts
+
+
+class OwnerTablesAndTheBed(Walk):
+    """What a stamp rests on besides the facts: the tables the owner keeps (gate/owner/tables.json) and the face the part
+    lies on in the saved project. A print the owner records measures nothing again; a stock list or a bed face that
+    makes a check fail today makes its stamp stale, and `run --changed` judges it again offline."""
+    # what the shipped probes say they read of JOB["tables"] (probes/_geom.classify_stack, fusion_inserts, ...)
+    READS = {'fusion_census': ['bearings', 'inserts', 'screws'], 'fusion_inserts': ['inserts'], 'fusion_bearings': ['bearings'],
+             'fusion_screws': ['bearings', 'screws'], 'fusion_openings': ['screws']}
+
+    def setUp(self):
+        super().setUp()
+        self.fusion.default_inputs = {'params': [], 'tables': [], 'job': ['doc', 'component_id', 'occurrence', 'body', 'features']}
+        shipped_table_reads(self.fusion)
+
+    def test_a_coupon_print_the_owner_records_measures_nothing_again(self):
+        self.ready()
+        for p in (FOOT, HUB, CLIP):
+            code, out, err = self.gate('export', p, '--wall', '60')
+            self.assertEqual(code, 0, out + err)
+        tables = self.read('gate', 'owner', 'tables.json')
+        tables['inserts']['measured_under']['M3x4x5'].append(dict(tables['inserts']['measured_under']['M3x4x5'][0], layer_height=0.3,
+                                                                   source='a coupon for another project', date='2031-02-01'))
+        gate_common.write_json(self.path('gate', 'owner', 'tables.json'), tables)
+        reg = gate_registry.load_default(self.root)
+        self.assertEqual({p: gate_stamp.verify(self.root, reg, self.stamp(p))[0] for p in (FOOT, HUB, CLIP)}, {FOOT: 'valid', HUB: 'valid', CLIP: 'valid'})
+        self.assertEqual(gate_report.status(self.root)['measure_again']['units'], 0)
+        n = len(self.fusion.calls)
+        self.assertEqual(self.gate('run', '--changed', '--wall', '600')[0], 0)
+        self.assertEqual([j for j in self.fusion.calls[n:] if j['part']], [])           # judged again offline, nothing measured
+
+    def test_a_stock_list_that_fails_a_stamped_pin_makes_its_stamp_stale(self):
+        gate_common.write_json(self.path('gate', 'owner', 'params.json'),
+                               {'fits.pin_slip_extra': {'value': 0.05, 'tag': 'U', 'source': 'owner in a test', 'date': '2031-01-01'}})
+        self.model(foot='v2', hub='v1', clip='v1')
+        self.assertEqual(self.gate('scan')[0], 0)
+        census = E.foot_census()
+        census['holes'].append({'id': 'h2', 'anchor': {'kind': 'hole', 'axis': [0, 0, 1], 'point': [30, 20, 5]},
+                                'segments': [{'d': 5.05, 'len': 10.0}], 'depth': 10.0, 'through': True, 'floor': None, 'exit': None,
+                                'class': None, 'coaxial': [{'name': 'ref hardware / dowel pin D5 x 20', 'kind': 'hardware', 'part': None}], 'arc': 1.0})
+        self.facts(FOOT, fusion_census=census, fusion_inserts=E.foot_pocket(4.2)); self.facts(HUB); self.facts(CLIP)
+        self.near()
+        self.run_gate()
+        self.fusion.set_export(FOOT, E.stl_bytes(E.MESHES['foot v2'](), E.NAMES[FOOT]))
+        self.answer_all()
+        self.run_gate('--offline')
+        self.assertEqual(self.gate('export', FOOT, '--wall', '60')[0], 0)
+        s = self.stamp(FOOT)
+        reg = gate_registry.load_default(self.root)
+        self.assertEqual(gate_stamp.verify(self.root, reg, s)[0], 'valid')
+        gate_common.write_json(self.path('gate', 'owner', 'tables.json'),
+                               dict(self.read('gate', 'owner', 'tables.json'), pins={'sizes': {'5': {'lengths': [32]}}}))
+        reg = gate_registry.load_default(self.root)
+        state, why = gate_stamp.verify(self.root, reg, s)
+        self.assertEqual(state, 'stale'); self.assertIn('the tables that fits.bought_part_pocket was judged with changed', why)
+        self.assertIn('20 is no stock length of D5 (32)', why)
+        resolved = gate_params.resolve(reg, gate_params.load_overrides(self.root), TARGET)
+        self.assertIn('fits.bought_part_pocket', gate_plan.judgement_out_of_date(self.root, reg, FOOT, s['sig'], resolved))
+        self.assertIn(FOOT, gate_plan.changed_parts(self.root))                          # run --changed takes it
+
+    def test_a_part_placed_on_its_side_after_its_export_loses_its_stamp(self):
+        from unittest import mock
+        from probes import project_consistency
+        self.ready()
+        self.assertEqual(self.gate('export', FOOT, '--wall', '60')[0], 0)
+        s = self.stamp(FOOT)
+        judged = gate_common.load_facts(self.root, FOOT, s['sig'])['judged']
+        self.assertEqual([f['verdict'] for f in judged['print.fit_axis']['findings']], ['INFO'])      # exported while it lay nowhere
+        reg = gate_registry.load_default(self.root)
+        self.assertEqual(gate_stamp.verify(self.root, reg, s)[0], 'valid')
+        side = [{'project': PROJ_KEY, 'table': 'bambulab/DeskLamp.3mf', 'plate': 'first plate', 'object': 'Lamp foot', 'orient': 'side',
+                 'down': (1.0, 0.0, 0.0), 'source': 'project'}]
+        with mock.patch.object(project_consistency, 'orientations', lambda root, layout, stl: (side, [])):
+            state, why = gate_stamp.verify(self.root, reg, s)
+            self.assertEqual(state, 'stale'); self.assertIn('the print orientation that print.fit_axis was judged with changed', why)
+            self.assertIn('lies 90 deg off the print axis', why)
+            self.assertNotIn(FOOT, gate_report.status(self.root)['stamped_ids'])
+            self.assertEqual(self.gate('run', '--changed', '--wall', '600')[0], 1)
+            self.assertEqual([f['verdict'] for f in gate_common.load_facts(self.root, FOOT, s['sig'])['judged']['print.fit_axis']['findings']], ['FAIL'])
 
 
 if __name__ == '__main__':

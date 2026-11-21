@@ -34,6 +34,18 @@ _MOTIONS = {}             # (project file key, object id, stl file key) -> solve
 _IDENTITY = (1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0)
 
 
+def _code():
+    try:
+        with open(os.path.abspath(__file__), 'rb') as f:
+            import hashlib
+            return hashlib.sha1(f.read()).hexdigest()[:12]
+    except OSError:
+        return None
+
+
+_HERE_CODE = _code()                  # a new version of this file measures again (placed_cache.json)
+
+
 def _file_key(path):
     st = os.stat(path)
     return os.path.abspath(path), st.st_mtime_ns, st.st_size
@@ -275,7 +287,57 @@ def _remember(root, stl_rel, rows):
         pass
 
 
+CACHE = ('run', 'placed_cache.json')
+
+
+def _cache_key(root, layout, stl_rel):
+    """What placed() of one STL depends on, as file states: the STL, every registered .3mf and the memory of earlier
+    measurements. None when the STL is not there."""
+    def state(p):
+        try:
+            st = os.stat(p)
+            return [st.st_size, st.st_mtime_ns]
+        except OSError:
+            return None
+    stl = os.path.join(root, *str(stl_rel).replace(os.sep, '/').split('/'))
+    if state(stl) is None:
+        return None
+    files = []
+    for e in (layout or {}).get('projects') or []:
+        if isinstance(e, dict) and e.get('file'):
+            path = e['file'] if os.path.isabs(e['file']) else os.path.join(root, e['file'])
+            files.append([e.get('key'), gate_common.rel(root, path), state(path)])
+    return [state(stl), files, state(gate_common.gate_path(root, *MEMORY)), _HERE_CODE]
+
+
 def placed(root, layout, stl_rel):
+    """placed_now() kept on disk (gate/run/placed_cache.json) per STL and the states of the files it reads: `gate.py
+    status`, the digest and every verify of a stamp ask for the bed face of each part, and reading every registered
+    .3mf again in each new process costs seconds in a project of several large ones."""
+    key = _cache_key(root, layout, stl_rel) if stl_rel else None
+    path = gate_common.gate_path(root, *CACHE)
+    if key is not None:
+        try:
+            data = gate_common.read_json(path, {})
+        except gate_common.GateError:
+            data = {}
+        got = data.get(str(stl_rel)) if isinstance(data, dict) else None
+        if isinstance(got, dict) and got.get('key') == key:
+            return got.get('rows') or [], got.get('problems') or [], set(got.get('projects') or [])
+    rows, problems, projects = placed_now(root, layout, stl_rel)
+    if key is not None:
+        try:
+            key = _cache_key(root, layout, stl_rel)          # placed_now may have written the memory
+            data = gate_common.read_json(path, {})
+            data = data if isinstance(data, dict) else {}
+            data[str(stl_rel)] = {'key': key, 'rows': rows, 'problems': problems, 'projects': sorted(p for p in projects if p is not None)}
+            gate_common.write_json(path, data)
+        except Exception:
+            pass
+    return rows, problems, projects
+
+
+def placed_now(root, layout, stl_rel):
     """How the registered .3mf projects lay the part whose STL is `stl_rel` (relative to the root), measured on the saved
     files: (rows, problems, projects). A row is {"project": key, "table": the .3mf (relative), "plate", "object",
     "orient": text that says how it was measured, "down": outward normal of the bed face in the STL frame,

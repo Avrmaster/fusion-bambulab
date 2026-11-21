@@ -9,7 +9,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, 'tools', 'gate'))
 for d in (os.path.join(ROOT, 'tools', 'bambu'), os.path.dirname(os.path.abspath(__file__))):
     if d not in sys.path: sys.path.insert(0, d)
-import gate, gate_attest, gate_common, gate_guard, gate_judges, gate_params, gate_plan, gate_registry, gate_slice
+import gate, gate_attest, gate_common, gate_features, gate_guard, gate_judges, gate_params, gate_plan, gate_registry, gate_slice
 from probes import mesh_overhang, project_bed, project_consistency, project_slice
 import bambu3mf, fake_slicer, meshid
 import test_guard as G
@@ -21,9 +21,10 @@ PLATES = [('first plate', [('bracket', 'bracket.stl', False)]), ('second plate',
 
 
 def run(fn, *a, **kw):
-    out = io.StringIO()
-    with contextlib.redirect_stdout(out), contextlib.redirect_stderr(io.StringIO()):
+    out, err = io.StringIO(), io.StringIO()
+    with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
         r = fn(*a, **kw)
+    run.err = err.getvalue()
     return r, out.getvalue()
 
 
@@ -362,7 +363,7 @@ class Slicing(G.Guarded):
         with mock.patch.dict(os.environ, {'BAMBU_STUDIO': exe, 'FAKE_SUPPORT': json.dumps({'cover': [12.0, 1.4]})}):
             code, out = run(gate.main, ['--root', self.d, 'slice', '--all'])
         self.assertEqual(code, 1, out)                                                   # the cover's support has no baseline
-        self.assertIn('plate 2 cover: support 12.0 mm (filament), up to z 1.4', out); self.assertIn('NOT_RUN cover gets 12 mm of support', out)
+        self.assertIn('plate 2 cover: support 12.0 mm (filament), up to z 1.4', out); self.assertIn('NOT_RUN main plate 2: cover gets 12 mm of support', out)
         prop = gate_common.read_json(gate_common.gate_path(self.d, 'proposals', 'support_baseline.json'))
         self.assertEqual(prop['projects']['main']['cover']['command'], 'gate.py owner baseline main "cover" --quote "..."')
         self.assertNotIn('bracket', prop['projects']['main'])                            # no support, nothing to decide
@@ -388,8 +389,55 @@ class Slicing(G.Guarded):
         self.slice()
         out = gate_guard.verify_project(self.d, reg, gate_params.resolve(reg, None, None), self.entry)
         self.assertEqual([(f['rule'], f['part']) for f in out['open'] if f['rule'].startswith('print.')], [('print.overhang_angle', 'main:cover')])
-        self.assertIn('Whether the slicer supports it is not known: the project settings do not hold enable_support',
-                      [f['text'] for f in out['open'] if f['rule'] == 'print.overhang_angle'][0])
+        text = [f['text'] for f in out['open'] if f['rule'] == 'print.overhang_angle'][0]
+        self.assertIn('the setting is not listed (the project settings do not hold enable_support), and the slice of this mesh, turn and settings', text)
+        self.assertIn('the slicer puts no support under it at all', text)                   # the slice of the very mesh decides, not a NOT_RUN for ever
+
+
+    # the first baselines of a project as one owner bundle: every entry is written, and only with the numbers shown
+    def bundle(self, entries):
+        G.shutil.copyfile(os.path.join(ROOT, 'templates', 'gate', 'settings.json'), self.claude_settings())
+        prop = os.path.join(self.d, 'gate', 'proposals', 'first_baselines.json'); os.makedirs(os.path.dirname(prop), exist_ok=True)
+        with open(prop, 'w') as f: json.dump({'bundle': 1, 'title': 'first baselines', 'entries': entries}, f)
+        return prop
+
+    def baseline_entry(self, name):
+        o = {r['name']: r for r in self.facts()['objects']}[name]
+        return {'kind': 'baseline', 'project': 'main', 'objects': [name],
+                'expect': {name: {'support_e': o['sliced']['support_e'], 'top_z': o['sliced']['top_z'], 'pose': o['pose']}}}
+
+    def test_two_entries_on_a_project_with_no_baseline_file_are_both_written(self):
+        self.slice({'cover': (40.0, 2.0), 'bracket': (5.0, 1.0)})
+        prop = self.bundle([self.baseline_entry('bracket'), self.baseline_entry('cover')])
+        self.assertEqual(run(gate.main, ['--root', self.d, 'owner', 'bundle', prop, '--dry-run'])[0], 0)
+        code, out = run(gate.main, ['--root', self.d, 'owner', 'bundle', prop, '--quote', 'record both'])
+        self.assertEqual(code, 0, out)
+        self.assertEqual(sorted(gate_common.read_json(project_slice.baseline_path(self.d))['projects']['main']), ['bracket', 'cover'])
+
+    def test_a_slice_after_the_dry_run_refuses_the_apply(self):
+        self.slice({'cover': (40.0, 2.0)})
+        prop = self.bundle([self.baseline_entry('cover')])
+        self.assertEqual(run(gate.main, ['--root', self.d, 'owner', 'bundle', prop, '--dry-run'])[0], 0)
+        self.slice({'cover': (95.0, 9.0)})                                                # sliced again: the proposal file is the same
+        code, out = run(gate.main, ['--root', self.d, 'owner', 'bundle', prop, '--quote', 'record that'])
+        self.assertEqual(code, 4); self.assertIn('the slice record changed since these numbers were shown', run.err)
+        self.assertFalse(os.path.exists(project_slice.baseline_path(self.d)))
+        bare = self.bundle([{'kind': 'baseline', 'project': 'main', 'objects': ['cover']}])
+        code, out = run(gate.main, ['--root', self.d, 'owner', 'bundle', bare, '--dry-run'])
+        self.assertEqual(code, 4); self.assertIn('entry 1 (baseline): missing expect', run.err)
+
+    def test_the_first_slice_of_a_project_is_one_run_of_the_slicer(self):
+        seen = []
+        real = project_slice.slice_project
+        with mock.patch.object(project_slice, 'slice_project', side_effect=lambda root, entry, plates=None, **kw: seen.append(plates) or real(
+                root, entry, plates, cli=fake_cli({'FAKE_SUPPORT': '{}'}), **{k: v for k, v in kw.items() if k != 'cli'})):
+            run(gate.main, ['--root', self.d, 'slice'])
+        self.assertEqual(seen, [None])                                                    # every plate: one load of the project, not one per plate
+        self.stl('cover', d=5.0); self.build(PLATES)
+        with mock.patch.object(project_slice, 'slice_project', side_effect=lambda root, entry, plates=None, **kw: seen.append(plates) or real(
+                root, entry, plates, cli=fake_cli({'FAKE_SUPPORT': '{}'}), **{k: v for k, v in kw.items() if k != 'cli'})):
+            run(gate.main, ['--root', self.d, 'slice'])
+        self.assertEqual(seen, [None, [2]])
 
 
 class OverhangOnTheProject(G.Guarded):
@@ -462,20 +510,22 @@ class BeforeTheWrite(G.Guarded):
             return quiet(self.build, PLATES)
 
     def test_a_grown_support_refuses_the_save_and_the_file_stays(self):
-        self.save({'cover': [40.0, 2.0]})                                                   # switch off: nothing is sliced inside the save
+        self.save({'cover': [40.0, 20.0]})                                                   # switch off: nothing is sliced inside the save
         self.assertFalse(os.path.exists(project_slice.record_path(self.d, 'main')))
         self.switch()
-        os.remove(self.proj); self.save({'cover': [40.0, 2.0]})                             # a new file: every plate is sliced, no baseline yet: written
+        os.remove(self.proj); self.save({'cover': [40.0, 20.0]})                             # a new file: every plate is sliced, no baseline yet: written
         rec = project_slice.load_record(self.d, 'main')
         self.assertEqual([o['support_e'] for o in rec['plates']['2']['objects']], [40.0])
         G.shutil.copyfile(os.path.join(ROOT, 'templates', 'gate', 'settings.json'), os.path.join(os.makedirs(os.path.join(self.d, '.claude'), exist_ok=True) or self.d, '.claude', 'settings.json'))
         self.assertEqual(run(gate.main, ['--root', self.d, 'owner', 'baseline', 'main', 'cover', '--quote', 'that much is fine'])[0], 0)
         self.stamp('demo/cover', SIG2, 'cover', d=5.0)                                     # a new cover, stamped
+        held = project_slice.load_record(self.d, 'main')['plates']
         with self.assertRaises(G.GuardRefusal) as c:
-            self.save({'cover': [90.0, 2.0]})
-        self.assertIn('FAIL cover: the slicer now puts 90 mm of support', str(c.exception))
+            self.save({'cover': [90.0, 20.0]})
+        self.assertEqual(project_slice.load_record(self.d, 'main')['plates'], held)       # the record still describes the file on disk
+        self.assertIn('FAIL main plate 2: cover: the slicer now puts 90 mm of support', str(c.exception))
         self.assertEqual(self.objects(), [])                     # the build put its empty template first; the parts were refused
-        self.save({'cover': [41.0, 2.0]})                                                   # within its baseline: written
+        self.save({'cover': [41.0, 20.0]})                                                   # within its baseline: written
         self.assertEqual(self.objects(), ['bracket', 'cover'])
 
     def test_no_slicer_on_this_machine_refuses_in_enforce_and_the_memory_keeps_the_file_on_disk(self):
@@ -549,6 +599,83 @@ class OverhangsBeforeTheWrite(G.Guarded):
         on = self.archive(enable_support='1', different_settings_to_system=['enable_support', '', ''])
         self.assertEqual(gate_slice.overhangs_before_write(self.d, self.proj, on, 'enforce', self.entry, ['shelf'])['open'], [])   # owed to the slice: verify says it
         self.assertEqual(gate_slice.overhangs_before_write(self.d, self.proj, files, 'enforce', self.entry, ['other'])['open'], [])   # not brought by this save
+
+
+class GuardSeams(G.Guarded):
+    """The pre-check of the overhangs before a write: objects a save turns or whose settings change, not only new meshes,
+    and a file outside the tree that enforce judges like a registered project."""
+    mode = 'enforce'
+
+    def setUp(self):
+        super().setUp()
+        write_stl(os.path.join(self.stls, 'shelf.stl'), *outward(*prism(SHELF)))
+        self.stamp('demo/shelf', SIG1, 'shelf')
+
+    def settings(self, path, **values):
+        infos, files = bambu3mf.load(path)
+        ps = json.loads(files['Metadata/project_settings.config']); ps.update(values)
+        files['Metadata/project_settings.config'] = json.dumps(ps).encode()
+        return infos, files
+
+    def test_supports_switched_off_under_a_carried_mesh_are_prechecked(self):
+        self.ledger()
+        self.build([('shelf plate', [('shelf', 'shelf.stl', False)])])
+        infos, files = self.settings(self.proj, enable_support='1', different_settings_to_system=['enable_support', '', ''])
+        quiet(bambu3mf.save, self.proj, files, infos)
+        infos, files = self.settings(self.proj, enable_support='0', different_settings_to_system=['enable_support', '', ''])
+        with self.assertRaises(G.GuardRefusal) as c:                                       # nothing new, the slice key moved: pre-checked
+            quiet(bambu3mf.save, self.proj, files, infos)
+        self.assertIn('hang over air', str(c.exception))
+
+    def test_a_stamped_part_turned_onto_a_hanging_face_is_prechecked(self):
+        self.ledger()
+        self.build([('shelf plate', [('shelf', 'shelf.stl', '+z')])])                    # on its flat top: nothing hangs
+        infos, files = self.settings(self.proj, enable_support='0', different_settings_to_system=['enable_support', '', ''])
+        quiet(bambu3mf.save, self.proj, files, infos)
+        with self.assertRaises(G.GuardRefusal) as c:                                       # the same stamped model on another face
+            self.build([('shelf plate', [('shelf', 'shelf.stl', False)])], template_first=False)
+        self.assertIn('hang over air', str(c.exception))
+
+    def test_a_file_outside_the_tree_gets_the_precheck_in_enforce(self):
+        scratch = self.outside()
+        bambu3mf.new_project(self.tpl, scratch)
+        quiet(bambu3mf.build, scratch, self.stls, [('shelf plate', [('shelf', 'shelf.stl', False)])])
+        infos, files = self.settings(scratch, enable_support='0', different_settings_to_system=['enable_support', '', ''])
+        with self.assertRaises(G.GuardRefusal) as c:
+            quiet(bambu3mf.save, scratch, files, infos)
+        self.assertIn('hang over air', str(c.exception))
+        self.assertFalse(os.path.exists(project_slice.record_path(self.d, 'None')))       # no slice record for a file of no project
+
+
+class PlacedWallsCode(G.Guarded):
+    def test_a_new_version_of_the_wall_code_measures_a_placed_mesh_again(self):
+        from probes import placed_walls, stl_walls
+        write_stl(os.path.join(self.stls, 'shelf.stl'), *outward(*prism(SHELF)))
+        self.build([('shelf plate', [('shelf', 'shelf.stl', False)])])
+        rows = [{'name': o['name'], 'id': o['id'], 'plate': o['plate'], 'plate_index': o['plate_index'], 'pose': o['pose'], 'part': None}
+                for o in project_bed.read_placed(self.proj)['objects']]
+        fake = lambda stl, under, budget_s=None, seed=None: {'regions': [], 'coverage': 1.0, 'report_under': under}
+        with mock.patch.object(stl_walls, 'measure', side_effect=fake):
+            self.assertEqual(placed_walls.facts(self.d, self.proj, rows, 1.2)['measured_now'], 1)
+            self.assertEqual(placed_walls.facts(self.d, self.proj, rows, 1.2)['measured_now'], 0)
+            with mock.patch.object(placed_walls, '_CODE', ['another version']):
+                self.assertEqual(placed_walls.facts(self.d, self.proj, rows, 1.2)['measured_now'], 1)
+
+
+class SameObjectTwoProjects(unittest.TestCase):
+    def test_a_row_names_its_project_so_one_waiver_covers_one_project(self):
+        reg = gate_registry.load_default()
+        rule = reg['rules']['print.slice_support_growth']
+        vals = gate_params.values(gate_params.resolve(reg), rule['params'])
+        obj = {'name': 'bracket', 'part': 'arm/bracket', 'plate_index': 1, 'printable': True, 'pose': 'p' * 16,
+               'sliced': {'support_e': 90.0, 'top_z': 2.0, 'plate_index': 1, 'time': 't'}, 'baseline': {'support_e': 40.0, 'top_z': 2.0}}
+        ids = []
+        for key in ('prod', 'test'):
+            facts = {'project': key, 'file': 'x.3mf', 'exists': True, 'slice': {'record': 'r', 'objects': [obj]}}
+            got = [f for f in gate_judges.run_judge(rule, facts, vals, {'part': '%s:' % key, 'rule': rule['id']}) if f['verdict'] == 'FAIL']
+            self.assertTrue(got[0]['text'].startswith('%s plate 1: bracket:' % key))
+            ids.append(gate_features.finding_id(got[0]) if hasattr(gate_features, 'finding_id') else got[0]['context'])
+        self.assertNotEqual(ids[0], ids[1])
 
 
 if __name__ == '__main__':

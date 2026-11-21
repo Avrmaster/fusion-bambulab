@@ -557,7 +557,7 @@ BUNDLE_KINDS = {                                 # kind -> (required fields, opt
     'decide': (('item', 'decision'), ('note', 'part')),
     'adopt': ((), ()),
     'mode': (('mode',), ()),
-    'baseline': (('project', 'objects'), ('reason',)),
+    'baseline': (('project', 'objects', 'expect'), ('reason',)),     # expect: {object: {"support_e", "top_z", "pose"}} as the dry run shows them
 }
 BUNDLE_COMMON = ('kind', 'why')                  # "why": the evidence, for the owner to read; never applied
 
@@ -598,6 +598,10 @@ def read_bundle(path):
             raise GateError('entry %d (target): "set" must be an object of key -> value, "unset" a list of keys' % i)
         if e['kind'] == 'mode' and e['mode'] not in ('observe', 'enforce'):
             raise GateError('entry %d (mode): "mode" must be "observe" or "enforce"' % i)
+        if e['kind'] == 'baseline' and (not isinstance(e['expect'], dict) or not isinstance(e['objects'], list)
+                                        or any(not isinstance(e['expect'].get(o), dict) for o in e['objects'])):
+            raise GateError('entry %d (baseline): "expect" must give each object of "objects" the numbers the owner is shown '
+                            '({"support_e", "top_z", "pose"} from gate/proposals/support_baseline.json): the apply refuses when the slice record moved since' % i)
         if e['kind'] == 'decide' and e['decision'] not in DECISIONS:
             raise GateError('entry %d (decide): "decision" must be one of %s' % (i, ', '.join(DECISIONS)))
     return data
@@ -723,8 +727,9 @@ def _owner_mode(root, args):
         for f, e in sorted(saves.items()):
             names = (e or {}).get('unchecked') or []
             if names:
-                print('  %s: %d object(s) have no stamp at its last guarded save; in enforce they are still let through while they lie in the file, '
-                      'and every new mesh needs a stamp' % (f, len(names)))
+                print('  WARNING %s: %d object(s) have no stamp at its last guarded save: enforce lets nothing through because it was there before, '
+                      'so every save of this file (a settings-only or a plain re-save too) is refused until they are exported through the gate '
+                      '(gate.py export PART) and swapped in' % (f, len(names)))
     return EXIT_PASS
 
 

@@ -7,7 +7,9 @@ written to gate/run/placed_walls/<pose>.stl and measured there by stl_mesh and s
 
 stl_walls can take up to a minute on a big part, and `gate.py verify` must stay quick. So the results are kept in
 gate/run/placed_walls/<pose>.json, keyed by the pose hash of the stored mesh (meshid.geom_hash) and the report width
-they were measured with: a mesh is measured once, and again only when it changes. One call measures for at most
+they were measured with, and holding the digest of the code that measured them (stl_walls, stl_mesh and this file,
+normalised as gate_deps does: a new version of the measurement measures every mesh again): a mesh is measured once,
+and again only when it or that code changes. One call measures for at most
 `budget_s` seconds; an object it did not reach is "pending" and the next call goes on with it (the cache is the cursor).
 An object the walls probe covered only in part in its time is kept with its coverage and measured again by a call that
 has more time. The rule walls.placed_stl says NOT_RUN for a pending object and for a coverage under
@@ -21,6 +23,16 @@ import gate_common
 from gate_common import GateError
 
 _DIR = ('run', 'placed_walls')
+_CODE = []
+
+
+def code():
+    """16 hex over the normalised code that measures a placed mesh (stl_walls.py, stl_mesh.py, this file)."""
+    if not _CODE:
+        import gate_deps
+        here = os.path.dirname(os.path.abspath(__file__))
+        _CODE.append(gate_common.digest([gate_deps._file_code(os.path.join(here, n)) for n in ('stl_walls.py', 'stl_mesh.py', 'placed_walls.py')]))
+    return _CODE[0]
 
 
 def _stl(path, vertices, triangles):
@@ -32,6 +44,13 @@ def _stl(path, vertices, triangles):
     with open(tmp, 'wb') as f:
         f.write(b''.join(out))
     os.replace(tmp, path)
+
+
+def _shape(o):
+    """16 hex over the triangles of a placed mesh (its connectivity and winding): the pose hash sees the vertices and
+    the count only, so a mesh re-triangulated or turned inside out on the same vertices is measured again."""
+    import array, hashlib
+    return hashlib.sha1(array.array('q', [int(i) for tr in o['triangles'] for i in tr]).tobytes()).hexdigest()[:16]
 
 
 def facts(root, path, rows, report_under, budget_s=20.0):
@@ -56,7 +75,8 @@ def facts(root, path, rows, report_under, budget_s=20.0):
         cache = os.path.join(folder, key + '.json')
         stored = gate_common.read_json(cache, None) if os.path.isfile(cache) else None
         left = budget_s - (time.time() - start)
-        if isinstance(stored, dict) and stored.get('pose') == o['pose'] and stored.get('report_under') == report_under:
+        if isinstance(stored, dict) and stored.get('pose') == o['pose'] and stored.get('report_under') == report_under and stored.get('code') == code() \
+                and stored.get('triangles') == len(o['triangles']) and stored.get('shape') == _shape(o):
             partial = isinstance(stored.get('walls'), dict) and (stored['walls'].get('coverage') or 0) < 1.0
             if not (partial and left > float(stored.get('budget') or 0) + 0.5):
                 out['objects'].append(dict(row, state='measured', mesh=stored.get('mesh'), walls=stored.get('walls')))
@@ -75,7 +95,8 @@ def facts(root, path, rows, report_under, budget_s=20.0):
             os.remove(stl)
             # a part measured over a share of its surface only ("coverage" under 1) is kept as it is: walls.min_material
             # says NOT_RUN with the share, and a later call with more time measures it again
-            gate_common.write_json(cache, {'pose': o['pose'], 'report_under': report_under, 'mesh': mesh, 'walls': walls, 'budget': budget, 'time': gate_common.now()})
+            gate_common.write_json(cache, {'pose': o['pose'], 'report_under': report_under, 'mesh': mesh, 'walls': walls, 'budget': budget, 'time': gate_common.now(),
+                                           'code': code(), 'triangles': len(o['triangles']), 'shape': _shape(o)})
             out['measured_now'] += 1
             out['objects'].append(dict(row, state='measured', mesh=mesh, walls=walls))
         except (GateError, OSError, ValueError, MemoryError) as e:

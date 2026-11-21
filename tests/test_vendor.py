@@ -169,7 +169,7 @@ class Doctor(unittest.TestCase):
         gate_common.write_json(gate_common.gate_path(self.d, 'layout.json'),
                                {'documents': [{'key': 'demo', 'name': 'Demo Assembly', 'stl_dir': 'stl', 'motion_groups': [{'key': 'slide', 'patterns': ['^Slide']}]}],
                                 'projects': [{'key': 'main', 'file': 'bambulab/Demo.3mf', 'stl_dir': 'stl'}]})
-        gate_common.write_json(os.path.join(self.d, '.claude', 'settings.json'), {'permissions': {'ask': ['Edit(/gate/owner/**)', 'Bash(*gate.py owner *)']}})
+        gate_common.write_json(os.path.join(self.d, '.claude', 'settings.json'), {'permissions': {'deny': ['Edit(/gate/owner/**)', 'Write(/gate/owner/**)'], 'ask': ['Bash(python3 gate/tools/gate.py owner *)']}})
         os.makedirs(os.path.join(self.d, 'stl')); os.makedirs(os.path.join(self.d, 'bambulab'))
         with open(os.path.join(self.d, 'bambulab', 'Demo.3mf'), 'w') as f: f.write('')
         gate_render.write_project_rules(self.d, gate_registry.load(), None)

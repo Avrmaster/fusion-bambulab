@@ -169,6 +169,28 @@ class Deps(unittest.TestCase):
             self.assertEqual(gate_plan.stale_units(self.root, self.demo.registry())[BRACKET]['fusion_thin'], 'the probe changed')
             self.assertEqual(sorted(self.gate_run()[3]), sorted((p, 'fusion_thin') for p in (BRACKET, COVER, FAR)))
 
+    def test_a_new_probe_version_measures_again_but_kills_no_stamp(self):
+        self.gate_run()
+        stamp = fake_fusion.whole_stamp(self.root, BRACKET, self.sigs['Bracket'], facts=gate_stamp.facts_digests(self.root, BRACKET, self.sigs['Bracket']))
+        reg = self.demo.registry()
+        self.assertEqual(gate_stamp.verify(self.root, reg, stamp)[0], 'valid')
+        with mock.patch.dict(gate_deps._CODE, {'fusion_thin': 'the text of a newer plugin'}):
+            self.assertEqual(gate_plan.stale_units(self.root, reg)[BRACKET]['fusion_thin'], 'the probe changed')     # planned again
+            self.assertEqual(gate_stamp.verify(self.root, reg, stamp)[0], 'valid')                                    # the stamp holds meanwhile
+        self.assertTrue(gate_deps.tool_reason('measured in another version of Fusion (1, now 2)'))
+        self.assertTrue(gate_deps.tool_reason('measured with a look cut short by time (late)'))
+        self.assertFalse(gate_deps.tool_reason('Cover changed, moved, or was shown or hidden'))
+
+    def test_the_probes_get_the_tables_without_what_only_the_judges_read(self):
+        tables = {'inserts': {'kinds': {'M3x4x5': {'d': 4.0, 'measured_under': [{'layer_height': 0.2}]}}},
+                  'bearings': {'sizes': {'608': {'d': 8.0, 'D': 22.0, 'B': 7.0, 'measured': {'source': 'caliper', 'date': 'x'}}}, 'seat_fit': {'tag': 'M'}},
+                  'screws': {'stock_lengths': {'M3': [8]}, 'stock_lengths_set': {}, 'stock_from_project': ['x'], 'heads': {'M3': 5.5}},
+                  'pins': {'sizes': {'5': {'d': 5.0, 'lengths': [32], 'stock': 'project'}}}}
+        got = gate_deps.probe_tables(tables)
+        self.assertEqual(got, {'inserts': {'kinds': {'M3x4x5': {'d': 4.0}}}, 'bearings': {'sizes': {'608': {'d': 8.0, 'D': 22.0, 'B': 7.0}}},
+                               'screws': {'heads': {'M3': 5.5}}, 'pins': {'sizes': {'5': {'d': 5.0}}}})
+        self.assertIn('measured_under', tables['inserts']['kinds']['M3x4x5'])            # the judges keep the whole tables
+
     def test_a_census_measured_again_with_the_same_holes_needs_no_other_unit(self):
         self.census_reads = [{'box': [[0, 0, 0], [40, 30, 10]], 'margin': 5.0}]                # the bracket's census looks 5 mm round it
         self.answer()

@@ -718,7 +718,8 @@ def summary_line(report):
     t = report.get('totals') or {}
     by = t.get('by_verdict') or {}
     split = ', '.join('%d %s' % (by[k], k) for k in VERDICT_ORDER if by.get(k))
-    bits = ['%d parts' % len(report.get('parts') or []), '%d open%s' % (t.get('block_open', 0), (' (%s)' % split) if split else ''),
+    unit = 'projects' if report.get('stage') == 'project' else 'parts'
+    bits = ['%d %s' % (len(report.get('parts') or []), unit), '%d open%s' % (t.get('block_open', 0), (' (%s)' % split) if split else ''),
             '%d questions%s' % (t.get('attest_open', 0), (' (%d answered by facts)' % t['by_facts']) if t.get('by_facts') else ''),
             '%d not run' % t.get('not_run', 0)]
     if t.get('inherited'):
@@ -944,10 +945,12 @@ def _stl_hash(root, relpath, cache, deadline):
     return sha
 
 
-def _stl_states(root, layout, census, hash_budget_s):
+def _stl_states(root, layout, census, hash_budget_s, stamped=None):
     """{relative path: "valid" | "stale" | "none" | "unknown"} of every STL in a registered STL folder, by the cheap test:
     a stamp exists for exactly these bytes, and it is the stamp of the part's current signature. (`gate.py verify` is
-    the full test.)"""
+    the full test.) stamped: the part ids whose stamp is valid today (status computes them with gate_stamp.verify); an
+    STL whose stamp matched by its bytes but whose part is not among them is "stale" too (a judge, a parameter or the
+    facts moved since)."""
     folders = []
     for entry in list(layout.get('documents') or []) + list(layout.get('projects') or []):
         d = (entry.get('stl_dir') or '').strip('/')
@@ -986,12 +989,36 @@ def _stl_states(root, layout, census, hash_budget_s):
             continue
         stamps = by_sha.get(sha) or []
         head = [s for s in stamps if (census['parts'].get(s.get('part')) or {}).get('sig') == s.get('sig')]
+        if head and stamped is not None and not any(s.get('part') in stamped for s in head):
+            head = []                                    # the bytes are stamped, the stamp no longer holds
         out[rel] = 'valid' if head else 'stale' if stamps else 'none'
     if json.dumps(cache, sort_keys=True) != before:
         try:
             write_json(cache_path, cache)
         except OSError:
             pass
+    return out
+
+
+def _slice_owed(root, layout):
+    """[(project key, "never" | "older")] of the registered .3mf projects whose slice record (gate/run/slice/<key>.json)
+    is missing, or older than the file: print.overhang_angle and print.slice_support_growth stay NOT_RUN at `gate.py
+    verify` until `gate.py slice KEY`. Only modification times are read."""
+    from probes import project_slice
+    out = []
+    for e in layout.get('projects') or []:
+        if not isinstance(e, dict) or not e.get('file') or not e.get('key'):
+            continue
+        path = e['file'] if os.path.isabs(e['file']) else os.path.join(root, *e['file'].split('/'))
+        try:
+            mine = os.path.getmtime(path)
+        except OSError:
+            continue
+        rec = project_slice.record_path(root, e['key'])
+        if not os.path.isfile(rec):
+            out.append((e['key'], 'never'))
+        elif os.path.getmtime(rec) < mine:
+            out.append((e['key'], 'older'))
     return out
 
 
@@ -1068,7 +1095,7 @@ def status(root, reg=None, hash_budget_s=None):
     unchecked.sort()
     stamped = [p for p in live if p not in changed and p not in unchecked]
     checked = [p for p in live if p in changed and p not in unchecked]
-    states = _stl_states(root, layout, census, hash_budget_s)
+    states = _stl_states(root, layout, census, hash_budget_s, stamped=set(live) - set(changed))     # a valid stamp today (verify)
     plan = gate_plan.load_plan(root)
     unfinished = None
     if plan and plan.get('command') == 'run':
@@ -1077,7 +1104,7 @@ def status(root, reg=None, hash_budget_s=None):
             unfinished = {'run': plan['run'], 'done': n, 'total': m}
     over = gate_plan.scan_over_budget(root) + (gate_plan.over_budget(plan) if plan and plan.get('command') == 'run' else [])
     latest = load_latest(root) or {}
-    return {'mode': project['mode'], 'parts': len(live), 'changed': changed, 'open': open_, 'questions': questions,
+    return {'slice_owed': _slice_owed(root, layout), 'mode': project['mode'], 'parts': len(live), 'changed': changed, 'open': open_, 'questions': questions,
             'unstamped_stls': sorted(p for p, s in states.items() if s in ('none', 'stale')), 'triage_open': sum(1 for i in triage_of(root) if not i.get('decision')),
             'last_run': latest.get('run'), 'last_scan': census.get('scanned'), 'unchecked': unchecked, 'inherited': inherited, 'stale': stale,
             'stl_states': states, 'unfinished': unfinished, 'unreachable': sorted(k for k, d in census['docs'].items() if d.get('open') is False),
@@ -1169,6 +1196,9 @@ def _status_lines(st, rows=None):
         out.append('  judged by an older judge (`gate.py run --offline`): %s' % _some(st['stale']))
     if st['unreachable']:
         out.append('  documents not open at the last scan: %s' % ', '.join(st['unreachable']))
+    for key, how in st.get('slice_owed') or []:          # the project stage: its supports are measured by a slice, not by this status
+        out.append('  project %s %s: python3 gate/tools/gate.py slice %s, then python3 gate/tools/gate.py verify'
+                   % (key, 'was never sliced by the gate' if how == 'never' else 'changed since its last slice', key))
     return out
 
 

@@ -326,6 +326,27 @@ def ask_rules_missing(root):
     return [text for key, text in ASK_WANTED if not have[key]]
 
 
+OBSOLETE_ASK = 'Bash(*gate.py * owner *)'     # the broad ask rule of the 0.2 template: it prompted the owner on ordinary gate commands
+
+
+def obsolete_rules(root):
+    """Permission rules of an older template that the project's .claude/settings.json (or settings.local.json) still
+    holds: the broad ask rule on any gate.py command with "owner" in it, and "ask" rules for edits of gate/owner or
+    gate/project.json, which the template now denies. [] when there is none."""
+    out = []
+    for name in ('settings.json', 'settings.local.json'):
+        try:
+            data = read_json(os.path.join(root, '.claude', name), {})
+        except GateError:
+            continue
+        perms = data.get('permissions') if isinstance(data, dict) else None
+        ask = perms.get('ask') if isinstance(perms, dict) and isinstance(perms.get('ask'), list) else []
+        for r in ask:
+            if isinstance(r, str) and (r == OBSOLETE_ASK or (r.startswith(('Edit(', 'Write(')) and ('gate/owner' in r or 'gate/project.json' in r))):
+                out.append('%s: "ask": %s' % (name, r))
+    return out
+
+
 _SKIP_DIRS = ('node_modules', '__pycache__', 'gate')
 
 

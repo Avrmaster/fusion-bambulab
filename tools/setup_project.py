@@ -43,7 +43,8 @@ def vendor(root, overwrite_fork=False):
                 if f.endswith('.py') and f not in keep: shutil.copy(os.path.join(HERE, 'ledger', f), d)
         open(os.path.join(d, 'VERSION'), 'w').write('fusion-bambulab %s\n' % version); say('vendored', d)
     if os.path.isdir(os.path.join(root, 'cnc')): vendor_cnc(root, version)
-    if gated: vendor_gate(root, overwrite_fork, st)
+    if gated and vendor_gate(root, overwrite_fork, st):
+        propose(root, None)                               # the permission rules of this version, and those of an older one to remove
 
 def gate_module(name):
     """A module of tools/gate, tools/ledger or tools/bambu of THIS plugin (never the copy inside a project)."""
@@ -72,6 +73,9 @@ def vendor_gate(root, overwrite_fork=False, st=None):
         if f.endswith('.py'): shutil.copy(os.path.join(HERE, 'ledger', f), d)
     shutil.copy(os.path.join(HERE, 'bambu', 'meshid.py'), d)
     lock = gate_vendor.vendor(PLUGIN, root); say('vendored', '%s (%d files, LOCK.json %s)' % (os.path.join(root, 'gate'), len(lock['files']), lock['version']))
+    if os.path.isfile(os.path.join(root, 'gate', 'project.json')):          # gate/RULES.md is generated: it follows the rules just vendored
+        try: say('wrote', gate_module('gate_render').write_project_rules(root, gate_module('gate_registry').load(), None))
+        except Exception as e: say('NOT DONE', 'gate/RULES.md: %s' % e)
     return True
 
 def fill_json(obj, v):
@@ -161,7 +165,10 @@ def setup_gate(root, proj=None, doc=None, overwrite_fork=False):
     propose(root, old)
 
 def propose(root, claude_md):
-    """Print what belongs to the owner: the permission rules and the CLAUDE.md lines. Nothing is written."""
+    """Print what belongs to the owner: the permission rules (and the rules of an older template to remove) and the
+    CLAUDE.md lines (claude_md None: the text of the project's CLAUDE.md is read here). Nothing is written."""
+    if claude_md is None:
+        md = os.path.join(root, 'CLAUDE.md'); claude_md = open(md, encoding='utf-8').read() if os.path.exists(md) else ''
     want = json.load(open(os.path.join(PLUGIN, 'templates', 'gate', 'settings.json'), encoding='utf-8'))
     path = os.path.join(root, '.claude', 'settings.json')
     try: perms = json.load(open(path, encoding='utf-8')).get('permissions', {}) if os.path.exists(path) else {}
@@ -172,8 +179,18 @@ def propose(root, claude_md):
         print('\nPROPOSED  %s  (not written: the owner adds it). Agents may not edit the owner files at all (deny), and an owner command asks first (ask):' % path)
         print(json.dumps({'permissions': missing}, indent=2))
     else: say('kept', path + ' (the rules for the owner files are there)')
+    old_rules = gate_module('gate_common').obsolete_rules(root)
+    if old_rules:
+        print('\nPROPOSED REMOVAL  (not written: the owner removes them) rules of an older template that put a prompt in front of ordinary gate commands, '
+              'or ask where the template now denies:\n  ' + '\n  '.join(old_rules))
     lines = claude_sections()[1]
-    if GATE_START in claude_md: say('kept', os.path.join(root, 'CLAUDE.md') + ' (the gate lines are there)')
+    if GATE_START in claude_md:
+        say('kept', os.path.join(root, 'CLAUDE.md') + ' (the gate lines are there)')
+        # the owner words his own section; a command of this version's lines that it never names is said, not written
+        new = [l for l in lines.splitlines() if l.startswith('- ') and any(c not in claude_md for c in re.findall(r'`([^`]*gate\.py [^`]*)`', l))]
+        if new:
+            print('NOTE      %s names no command of these lines of this version (templates/CLAUDE.md); the owner decides whether they go in:\n%s'
+                  % (os.path.join(root, 'CLAUDE.md'), '\n'.join(new)))
     elif lines: print('\nPROPOSED  %s  (not written: the owner adds these lines)\n%s' % (os.path.join(root, 'CLAUDE.md'), lines))
     print('NEXT      python3 gate/tools/gate.py doctor   then   python3 gate/tools/gate.py run --audit   (lists what the project already has; nothing blocks)')
 

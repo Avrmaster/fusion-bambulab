@@ -327,6 +327,9 @@ def doctor_lines(root, pinger=None):
                                            'templates/gate/settings.json' % '; '.join(missing))
         else:
             _line(out, 'ok', 'settings', 'the ask rules for gate/owner and for `gate.py owner` are in .claude/settings.json')
+        for r in gate_common.obsolete_rules(root):
+            _line(out, 'warn', 'settings', '%s is a rule of an older template: the owner removes it (templates/gate/settings.json denies agent edits of '
+                                           'the owner files and asks only for `python3 gate/tools/gate.py owner *`)' % r)
     if reg is not None and resolved is not None:
         try:
             import gate_render

@@ -86,7 +86,9 @@ def _propose(root, key, sl):
         if isinstance(base, dict) and base.get('support_e') == got.get('support_e') and base.get('top_z') == got.get('top_z'):
             continue
         rows[o['name']] = {'measured': {'support_e': got.get('support_e'), 'top_z': got.get('top_z'), 'plate_index': got.get('plate_index'), 'sliced': got.get('time')},
-                           'baseline': base, 'command': 'gate.py owner baseline %s "%s" --quote "..."' % (key, o['name'])}
+                           'baseline': base, 'command': 'gate.py owner baseline %s "%s" --quote "..."' % (key, o['name']),
+                           'bundle_entry': {'kind': 'baseline', 'project': key, 'objects': [o['name']],
+                                            'expect': {o['name']: {'support_e': got.get('support_e'), 'top_z': got.get('top_z'), 'pose': o.get('pose')}}}}
     projects = data.get('projects') if isinstance(data.get('projects'), dict) else {}
     if rows:
         projects[key] = rows
@@ -123,6 +125,8 @@ def cmd_slice(root, args):
             plates = project_slice.changed_plates(root, entry)
             if not plates:
                 print('gate slice %s: every plate holds the meshes of the last slice; nothing to slice' % key)
+            elif project_slice.load_record(root, key) is None or set(plates) >= set(project_slice.plates_of(path)):
+                plates = None                            # every plate: one run of the slicer loads the project once, not once per plate
         if plates is None or plates:
             rec = project_slice.slice_project(root, entry, plates, timeout=float(getattr(args, 'timeout', None) or 1800), keep=bool(getattr(args, 'keep', False)))
             for index, p in sorted(rec.get('plates', {}).items(), key=lambda kv: int(kv[0]) if kv[0].isdigit() else 0):
@@ -166,9 +170,20 @@ def owner_baseline(root, args):
             raise GateError('%s holds no object "%s"; nothing was written' % (key, name))
         if not isinstance(o.get('sliced'), dict):
             raise GateError('"%s": %s. Slice it first (gate.py slice %s --changed); nothing was written' % (name, o.get('why') or 'not sliced', key))
+        expect = getattr(args, 'expect', None)
+        shown = expect.get(name) if isinstance(expect, dict) else None
+        if isinstance(expect, dict) and not isinstance(shown, dict):
+            raise GateError('"%s": the entry gives no numbers for it ("expect"); nothing was written' % name)
+        if isinstance(shown, dict):                      # the numbers the owner saw (a bundle entry, its dry run): the record must still hold them
+            got = o['sliced']
+            differ = [k for k in ('support_e', 'top_z', 'pose') if k in shown and shown[k] != (o.get('pose') if k == 'pose' else got.get(k))]
+            if differ:
+                raise GateError('"%s": the slice record changed since these numbers were shown (%s: %s then, %s now); nothing was written. Show the '
+                                'owner the dry run again' % (name, ', '.join(differ), ', '.join(str(shown[k]) for k in differ),
+                                                             ', '.join(str(o.get('pose') if k == 'pose' else got.get(k)) for k in differ)))
         rows.append(o)
     path = project_slice.baseline_path(root)
-    data = gate_common.read_json(path, {}) if os.path.isfile(path) else {}
+    data = gate_common.read_json(path, {})              # no isfile test: inside `owner bundle` an earlier entry's staged write is read
     if not isinstance(data, dict) or not isinstance(data.get('projects', {}), dict):
         raise GateError('gate/owner/support_baseline.json must be an object with "projects"; nothing was written')
     data.setdefault('_about', 'OWNER file. The support the slicer gives each object, per project and object name, as the owner accepted it after '
@@ -204,6 +219,8 @@ def before_write(root, path, files, mode, entry, cli=None):
     from probes import project_slice
     meshid = gate_common.sibling('meshid')
     key = entry.get('key')
+    if key is None:                                  # a file judged like a registered project: no slice record of its own
+        return {'changed': [], 'open': [], 'sliced': False, 'line': None}
     rows = []
     for m in meshid.project_meshes(files):
         rows.append({'name': m['object'], 'id': m.get('id'), 'plate': m.get('plate'), 'plate_index': m.get('plate_index'),
@@ -211,8 +228,10 @@ def before_write(root, path, files, mode, entry, cli=None):
     changed = project_slice.changed_plates(root, entry, source=files)
     project = gate_common.load_project(root)
     now = bool(project.get('slice_before_write')) and changed
-    trouble = None
+    trouble, restore = None, None
     if now:
+        held = (project_slice.load_record(root, key) or {}).get('plates') or {}
+        restore = {str(p): held.get(str(p)) for p in changed}      # what the record held for these plates of the file on disk
         pending = gate_common.gate_path(root, 'run', 'slice', '%s.%d.pending.3mf' % (gate_common.slug(str(key)), os.getpid()))
         os.makedirs(os.path.dirname(pending), exist_ok=True)
         import zipfile
@@ -237,7 +256,8 @@ def before_write(root, path, files, mode, entry, cli=None):
     facts = {'project': key, 'file': entry.get('file'), 'exists': True, 'slice': project_slice.facts_for(root, key, rows, files)}
     ctx = {'part': '%s:' % key, 'rule': rule['id'], 'tables': reg.get('tables') or {}, 'target': declared, 'census': None, 'prev': None, 'intent': None}
     found = [f for f in gate_judges.run_judge(rule, facts, vals, ctx) if f.get('verdict') in gate_common.BLOCKING]
-    out = {'changed': changed, 'open': found, 'sliced': bool(now), 'line': None, 'grew': [f['part'] for f in found if f.get('verdict') == 'FAIL']}
+    out = {'changed': changed, 'open': found, 'sliced': bool(now), 'line': None, 'grew': [f['part'] for f in found if f.get('verdict') == 'FAIL'],
+           'restore': restore}
     if changed or found:
         out['line'] = ('gate slice [%s] %s: %s%s' % (mode, gate_common.rel(root, path),
                        ('plates %s change meshes: their supports are judged after `gate.py slice %s --changed`; ' % (', '.join(str(p) for p in changed), key)) if changed and not now else '',
@@ -251,11 +271,36 @@ def before_write(root, path, files, mode, entry, cli=None):
             out['error'] = True
         refuse = [f for f in found if f.get('verdict') == 'FAIL']
         if mode == 'enforce' and (refuse or failed):
+            if restore is not None:
+                _restored(root, key, restore)        # the record keeps describing the file on disk
             raise SliceRefusal('%s\n%s\nNothing was written: the supports of this save grew past the owner\'s baseline, or a changed plate could not be '
                                'sliced. An object with no baseline yet is not refused here: gate.py verify holds it until the owner records one.'
                                % (out['line'] or 'gate slice [enforce] %s' % gate_common.rel(root, path),
                                   '\n'.join(['  FAIL %s' % f['text'] for f in refuse[:12]] + ['  NOT SLICED %s' % t for t in failed])), refuse)
     return out
+
+
+def restore(root, key, plates):
+    """Put back the plates {index: row or None} of the slice record of `key` as they were before a save that was then
+    refused sliced its archive into it: the record keeps describing the file on disk."""
+    from probes import project_slice
+
+    def back(rec):
+        mine = rec.setdefault('plates', {})
+        for index, row in plates.items():
+            if row is None:
+                mine.pop(str(index), None)
+            else:
+                mine[str(index)] = row
+    project_slice._locked_update(root, key, back)
+
+
+def _restored(root, key, plates):
+    try:
+        restore(root, key, plates)
+        return True
+    except GateError:
+        return False
 
 
 def overhangs_before_write(root, path, files, mode, entry, names):
@@ -281,7 +326,7 @@ def overhangs_before_write(root, path, files, mode, entry, names):
     vals = gate_params.values(gate_params.resolve(reg, gate_params.load_overrides(root), declared), rule['params'])
     facts = {'project': key, 'file': entry.get('file'), 'exists': True,
              'overhangs': project_consistency.overhang_facts(root, files, rows, lambda: reg, declared),
-             'slice': project_slice.facts_for(root, key, rows, files)}
+             'slice': project_slice.facts_for(root, key, rows, files) if key is not None else {'record': None, 'plates': {}, 'objects': []}}
     ctx = {'part': '%s:' % key, 'rule': rule['id'], 'tables': reg.get('tables') or {}, 'target': declared, 'census': None, 'prev': None, 'intent': None}
     bad = [f for f in gate_judges.run_judge(rule, facts, vals, ctx) if f.get('verdict') == 'FAIL']
     out = {'open': bad, 'line': None}
