@@ -116,7 +116,11 @@
         "sensors.magnet_pocket_d",
         "sensors.magnet_pocket_depth",
         "inserts.ref_pattern",
-        "screws.ref_pattern"
+        "screws.ref_pattern",
+        "sensors.magnet_d6_pocket_d",
+        "sensors.magnet_d6_pocket_depth",
+        "fits.pin_ref_pattern",
+        "screws.min_engagement"
       ],
       "check": {
         "probe": "fusion_openings",
@@ -133,7 +137,7 @@
         "An opening that lost its function: remove it. A reserve insert under another part is removed or named unusable."
       ],
       "attest": null,
-      "note": "First run on a real assembly: a free path of the full reach in front of both ends of every hole gave well over a hundred findings on a handful of parts, nearly all of them what sits in the opening by design (the bearing and its clamp washers, the plate a screw bolts to, the motor a hole screws into) or an old mesh overlay. The rule now asks per kind of opening. Not judged by it: what stands in front of a bearing seat other than the part itself (bearings.insertion_path, not asked yet), and holes of no table (census.unknown_hole asks). Facts from a probe that knew screws by name only: a screw hole with a bought body on its axis is NOT_RUN until the facts are collected again."
+      "note": "First run on a real assembly: a free path of the full reach in front of both ends of every hole gave well over a hundred findings on a handful of parts, nearly all of them what sits in the opening by design (the bearing and its clamp washers, the plate a screw bolts to, the motor a hole screws into) or an old mesh overlay. The rule now asks per kind of opening. Not judged by it: what stands in front of a bearing seat other than the part itself (bearings.insertion_path, not asked yet), and holes of no table (census.unknown_hole asks). Facts from a probe that knew screws by name only: a screw hole with a bought body on its axis is NOT_RUN until the facts are collected again. A blind thread pilot shallower than the least thread engagement of its size (a phasing marker, a spigot socket) holds no screw and needs no key path. A blind slot or window with nothing measured inside it (a lightening pocket between ribs) needs no key path either: one INFO row counts them."
     },
     {
       "id": "access.screw_path",
@@ -175,7 +179,11 @@
         "sensors.magnet_pocket_d",
         "sensors.magnet_pocket_depth",
         "inserts.ref_pattern",
-        "screws.ref_pattern"
+        "screws.ref_pattern",
+        "sensors.magnet_d6_pocket_d",
+        "sensors.magnet_d6_pocket_depth",
+        "fits.pin_ref_pattern",
+        "screws.min_engagement"
       ],
       "check": {
         "probe": "fusion_openings",
@@ -199,7 +207,8 @@
       "params": [
         "access.cap_max",
         "overhang.bridge_step",
-        "overhang.max_angle"
+        "overhang.max_angle",
+        "screws.min_engagement"
       ],
       "check": {
         "probe": "fusion_openings",
@@ -214,7 +223,7 @@
         "Run the gate again after every join, fill or fillet: the hole census of the part must not lose a hole or an open end."
       ],
       "attest": null,
-      "note": "Two blind holes that meet at one cap are one finding, at the wider hole. A cap that may be a bridge layer is asked through access.bridge_layer."
+      "note": "Two blind holes that meet at one cap are one finding, at the wider hole. A cap that may be a bridge layer is asked through access.bridge_layer. A blind thread pilot shallower than the least thread engagement of its size is closed on purpose: no row."
     },
     {
       "id": "access.bridge_layer",
@@ -284,56 +293,25 @@
         "access.key_long_arm",
         "access.key_swing_deg",
         "access.key_side_clearance",
-        "screws.any_hole_d_max"
+        "screws.any_hole_d_max",
+        "access.min_blocked_share",
+        "access.seal_gap",
+        "access.overlay_pattern"
       ],
-      "check": null,
-      "level": "attest",
+      "check": {
+        "probe": "fusion_openings",
+        "judge": "access_key_swing",
+        "needs": "fusion"
+      },
+      "level": "block",
       "stage": "design",
       "fix_order": [
         "Move the gusset, rib or wall out of the swing of the key.",
         "Move the screw to where the key can turn.",
         "Open a straight line for a long key through the part that stands in the way."
       ],
-      "attest": {
-        "question": "For every screw of this part: can the key turn, or is there a straight line for a long key?",
-        "evidence": [
-          "label",
-          "shot",
-          "na"
-        ],
-        "per": "part",
-        "labels": [
-          "every screw: the L key swings free of the parts fitted before it",
-          "some screws only by a straight long key: listed in the build notes",
-          "this part has no screws"
-        ],
-        "auto": [
-          {
-            "when": [
-              "no_screw_feature"
-            ],
-            "label": "this part has no screws"
-          }
-        ],
-        "held": {
-          "every screw: the L key swings free of the parts fitted before it": {
-            "some": [
-              "fusion_screws.screws"
-            ]
-          },
-          "some screws only by a straight long key: listed in the build notes": {
-            "some": [
-              "fusion_screws.screws"
-            ]
-          },
-          "this part has no screws": {
-            "none": [
-              "fusion_screws.screws"
-            ]
-          }
-        }
-      },
-      "note": "Asked once per changed part. The free sector round a head is not measured yet: access.screw_path proves only the straight path, the answer covers the swing. A label is held against the screws the screw probe found on the part: \"no screws\" is refused while it lists one, a washer, a screw that passes the part, or a screw hole with a screw or an unrecognised bought body on its axis. A stored answer is asked again when the facts turn against it."
+      "attest": null,
+      "note": "Measured by fusion_openings over every screw head seated on the part: the long arm of an L key, access.key_short_arm above the head, as a path of radius access.key_side_clearance / 2 in 12 directions round the axis. A head the key cannot swing over but a straight key reaches from above is an INFO row (the build notes name the key); a head neither reaches fails. Bodies fitted after the part are not told apart from those fitted before."
     },
     {
       "id": "access.head_under_later_part",
@@ -387,7 +365,10 @@
         "screws.ref_pattern",
         "sensors.magnet_pocket_d",
         "sensors.magnet_pocket_depth",
-        "inserts.ref_pattern"
+        "inserts.ref_pattern",
+        "sensors.magnet_d6_pocket_d",
+        "sensors.magnet_d6_pocket_depth",
+        "fits.pin_ref_pattern"
       ],
       "check": {
         "probe": "fusion_census",
@@ -412,10 +393,10 @@
           "weight or material relief",
           "mates with a bought part (named in the hardware refs)",
           "leftover: removed in this pass",
-          "clearance hole for a screw that is not modelled yet",
           "magnet, peg or sensor pocket (named in the hardware refs)"
         ]
-      }
+      },
+      "note": "\"A screw that is not modelled yet\" is no answer any more: hardware.refs_present fails a screw hole with no screw ref."
     }
   ]
 }

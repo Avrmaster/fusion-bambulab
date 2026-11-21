@@ -1,0 +1,52 @@
+{
+ "judge": "screws_hole_through",
+ "case": "the part the screw threads into sees the same 0.28 bridge skin of the base that carries the head: judged there (an INFO row), not here again",
+ "incident": "the bridge skin under a counterbore was a FAIL on the part that takes the thread",
+ "facts": {
+  "screws": [
+   {
+    "ref": "ref hardware / M3x10 button (1)",
+    "size": "M3",
+    "length": 12.0,
+    "head": "button",
+    "anchor": {
+     "kind": "screw",
+     "axis": [
+      0,
+      0,
+      -1
+     ],
+     "point": [
+      10.0,
+      20.0,
+      2.0
+     ]
+    },
+    "role": "thread",
+    "under_head": null,
+    "seat": null,
+    "engagement": null,
+    "into": null,
+    "tip_room": null,
+    "air_gap": 0.0,
+    "in_solid": {
+     "len": 0.28,
+     "name": "Base",
+     "part": "demo/base",
+     "at": 0.0
+    },
+    "washer": null
+   }
+  ],
+  "washers": []
+ },
+ "params": {
+  "screws.hole_overcut": 1.0,
+  "screws.solid_shank_max": 0.1,
+  "overhang.bridge_step": 0.3
+ },
+ "expect": [],
+ "ctx": {
+  "part": "demo/column"
+ }
+}

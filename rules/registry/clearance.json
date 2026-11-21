@@ -83,7 +83,8 @@
       "why": "A motor plate was declared printable on \"0 mm3 of overlap\": its border hung 0.5 mm over the flange of a turning pulley and rubbed. The plate was reprinted several times in two days. The only tool measured overlap; gaps were printed ad hoc in three part scripts.",
       "params": [
         "clearance.min_gap_moving",
-        "clearance.scan_margin"
+        "clearance.scan_margin",
+        "fits.sliding_per_side"
       ],
       "check": {
         "probe": "fusion_gap",

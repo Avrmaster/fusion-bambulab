@@ -48,7 +48,7 @@ APPLIES = ('all', 'fusion', 'generated')
 CATEGORIES = ('inserts', 'screws', 'washers', 'bearings', 'walls', 'access', 'clearance', 'fits', 'overhang', 'teeth',
               'switches', 'motors', 'sensors', 'strength', 'symmetry', 'assembly', 'hardware', 'mesh', 'regression',
               'project', 'printed', 'fusion', 'process', 'print', 'target')
-TABLES = ('inserts', 'screws', 'bearings', 'washers', 'pockets')
+TABLES = ('inserts', 'screws', 'bearings', 'washers', 'pockets', 'pins')
 PROBES = ('fusion_scan', 'fusion_census', 'fusion_inserts', 'fusion_bearings', 'fusion_openings', 'fusion_screws',
           'fusion_gap', 'fusion_thin', 'fusion_near', 'fusion_export', 'stl_walls', 'stl_mesh', 'project_consistency')
 NAME_RE = re.compile(r'^[a-z][a-z0-9_]*\.[a-z][a-z0-9_]*$')
@@ -64,7 +64,7 @@ CHECK_OPTIONAL = ('budget_s',)
 ATTEST_KEYS = ('question', 'evidence', 'per')
 ATTEST_OPTIONAL = ('labels', 'held', 'param', 'auto')
 # what gate_attest can prove from the facts of a part, for attest.auto (the functions are gate_attest.FACT_TESTS)
-FACT_TESTS = ('no_screw_feature', 'no_bearing_here', 'no_bought_near', 'no_motor_near')
+FACT_TESTS = ('no_screw_feature', 'no_bearing_here', 'no_bought_near', 'no_motor_near', 'bed_face_measured')
 
 
 class RegistryError(GateError):
@@ -194,6 +194,10 @@ def _check_attest(a, where, errors):
         for label, claim in sorted(held.items()):
             if not isinstance(labels, list) or label not in labels:
                 errors.append('%s: attest.held names %r, which is not one of its labels' % (where, label))
+            if isinstance(claim, dict) and claim == {'by': 'none'}:
+                if a.get('per') != 'finding':
+                    errors.append('%s: attest.held[%r] = {"by": "none"} refuses a label while its finding names bodies: only for a rule asked per finding' % (where, label))
+                continue
             paths = [p for k in ('none', 'some') for p in (claim.get(k) or [])] if isinstance(claim, dict) and set(claim) <= {'none', 'some'} else None
             if not paths or any(not isinstance(p, str) or p.split('.')[0] not in PROBES or not 2 <= len(p.split('.')) <= 3 for p in paths):
                 errors.append('%s: attest.held[%r] must be {"none": [...]} or {"some": [...]} of "<probe>.<list>" or "<probe>.<list>.<sublist>"' % (where, label))
@@ -345,10 +349,194 @@ def load(rules_dir=None, judges=None, complete=True):
     return reg
 
 
-def load_default():
-    """load() of this copy's rules, checked against the judges that exist in gate_judges.JUDGES."""
+def load_default(root=None):
+    """load() of this copy's rules, checked against the judges that exist in gate_judges.JUDGES, with the project's own
+    table rows laid over them (project_tables: gate/owner/tables.json of `root`; default: the project these tools are
+    vendored into, else the project above the working folder)."""
     import gate_judges
-    return load(judges=set(gate_judges.JUDGES))
+    reg = load(judges=set(gate_judges.JUDGES))
+    root = root or _project_root()
+    return with_project_tables(reg, root) if root else reg
+
+
+# ---- the project's own table rows (gate/owner/tables.json, OWNER) -----------------------------------------------------------
+
+TABLE_OVERRIDES = 'tables.json'
+_DATE_RE = re.compile(r'^\d{4}-\d{2}-\d{2}$')
+
+
+_ROOT = {}
+
+
+def use_root(root):
+    """The project the command at hand works on (gate.py sets it from --root): load_default() lays its table rows over the
+    shipped ones. None forgets it."""
+    if root:
+        _ROOT['root'] = os.path.abspath(root)
+    else:
+        _ROOT.pop('root', None)
+
+
+def _project_root():
+    """The project of the command at hand (use_root), else the project of a vendored copy (<root>/gate/tools), else the
+    project at or above the working folder, else None."""
+    from gate_common import tools_dir, find_root
+    if _ROOT.get('root') and os.path.isfile(os.path.join(_ROOT['root'], 'gate', 'project.json')):
+        return _ROOT['root']
+    here = os.path.normpath(os.path.join(tools_dir(), '..', '..'))
+    if os.path.isfile(os.path.join(here, 'gate', 'project.json')):
+        return here
+    try:
+        return find_root(os.getcwd())
+    except OSError:
+        return None
+
+
+def _numbers(x, positive=True):
+    return isinstance(x, list) and bool(x) and all(_is_num(v) and (v > 0 or not positive) for v in x)
+
+
+def _source_errors(e, where):
+    out = []
+    if not isinstance(e.get('source'), str) or not e['source'].strip():
+        out.append('%s: "source" must say where it comes from (the calliper, the coupon, the order)' % where)
+    if not isinstance(e.get('date'), str) or not _DATE_RE.match(e['date']):
+        out.append('%s: "date" must be YYYY-MM-DD' % where)
+    return out
+
+
+def _print_entry_errors(e, where):
+    """A print a table row was measured under: the four keys of MEASURED_UNDER (each recorded) + source + date."""
+    if not isinstance(e, dict) or not set(e) <= set(MEASURED_UNDER) | {'source', 'date', 'note'}:
+        return ['%s: a print is {%s, "source", "date"}' % (where, ', '.join('"%s"' % k for k in MEASURED_UNDER))]
+    out = _source_errors(e, where)
+    why = gate_params.measured_under_error({k: e.get(k) for k in MEASURED_UNDER}, measured=True)
+    if why:
+        out.append('%s: %s' % (where, why))
+    missing = [k for k in MEASURED_UNDER if e.get(k) is None]
+    if missing:
+        out.append('%s: a print the owner records names every setting it was printed with; missing: %s' % (where, ', '.join(missing)))
+    return out
+
+
+def project_table_errors(overrides, reg):
+    """Every problem of gate/owner/tables.json as texts, [] when sound. What a project may set:
+      pins      {"sizes": {"<d>": {"lengths": [mm, ...]}}}                     the pins it stocks (a new diameter too)
+      screws    {"stock_lengths": {"M3": [mm, ...]}, "stock_lengths_set": {...}}  the screws it stocks
+      bearings  {"measured": {"<designation>": {"d", "D", "B", "source", "date"}}}  the batch in hand, measured
+                {"seat_fit": {"measured_under": [print, ...]}}                  seat fits printed and measured
+      inserts   {"measured_under": {"<kind>": [print, ...]}}                   insert profiles printed under a target
+    A print is {"nozzle", "material", "xy_hole_compensation", "layer_height", "source", "date"}, every setting given.
+    Nothing here changes a limit: a stock list, a measured bought part and a print are facts the owner records."""
+    errors, tables = [], reg['tables']
+    if not isinstance(overrides, dict):
+        return ['gate/owner/tables.json must be an object of table -> rows']
+    for name in sorted(k for k in overrides if not k.startswith('_')):
+        o, where = overrides[name], 'gate/owner/tables.json %s' % name
+        if not isinstance(o, dict):
+            errors.append('%s: must be an object' % where); continue
+        allowed = {'pins': ('sizes',), 'screws': ('stock_lengths', 'stock_lengths_set'), 'bearings': ('measured', 'seat_fit'),
+                   'inserts': ('measured_under',)}.get(name)
+        if allowed is None:
+            errors.append('gate/owner/tables.json: table %r cannot be set by a project (only pins, screws, bearings, inserts)' % name); continue
+        for k in sorted(x for x in o if not x.startswith('_')):
+            if k not in allowed:
+                errors.append('%s: unknown key "%s" (known: %s)' % (where, k, ', '.join(allowed))); continue
+            v = o[k]
+            if not isinstance(v, dict):
+                errors.append('%s.%s: must be an object' % (where, k)); continue
+            if name == 'pins':
+                for d, row in sorted(v.items()):
+                    try:
+                        ok = float(d) > 0
+                    except ValueError:
+                        ok = False
+                    if not ok or not isinstance(row, dict) or not _numbers(row.get('lengths')) or not set(row) <= {'lengths', 'source', 'date', 'note'}:
+                        errors.append('%s.sizes.%s: a pin row is {"lengths": [mm, ...]} under its diameter' % (where, d))
+            elif name == 'screws':
+                for size, lengths in sorted(v.items()):
+                    if not isinstance(size, str) or not re.match(r'^M\d+(?:\.\d+)?$', size) or not _numbers(lengths):
+                        errors.append('%s.%s.%s: a stock row is "M3": [mm, ...]' % (where, k, size))
+            elif name == 'bearings' and k == 'measured':
+                sizes = tables.get('bearings', {}).get('sizes') or {}
+                aliases = tables.get('bearings', {}).get('aliases') or {}
+                for des, row in sorted(v.items()):
+                    w = '%s.measured.%s' % (where, des)
+                    if des not in sizes and des not in aliases:
+                        errors.append('%s: no row of the bearings table is called %s (add the standard row first)' % (w, des)); continue
+                    if not isinstance(row, dict) or not all(_is_num(row.get(x)) and row[x] > 0 for x in ('d', 'D', 'B')):
+                        errors.append('%s: a measured bearing is {"d", "D", "B", "source", "date"} in mm' % w); continue
+                    errors += _source_errors(row, w)
+            elif name == 'bearings' and k == 'seat_fit':
+                prints = v.get('measured_under')
+                if not isinstance(prints, list) or not prints or set(v) - {'measured_under'}:
+                    errors.append('%s.seat_fit: is {"measured_under": [print, ...]}' % where); continue
+                for i, e in enumerate(prints):
+                    errors += _print_entry_errors(e, '%s.seat_fit.measured_under[%d]' % (where, i))
+            elif name == 'inserts':
+                kinds = tables.get('inserts', {}).get('kinds') or {}
+                for kind, prints in sorted(v.items()):
+                    w = '%s.measured_under.%s' % (where, kind)
+                    if kind not in kinds:
+                        errors.append('%s: no insert kind %s in the inserts table' % (w, kind)); continue
+                    if not isinstance(prints, list) or not prints:
+                        errors.append('%s: is a list of prints' % w); continue
+                    for i, e in enumerate(prints):
+                        errors += _print_entry_errors(e, '%s[%d]' % (w, i))
+    return errors
+
+
+def _as_prints(under):
+    """A row's "measured_under" as a list of prints: null -> [], one object -> [it], a list -> the list."""
+    if under is None:
+        return []
+    return list(under) if isinstance(under, list) else [under]
+
+
+def with_project_tables(reg, root):
+    """The registry with the rows of gate/owner/tables.json laid over its tables (project_table_errors says what may be
+    set). reg is returned unchanged when the file is absent. RegistryError when the file has a problem: a stock list or a
+    measurement that cannot be read stops the gate like a broken parameter. "table_overrides" names the file; the
+    registry hash covers what was laid over."""
+    import copy
+    path = os.path.join(root, 'gate', 'owner', TABLE_OVERRIDES)
+    if not os.path.isfile(path):
+        return reg
+    errors = []
+    data = _read(path, errors)
+    if errors:
+        raise RegistryError(['gate/owner/tables.json: ' + e for e in errors])
+    errors = project_table_errors(data, reg)
+    if errors:
+        raise RegistryError(errors)
+    out = dict(reg, tables=copy.deepcopy(reg['tables']), table_overrides='gate/owner/%s' % TABLE_OVERRIDES)
+    t = out['tables']
+    for name, o in sorted((k, v) for k, v in data.items() if not k.startswith('_')):
+        if name == 'pins' and 'pins' in t:
+            for d, row in (o.get('sizes') or {}).items():
+                key = '%g' % float(d)
+                base = t['pins'].setdefault('sizes', {}).get(key) or {'d': float(d)}
+                t['pins']['sizes'][key] = dict(base, lengths=sorted(float(x) for x in row['lengths']), stock='project')
+        elif name == 'screws':
+            for k in ('stock_lengths', 'stock_lengths_set'):
+                for size, lengths in (o.get(k) or {}).items():
+                    t['screws'].setdefault(k, {})[size] = sorted(float(x) for x in lengths)
+                    t['screws'].setdefault('stock_from_project', []).append('%s %s' % (k, size))
+        elif name == 'bearings':
+            for des, row in (o.get('measured') or {}).items():
+                key = des if des in t['bearings']['sizes'] else t['bearings']['aliases'][des]
+                t['bearings']['sizes'][key] = dict(t['bearings']['sizes'][key], d=row['d'], D=row['D'], B=row['B'],
+                                                   measured={'source': row['source'], 'date': row['date']})
+            if isinstance(o.get('seat_fit'), dict):
+                sf = t['bearings'].setdefault('seat_fit', {'tag': 'D', 'measured_under': None})
+                sf['measured_under'] = _as_prints(sf.get('measured_under')) + list(o['seat_fit']['measured_under'])
+                sf['tag'] = 'M'
+        elif name == 'inserts':
+            for kind, prints in (o.get('measured_under') or {}).items():
+                row = t['inserts']['kinds'][kind]
+                row['measured_under'] = _as_prints(row.get('measured_under')) + list(prints)
+    out['sha256'] = digest({'rules': out['rules'], 'params': out['params'], 'tables': out['tables']}, 64)
+    return out
 
 
 def validate(reg, judges=None):
@@ -389,10 +577,11 @@ POCKET_RULES = ('fits.bought_part_pocket', 'print.z_layers')        # the rules 
 # rules that only need to KNOW such a pocket, so that they do not take it for something else (a wrong insert pocket,
 # a tap-drill hole, a hole of no table): they read "d" and "depth"
 POCKET_READERS = ('inserts.pocket_shape', 'inserts.no_tapped_plastic', 'census.unknown_hole', 'inserts.wall', 'inserts.wall_at_relief', 'inserts.floor',
-                  'inserts.relief_missing', 'inserts.mouth_reachable', 'access.hole_covered', 'access.mouth_sealed')
+                  'inserts.relief_missing', 'inserts.mouth_reachable', 'access.hole_covered', 'access.mouth_sealed', 'fits.decided_not_printed',
+                  'hardware.refs_present', 'print.fit_axis', 'print.relief_layers')
 # the name patterns every one of these rules lists too: a hole with an insert or a screw on its axis is never taken for
 # a pocket of the table, whatever its diameter (gate_judges._bought_pocket). Held only where the registry declares them
-POCKET_NAME_PARAMS = ('inserts.ref_pattern', 'screws.ref_pattern')
+POCKET_NAME_PARAMS = ('inserts.ref_pattern', 'screws.ref_pattern', 'fits.pin_ref_pattern')
 
 
 def _check_pockets(reg):
@@ -420,6 +609,32 @@ def _check_pockets(reg):
             for rid in POCKET_RULES + POCKET_READERS:
                 if rid in reg['rules'] and name not in (reg['rules'][rid].get('params') or []) and not (key == 'part_h' and rid != 'print.z_layers'):
                     errors.append('rule %s: reads the pockets table and must list %s (kind %s) in its "params"' % (rid, name, kind))
+    pins = table_.get('pins')
+    if pins is not None:
+        fits = pins.get('fits') if isinstance(pins, dict) else None
+        if not isinstance(fits, dict) or not fits or not isinstance(pins.get('pattern'), str) or pins['pattern'] not in reg['params']:
+            errors.append('tables/pockets.json: "pins" needs "pattern" (a declared parameter) and "fits" {fit: parameter}')
+        else:
+            for fit, name in sorted(fits.items()):
+                if name not in reg['params'] or reg['params'][name].get('class') != 'fit':
+                    errors.append('tables/pockets.json: pins fit %s must name a declared fit parameter, not %r' % (fit, name)); continue
+                if 'fits.bought_part_pocket' in reg['rules'] and name not in (reg['rules']['fits.bought_part_pocket'].get('params') or []):
+                    errors.append('rule fits.bought_part_pocket: judges pin pockets and must list %s (pins fit %s) in its "params"' % (name, fit))
+        if 'pins' not in reg['tables']:
+            errors.append('tables/pockets.json: "pins" needs the table rules/tables/pins.json')
+    for kind, row in sorted((table_.get('boxes') or {}).items()):
+        if not isinstance(row, dict) or not isinstance(row.get('w'), str) or not (row.get('l') is None or isinstance(row.get('l'), str)):
+            errors.append('tables/pockets.json: box %s needs "w" (a parameter) and "l" (a parameter or null)' % kind); continue
+        for key in ('w', 'l'):
+            name = row.get(key)
+            if name is None:
+                continue
+            if name not in reg['params'] or reg['params'][name].get('class') != 'fit':
+                errors.append('tables/pockets.json: box %s: "%s" must name a declared fit parameter, not %r' % (kind, key, name)); continue
+            if 'fits.bought_part_pocket' in reg['rules'] and name not in (reg['rules']['fits.bought_part_pocket'].get('params') or []):
+                errors.append('rule fits.bought_part_pocket: judges box pockets and must list %s (box %s) in its "params"' % (name, kind))
+    if (table_.get('boxes') or table_.get('pins')) and not _is_num((table_.get('tol') or {}).get('box') if table_.get('boxes') else 0):
+        errors.append('tables/pockets.json: "boxes" needs "tol": {"box": mm}')
     for name in POCKET_NAME_PARAMS:
         for rid in POCKET_RULES + POCKET_READERS:
             if name in reg['params'] and rid in reg['rules'] and name not in (reg['rules'][rid].get('params') or []):

@@ -76,6 +76,8 @@ project_build_table_differs__fail_table_lists_a_part_on_its_old_plate
 regression_feature_lost__fail_tie_anchors_gone_after_a_move
 regression_feature_lost__fail_two_screw_holes_half_filled_by_a_join
 regression_unintended__fail_neighbour_changed_by_a_cut_meant_for_one_part
+print_slice_support_growth__fail_pulley_rim_supported_twenty_times_its_baseline
+print_overhang_angle__fail_ridge_between_two_45_deg_faces_with_supports_off
 '''.split()
 
 # The list of its facts each judge walks. The two mesh judges and project_build_table_differs read single values.
@@ -119,8 +121,19 @@ def rule_of(judge):
     return next(r for r in REG['rules'].values() if (r.get('check') or {}).get('judge') == judge)
 
 
+def overlay(base, over):
+    """`base` with the objects of `over` merged in, key by key (a fixture's "tables", as tests/test_judge_fixtures.py lays them)."""
+    if not isinstance(base, dict) or not isinstance(over, dict):
+        return copy.deepcopy(over)
+    out = dict(base)
+    for k, v in over.items():
+        out[k] = overlay(base.get(k), v) if isinstance(v, dict) and isinstance(base.get(k), dict) else copy.deepcopy(v)
+    return out
+
+
 def ctx_of(judge, fx=None, **kw):
-    c = {'part': 'demo/bracket', 'rule': rule_of(judge)['id'], 'tables': REG['tables'], 'target': None, 'census': None, 'prev': None, 'intent': None}
+    tables = overlay(REG['tables'], fx['tables']) if (fx or {}).get('tables') else REG['tables']
+    c = {'part': 'demo/bracket', 'rule': rule_of(judge)['id'], 'tables': tables, 'target': None, 'census': None, 'prev': None, 'intent': None}
     c.update(copy.deepcopy((fx or {}).get('ctx') or {}))
     c.update(kw)
     return c
@@ -148,6 +161,12 @@ def judged(name, facts=None, params=None, **ctx):
 
 def verdicts(out):
     return [f['verdict'] for f in out]
+
+
+def shape_rows(out):
+    """The rows of inserts.pocket_shape about the profile itself: without the row that says an exact profile was printed
+    under other settings or that no target says what the part prints with (_pockets_printed_elsewhere)."""
+    return [f for f in out if 'printed under named settings' not in f['text'] and 'measured under other settings' not in f['text']]
 
 
 def slots(obj):
@@ -501,7 +520,8 @@ class TheLimitIsTheParameter(unittest.TestCase):
             f['bearings'][0]['clamps'][0]['room'] = room
             self.assertEqual(verdicts(judged('bearings_clamp_room', f, part=TUBE)), want, room)
         f['bearings'][0]['clamps'][0]['room'] = 9.7
-        self.assertEqual(judged('bearings_clamp_room', f, {'bearings.clamp_room': 0.3}, part=TUBE), [])
+        self.assertEqual(judged('bearings_clamp_room', f, {'bearings.clamp_room_washer': 0.3}, part=TUBE), [])      # a washer clamp: the washer room
+        self.assertEqual(verdicts(judged('bearings_clamp_room', f, {'bearings.clamp_room': 0.3}, part=TUBE)), ['FAIL'])   # the printed room is not the washer's
 
     def test_gap_to_a_moving_neighbour(self):
         f = facts_of('clearance_min_gap_moving__pass_2_4_to_the_pulley')
@@ -560,7 +580,7 @@ class TheLimitIsTheParameter(unittest.TestCase):
         seat = f['bearings'][0]['seat']['outer']
         for d, entry, want in ((78.3, 78.3, []), (78.31, 78.31, ['FAIL']), (77.69, 78.0, ['FAIL']), (78.0, 77.7, []), (78.0, 77.69, ['FAIL'])):
             seat.update(d=d, entry_d=entry)
-            self.assertEqual(verdicts(judged('bearings_seat', f, part='demo/gear_lid')), want, (d, entry))
+            self.assertEqual([v for v in verdicts(judged('bearings_seat', f, part='demo/gear_lid')) if v != 'INFO'], want, (d, entry))   # INFO: a straight seat off nominal is shown
 
     def test_mesh_counts(self):
         m = facts_of('mesh_closed__pass_closed')
@@ -706,9 +726,9 @@ class PocketShape(unittest.TestCase):
         out = judged('inserts_pocket_shape', f)
         self.assertEqual(verdicts(out), ['FAIL', 'FAIL', 'FAIL'])                    # stored "exact" does not protect a hole
         self.assertEqual(seen[0], ([{'d': 7.5, 'len': 0.54}, {'d': 4.4, 'len': 1.5}, {'d': 3.6, 'len': 5.0}], False,
-                                   ['bearings', 'inserts', 'pockets', 'screws', 'washers'], ['ref insert M3x4x5']))
+                                   ['bearings', 'inserts', 'pins', 'pockets', 'screws', 'washers'], ['ref insert M3x4x5']))
         self.classifier(lambda segments, through, tables: dict(self.EXACT))          # a classifier without coaxial names works too
-        self.assertEqual(judged('inserts_pocket_shape__fail_straight_d4_4'), [])     # and stored "band" does not condemn one
+        self.assertEqual(shape_rows(judged('inserts_pocket_shape__fail_straight_d4_4')), [])     # and stored "band" does not condemn one
         self.classifier(lambda segments, through, tables: None)
         self.assertEqual(judged('inserts_pocket_shape__fail_straight_d4_4'), [])
         # two blind holes of no table: one question each, and it is the one of the fits rule ("what goes in"), not both

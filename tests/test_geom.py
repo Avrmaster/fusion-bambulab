@@ -147,7 +147,8 @@ class Stacks(unittest.TestCase):
         far = {'name': 'Lid', 'kind': 'printed', 'part': 'demo/lid', 'origin': (12.0, -30.0, 0), 'axis': (0, 0, 1), 's0': 60.0, 's1': 63.0}
         off = dict(cover, name='Plate', origin=(12.4, -30.0, 0)); tilted = dict(cover, name='Wedge', axis=G.v_unit((0.1, 0, 1)))
         got = G.coaxial_cylinders((12.0, -30.0, 40.0), (0, 0, 1), 7.04, [cover, ins, far, off, tilted, cover])
-        self.assertEqual(got, [{'name': 'Cover', 'kind': 'printed', 'part': 'demo/cover'}, {'name': 'HW / insert M3x4x5', 'kind': 'hardware', 'part': None}])
+        self.assertEqual(got, [{'name': 'Cover', 'kind': 'printed', 'part': 'demo/cover', 'span': [0.2, 3.0]},
+                               {'name': 'HW / insert M3x4x5', 'kind': 'hardware', 'part': None, 'span': [-4.5, -0.5]}])   # in front of the mouth; inside the hole
 
 
 class Anchors(unittest.TestCase):
@@ -911,10 +912,13 @@ class Census(Units):
         self.assertEqual(below['anchor'], {'kind': 'hole', 'axis': [0.0, 0.0, -1.0], 'point': [80.0, 4.0, 0.0]})
 
     def test_coaxial_bodies_and_the_insert_that_keeps_a_through_hole_in_the_band(self):
-        self.assertEqual(self.holes['p1']['coaxial'], [{'name': 'HW (ref) / insert M3x4x5 (1)', 'kind': 'hardware', 'part': None}])
-        self.assertEqual(self.holes['p2']['coaxial'], [{'name': 'Cover', 'kind': 'printed', 'part': 'demo/cover'}])
-        self.assertEqual(self.holes['s1']['coaxial'], [{'name': 'HW (ref) / M3x10 screw (1)', 'kind': 'hardware', 'part': None}])
+        bare = lambda rows: [{k: v for k, v in r.items() if k != 'span'} for r in rows]
+        self.assertEqual(bare(self.holes['p1']['coaxial']), [{'name': 'HW (ref) / insert M3x4x5 (1)', 'kind': 'hardware', 'part': None}])
+        self.assertEqual(bare(self.holes['p2']['coaxial']), [{'name': 'Cover', 'kind': 'printed', 'part': 'demo/cover'}])
+        self.assertEqual(bare(self.holes['s1']['coaxial']), [{'name': 'HW (ref) / M3x10 screw (1)', 'kind': 'hardware', 'part': None}])
         self.assertEqual(self.holes['p4']['coaxial'], [])
+        sp = self.holes['p1']['coaxial'][0]['span']                                   # the insert lies in its pocket: inside the hole
+        self.assertTrue(-self.holes['p1']['depth'] - 0.1 <= sp[0] < sp[1] <= 0.1, sp)
         t1 = self.holes['t1']
         self.assertEqual((t1['segments'], t1['through']), (segs((4.4, 12.0)), True))
         self.assertEqual(t1['class'], {'table': 'inserts', 'kind': 'M3x4x5', 'role': 'insert_pocket', 'match': 'band'})

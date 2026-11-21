@@ -5,6 +5,7 @@ A fixture is one file tests/fixtures/facts/<judge>__<case>.json, built from a re
     {"judge": "inserts_wall", "case": "2.5 mm wall with free space round it",
      "facts": {...},                  the "facts" object of the judge's probe
      "params": {"inserts.wall_target": 4.0},     optional: laid over the registry defaults (flat form, gate_params.values)
+     "tables": {"inserts": {"kinds": {...}}},    optional: table rows laid over the shipped tables, object by object
      "ctx": {"part": "demo/bracket", "prev": null, "intent": null, "census": null, "target": null},     optional
      "expect": [{"verdict": "GROW", "measure": 2.5, "limit": 4.0}]}        one entry per finding, [] = a pass
 
@@ -31,10 +32,20 @@ def matches(expected, got):
     return all(k in got and same(v, got[k]) for k, v in expected.items())
 
 
+def overlay(base, over):
+    """`base` with the objects of `over` merged in, key by key (a fixture's "tables": the rows it changes)."""
+    if not isinstance(base, dict) or not isinstance(over, dict):
+        return copy.deepcopy(over)
+    out = dict(base)
+    for k, v in over.items():
+        out[k] = overlay(base.get(k), v) if isinstance(v, dict) and isinstance(base.get(k), dict) else copy.deepcopy(v)
+    return out
+
+
 def check_fixture(test, fx, reg, defaults):
     rule = next(r for r in reg['rules'].values() if (r.get('check') or {}).get('judge') == fx['judge'])
     params = dict(defaults, **fx.get('params', {}))
-    ctx = dict(CTX, rule=rule['id'], tables=reg['tables'])
+    ctx = dict(CTX, rule=rule['id'], tables=overlay(reg['tables'], fx['tables']) if fx.get('tables') else reg['tables'])
     ctx.update(fx.get('ctx') or {})
     got = run_judge(rule, fx['facts'], params, ctx)
     left = list(got)

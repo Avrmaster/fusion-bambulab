@@ -1,0 +1,81 @@
+{
+ "judge": "access_hole_closed",
+ "case": "the D5 x 1.7 socket of a centring spigot has the diameter of an M6 tap drill and a 1.1 floor in front of a hex socket: too shallow for any thread, it holds no fastener and is closed on purpose",
+ "incident": "the socket of a centring spigot was failed as a tap hole that must go through",
+ "facts": {
+  "openings": [],
+  "closed": [
+   {
+    "hole": "h1",
+    "anchor": {
+     "kind": "hole",
+     "axis": [
+      0,
+      0,
+      -1
+     ],
+     "point": [
+      0.0,
+      0.0,
+      10.6
+     ]
+    },
+    "cap": 1.1,
+    "behind": {
+     "what": "hole",
+     "name": "o3",
+     "d": 5.9
+    }
+   }
+  ]
+ },
+ "params": {
+  "access.cap_max": 2.0,
+  "overhang.bridge_step": 0.3,
+  "overhang.max_angle": 45,
+  "screws.min_engagement": 3.2
+ },
+ "ctx": {
+  "census": {
+   "holes": [
+    {
+     "id": "h1",
+     "anchor": {
+      "kind": "hole",
+      "axis": [
+       0,
+       0,
+       -1
+      ],
+      "point": [
+       0.0,
+       0.0,
+       10.6
+      ]
+     },
+     "segments": [
+      {
+       "d": 5.0,
+       "len": 1.7
+      }
+     ],
+     "depth": 1.7,
+     "through": false,
+     "floor": 1.1,
+     "exit": null,
+     "class": {
+      "kind": "M6",
+      "match": "exact",
+      "role": "tap_pilot",
+      "table": "screws"
+     },
+     "coaxial": []
+    }
+   ],
+   "openings": [],
+   "partial": [],
+   "counts": {}
+  }
+ },
+ "expect": []
+}

@@ -205,7 +205,7 @@ def doctor_lines(root, pinger=None):
     reg = resolved = project = layout = None
     try:
         import gate_registry
-        reg = gate_registry.load_default()
+        reg = gate_registry.load_default(root)
         _line(out, 'ok', 'registry', '%d rules, %d parameters (%s)' % (len(reg['rules']), len(reg['params']), reg['dir']))
     except GateError as e:
         _line(out, 'error', 'registry', str(e))

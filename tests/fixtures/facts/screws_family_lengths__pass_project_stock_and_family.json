@@ -1,0 +1,207 @@
+{
+ "judge": "screws_family_lengths",
+ "case": "the project stocks M3x18 (its list in gate/owner/tables.json) and names set screws in its family: only the name that differs from the model fails",
+ "facts": {
+  "screws": [
+   {
+    "ref": "ref HW / screw M3x12 DIN 912 (1)",
+    "size": "M3",
+    "length": 12.0,
+    "named_length": 12.0,
+    "named_size": "M3",
+    "head": "cap",
+    "head_h": 3.0,
+    "head_d": 5.5,
+    "anchor": {
+     "kind": "screw",
+     "axis": [
+      0,
+      0,
+      1
+     ],
+     "point": [
+      10,
+      0,
+      5
+     ]
+    },
+    "role": "head",
+    "under_head": 4.0,
+    "seat": {
+     "kind": "counterbore",
+     "d": 6.5,
+     "recess": 0.5,
+     "share": 1.0
+    },
+    "engagement": 4.0,
+    "into": null,
+    "tip_room": 1.0,
+    "air_gap": 0.0,
+    "washer": null
+   },
+   {
+    "ref": "ref HW / screw M3x18 DIN 912 (2)",
+    "size": "M3",
+    "length": 18.0,
+    "named_length": 18.0,
+    "named_size": "M3",
+    "head": "cap",
+    "head_h": 3.0,
+    "head_d": 5.5,
+    "anchor": {
+     "kind": "screw",
+     "axis": [
+      0,
+      0,
+      1
+     ],
+     "point": [
+      20,
+      0,
+      5
+     ]
+    },
+    "role": "head",
+    "under_head": 4.0,
+    "seat": {
+     "kind": "counterbore",
+     "d": 6.5,
+     "recess": 0.5,
+     "share": 1.0
+    },
+    "engagement": 4.0,
+    "into": null,
+    "tip_room": 1.0,
+    "air_gap": 0.0,
+    "washer": null
+   },
+   {
+    "ref": "ref HW / grub screw M3x4 DIN 916",
+    "size": "M3",
+    "length": 4.0,
+    "named_length": 4.0,
+    "named_size": "M3",
+    "head": null,
+    "head_h": 0.0,
+    "head_d": 5.5,
+    "anchor": {
+     "kind": "screw",
+     "axis": [
+      0,
+      0,
+      1
+     ],
+     "point": [
+      0,
+      10,
+      5
+     ]
+    },
+    "role": "thread",
+    "under_head": 4.0,
+    "seat": null,
+    "engagement": 4.0,
+    "into": null,
+    "tip_room": 1.0,
+    "air_gap": 0.0,
+    "washer": null
+   },
+   {
+    "ref": "ref HW / screw M3x10 DIN 912 (3)",
+    "size": "M3",
+    "length": 12.0,
+    "named_length": 10.0,
+    "named_size": "M3",
+    "head": "cap",
+    "head_h": 3.0,
+    "head_d": 5.5,
+    "anchor": {
+     "kind": "screw",
+     "axis": [
+      0,
+      0,
+      1
+     ],
+     "point": [
+      30,
+      0,
+      5
+     ]
+    },
+    "role": "head",
+    "under_head": 4.0,
+    "seat": {
+     "kind": "counterbore",
+     "d": 6.5,
+     "recess": 0.5,
+     "share": 1.0
+    },
+    "engagement": 4.0,
+    "into": null,
+    "tip_room": 1.0,
+    "air_gap": 0.0,
+    "washer": null
+   },
+   {
+    "ref": "ref HW / screw M3x14 DIN 912 (4)",
+    "size": "M3",
+    "length": 14.0,
+    "named_length": 14.0,
+    "named_size": "M3",
+    "head": "cap",
+    "head_h": 3.0,
+    "head_d": 5.5,
+    "anchor": {
+     "kind": "screw",
+     "axis": [
+      0,
+      0,
+      1
+     ],
+     "point": [
+      40,
+      0,
+      5
+     ]
+    },
+    "role": "thread",
+    "under_head": 4.0,
+    "seat": null,
+    "engagement": 4.0,
+    "into": null,
+    "tip_room": 1.0,
+    "air_gap": 0.0,
+    "washer": null
+   }
+  ],
+  "washers": []
+ },
+ "params": {
+  "screws.family": "hex socket: cap DIN 912, button ISO 7380, set screws DIN 916",
+  "screws.wood_pattern": "(?i)wood|chipboard|self[- ]?tapping|tapping screw|spax"
+ },
+ "expect": [
+  {
+   "verdict": "FAIL",
+   "measure": 12.0,
+   "limit": 10.0
+  }
+ ],
+ "tables": {
+  "screws": {
+   "stock_lengths": {
+    "M3": [
+     8,
+     10,
+     12,
+     14,
+     16,
+     18,
+     20,
+     22,
+     25
+    ]
+   }
+  }
+ }
+}

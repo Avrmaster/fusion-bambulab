@@ -442,16 +442,43 @@ def _motor_shown(get, params, tables):
     return '%d body(ies) near or on an axis match motors.ref_pattern (%s)' % (len(got[0]), _some(_leaf(h) for h in got[0]))
 
 
+PRINT_FRAME = 'print_frame'     # no probe: gate_plan.print_frame() of the part, for the fact tests that need its bed face
+
+
+def _bed_face_measured(get, params, tables):
+    """Proven when the bed face of the part is MEASURED on a saved .3mf with THIS geometry (gate_plan.print_frame
+    "from": "project": an object of a registered project is the part's STL turned as a rigid body). False when only a
+    build table says it, and also for "earlier geometry" (the project still places the mesh measured before this STL
+    was exported again): the face is known, but what faces down on the NEW geometry was never placed, pre-checked
+    (print.overhang_angle) or sliced, so the label "judged there" would be ahead of the facts. None when the bed face
+    is not known at all."""
+    f = get(PRINT_FRAME)
+    if not isinstance(f, dict) or not isinstance(f.get('up'), list):
+        return None, 'the bed face is not known: %s' % ((f or {}).get('why') if isinstance(f, dict) else 'it could not be worked out')
+    if f.get('from') == 'earlier geometry':
+        return False, ('the project still places the geometry before this export (%s): the new geometry is not placed, pre-checked or sliced yet'
+                       % (f.get('source'),))
+    if f.get('from') != 'project':
+        return False, 'only the build table says the bed face (%s): no saved project holds this part yet' % (f.get('source'),)
+    return True, 'measured on the saved project: %s' % (f.get('source'),)
+
+
+def _bed_face_shown(get, params, tables):
+    """Nothing the facts show makes the measured answer false: it holds only while it is measured (fact_answer)."""
+    return None
+
+
 FACT_TESTS = {'no_screw_feature': _no_screw_feature, 'no_bearing_here': _no_bearing_here, 'no_bought_near': _no_bought_near,
-              'no_motor_near': _no_motor_near}
+              'no_motor_near': _no_motor_near, 'bed_face_measured': _bed_face_measured}
 # What the facts SHOW, per test: a text, or None. A fact test is False both for "the facts show it" and for "it could be
 # there and nothing proves that it is not". Only the first makes an answer false: an answer that says the question does
 # not apply is refused, and a stored one is asked again, while the function here gives a text (answer_contradicted).
 FACT_SHOWN = {'no_screw_feature': _screws_shown, 'no_bearing_here': _bearing_shown, 'no_bought_near': _bought_shown,
-              'no_motor_near': _motor_shown}
+              'no_motor_near': _motor_shown, 'bed_face_measured': _bed_face_shown}
 # the probes each test reads. gate_plan plans a unit for every one of them on a part that a question with "auto" is asked for
 TEST_PROBES = {'no_screw_feature': ('fusion_screws', 'fusion_census'), 'no_bearing_here': ('fusion_bearings', 'fusion_census', 'fusion_near'),
-               'no_bought_near': ('fusion_near', 'fusion_census', 'fusion_screws', 'fusion_bearings'), 'no_motor_near': ('fusion_near', 'fusion_census')}
+               'no_bought_near': ('fusion_near', 'fusion_census', 'fusion_screws', 'fusion_bearings'), 'no_motor_near': ('fusion_near', 'fusion_census'),
+               'bed_face_measured': ()}
 _PARAMS_CACHE = {}
 
 
@@ -471,6 +498,26 @@ def _fact_params(root, reg):
     return _PARAMS_CACHE[key]
 
 
+def _getter(root, part, sig):
+    """get(probe) -> the facts of that probe of the part at this signature (None when the unit did not run); for
+    PRINT_FRAME, gate_plan.print_frame() of the part."""
+    import gate_plan
+    data, cache = gate_common.load_facts(root, part, sig), {}
+
+    def get(probe):
+        if probe not in cache:
+            if probe == PRINT_FRAME:
+                try:
+                    entry = gate_plan.part_entry(root, part)
+                    cache[probe] = gate_plan.print_frame(root, part, entry)
+                except Exception as e:             # unknown is unknown: the test says None
+                    cache[probe] = {'up': None, 'why': '%s: %s' % (type(e).__name__, e)}
+            else:
+                cache[probe] = gate_plan._probe_facts(data, probe)
+        return cache[probe]
+    return get
+
+
 def fact_tests(root, reg, rule, part, sig):
     """What the facts say about each entry of the rule's attest.auto: [{"gives": {"label": ...} or {"na": ...},
     "tests": [{"test", "state": True | False | None, "text"}], "proven": bool}]. [] for a rule with no "auto"."""
@@ -478,12 +525,7 @@ def fact_tests(root, reg, rule, part, sig):
     auto = (rule.get('attest') or {}).get('auto')
     if not isinstance(auto, list) or not sig:
         return []
-    data, cache = gate_common.load_facts(root, part, sig), {}
-
-    def get(probe):
-        if probe not in cache:
-            cache[probe] = gate_plan._probe_facts(data, probe)
-        return cache[probe]
+    get = _getter(root, part, sig)
     params, out = _fact_params(root, reg), []
     for entry in auto:
         tests = []
@@ -525,12 +567,7 @@ def answer_contradicted(root, reg, rule, part, sig, kind, value):
     entries = [e for e in auto if isinstance(e, dict) and (kind == 'na' or e.get('label') == value)]
     if not entries:
         return None
-    data, cache = gate_common.load_facts(root, part, sig), {}
-
-    def get(probe):
-        if probe not in cache:
-            cache[probe] = gate_plan._probe_facts(data, probe)
-        return cache[probe]
+    get = _getter(root, part, sig)
     params, tables = _fact_params(root, reg), reg.get('tables') or {}
     for entry in entries:
         for name in entry.get('when') or []:
@@ -600,7 +637,7 @@ def _question(rule, part, anchor, context, text, finding=None):
     return {'q': question_id(rule['id'], part, anchor, context), 'rule': rule['id'], 'part': part, 'anchor': anchor, 'context': context,
             'question': text, 'evidence': list(a.get('evidence') or []), 'labels': list(a.get('labels') or []), 'stage': rule.get('stage'),
             'finding': (finding or {}).get('id') or (gate_features.finding_id(finding) if finding else None),
-            'finding_rule': (finding or {}).get('rule'), 'answer': None}
+            'finding_rule': (finding or {}).get('rule'), 'by': list((finding or {}).get('by') or []), 'answer': None}
 
 
 def questions_for_part(root, reg, part, sig, findings, stages=('design',)):
@@ -764,6 +801,11 @@ def label_contradicted(root, reg, question, label, sig=None):
     held = ((reg['rules'].get(question.get('rule')) or {}).get('attest') or {}).get('held') or {}
     claim = held.get(label)
     if not isinstance(claim, dict):
+        return None
+    if claim.get('by') == 'none':                     # a question of a finding: the label says there is nothing, the finding names something
+        names = [str(n) for n in question.get('by') or []]
+        if names:
+            return 'the label says there is none, the finding names %d: %s%s' % (len(names), ', '.join(names[:3]), ' and %d more' % (len(names) - 3) if len(names) > 3 else '')
         return None
     for path in claim.get('none') or []:
         n = _count(root, question['part'], path, sig)
@@ -954,7 +996,7 @@ def cmd_attest(root, args):
     when validate_answer() accepts it and returns 0 (or 2 when other questions stay open); prints why and returns 4 when
     it is refused or the id is unknown."""
     import gate_params
-    reg = gate_registry.load_default()
+    reg = gate_registry.load_default(root)
     if args.action == 'list':
         only = getattr(args, 'part', None)
         every = open_questions(root, reg, parts=[only] if only else None, waiting=True)

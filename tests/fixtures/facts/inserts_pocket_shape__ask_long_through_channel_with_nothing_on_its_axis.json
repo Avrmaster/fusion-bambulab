@@ -1,0 +1,56 @@
+{
+ "judge": "inserts_pocket_shape",
+ "case": "the same through bore with nothing on its axis: still no pocket by its shape, and asked what it is for",
+ "facts": {
+  "holes": [
+   {
+    "id": "h3",
+    "anchor": {
+     "kind": "hole",
+     "axis": [
+      1,
+      0,
+      0
+     ],
+     "point": [
+      54,
+      0,
+      -14
+     ]
+    },
+    "segments": [
+     {
+      "d": 3.5,
+      "len": 45.5
+     }
+    ],
+    "depth": 45.5,
+    "through": true,
+    "floor": null,
+    "exit": null,
+    "class": {
+     "kind": "M3x4x5",
+     "match": "band",
+     "role": "insert_pocket",
+     "table": "inserts"
+    },
+    "coaxial": [],
+    "arc": 1.0
+   }
+  ],
+  "openings": [],
+  "counts": {}
+ },
+ "params": {
+  "screws.wood_pattern": "(?i)wood|chipboard|self[- ]?tapping|tapping screw|spax",
+  "inserts.ref_pattern": "(?i)insert",
+  "fits.pin_ref_pattern": "(?i)(?<![a-z])(?:pins?|dowels?|rods?|shafts?|axles?)(?![a-z])"
+ },
+ "expect": [
+  {
+   "verdict": "INFO",
+   "ask": "census.unknown_hole",
+   "by": []
+  }
+ ]
+}

@@ -1,0 +1,63 @@
+{
+ "judge": "fits_bought_pocket",
+ "case": "a blind D4.9 x 12 hole for \"pin D5 x 11\": narrower than the pin (no fit, the pin does not go in), 11 is no stock length of D5, and the pin ends inside the 12 deep pocket: one row that names all three",
+ "facts": {
+  "holes": [
+   {
+    "id": "h1",
+    "anchor": {
+     "kind": "hole",
+     "axis": [
+      0,
+      0,
+      1
+     ],
+     "point": [
+      0,
+      20,
+      10
+     ]
+    },
+    "segments": [
+     {
+      "d": 4.9,
+      "len": 12.0
+     }
+    ],
+    "depth": 12.0,
+    "through": false,
+    "floor": 2.0,
+    "exit": null,
+    "class": null,
+    "coaxial": [
+     {
+      "name": "ref pins / pin D5 x 11",
+      "kind": "bought",
+      "part": null
+     }
+    ],
+    "arc": 1.0
+   }
+  ],
+  "openings": [],
+  "counts": {}
+ },
+ "params": {
+  "fits.pin_slip_extra": 0.05,
+  "fits.pin_slip_extra#tag": "M",
+  "fits.pin_press_extra#tag": "D",
+  "fits.pin_running_extra#tag": "D",
+  "fits.pin_press_extra": 0.0,
+  "fits.pin_running_extra": 0.3
+ },
+ "expect": [
+  {
+   "verdict": "FAIL",
+   "measure": 4.9,
+   "limit": 5.0,
+   "by": [
+    "ref pins / pin D5 x 11"
+   ]
+  }
+ ]
+}

@@ -68,7 +68,11 @@ class Shipped(unittest.TestCase):
                   mesh.closed mesh.one_shell project.stl_without_stamp project.stl_without_object project.object_on_no_plate
                   project.object_not_printable project.mesh_unstamped project.mesh_stale project.build_table_differs
                   project.target_differs regression.unintended regression.feature_lost
-                  project.settings_match project.settings_changed_by_write fits.bought_part_pocket print.z_layers'''.split()
+                  project.settings_match project.settings_changed_by_write fits.bought_part_pocket print.z_layers
+                  print.slice_support_growth print.overhang_angle
+                  bearings.insertion_path bearings.no_plastic_in_clamp bearings.sleeve_end_and_preload bearings.shaft_sleeve
+                  screws.family_lengths screws.head_recess screws.head_seat_full_ring hardware.refs_present access.key_swing walls.placed_stl
+                  bearings.spacer_room print.fit_axis print.relief_layers'''.split()
         have = [r['id'] for r in gate_registry.rules(self.reg, level='block')]
         self.assertEqual(sorted(have), sorted(want))
 
@@ -178,8 +182,8 @@ class Shipped(unittest.TestCase):
         q = gate_registry.rule(self.reg, 'fits.pocket_content')
         self.assertEqual((q['level'], q['attest']['per'], q['attest']['evidence']), ('attest', 'finding', ['label', 'param', 'waiver']))
 
-    def test_four_questions_are_asked_now_and_the_rest_stay_deferred(self):
-        asked = {'access.hole_supports': 'export', 'access.key_swing': 'design', 'screws.count_load_joint': 'design', 'bearings.no_plastic_in_clamp': 'design'}
+    def test_two_questions_are_asked_now_and_the_rest_stay_deferred(self):
+        asked = {'access.hole_supports': 'export', 'screws.count_load_joint': 'design'}
         for rid, stage in asked.items():
             r = gate_registry.rule(self.reg, rid)
             self.assertEqual((r['level'], r['stage'], r['attest']['per'], bool(r.get('deferred'))), ('attest', stage, 'part', False), rid)
@@ -187,9 +191,12 @@ class Shipped(unittest.TestCase):
             self.assertIn('label', r['attest']['evidence'], rid); self.assertGreaterEqual(len(r['attest']['labels']), 2, rid)
             self.assertNotIn('Deferred', r.get('note', ''), rid)
         still = {r['id'] for r in gate_registry.rules(self.reg, deferred=True)}
-        self.assertEqual(still, {'bearings.insertion_path', 'clearance.static_all_neighbours', 'clearance.sweep_full_travel', 'motors.plug_path', 'print.slice_support_growth',
-                                 'screws.family_lengths', 'screws.head_recess', 'screws.head_seat_full_ring', 'sensors.board_and_magnet', 'strength.criteria',
+        self.assertEqual(still, {'clearance.static_all_neighbours', 'clearance.sweep_full_travel', 'motors.plug_path',
+                                 'sensors.board_and_magnet', 'strength.criteria',
                                  'switches.click_before_stop', 'symmetry.named_asymmetry', 'teeth.profile'})
+        for rid in ('access.key_swing', 'bearings.no_plastic_in_clamp', 'bearings.insertion_path', 'screws.family_lengths', 'screws.head_recess',
+                    'screws.head_seat_full_ring', 'hardware.refs_present'):
+            self.assertEqual(gate_registry.rule(self.reg, rid)['level'], 'block', rid)        # built: judged from the facts, no question
 
 
 class Validation(Tmp):

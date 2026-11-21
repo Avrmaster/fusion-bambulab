@@ -1,6 +1,6 @@
 {
  "judge": "inserts_pocket_shape",
- "case": "the same pocket with an M3x4x5 insert ref on its axis",
+ "case": "the same pocket with an M3x4x5 insert ref on its axis; the row was printed under the declared target",
  "facts": {
   "holes": [
    {
@@ -61,5 +61,30 @@
   "sensors.magnet_pocket_d#tag": "D",
   "sensors.magnet_pocket_depth#tag": "D"
  },
- "expect": []
+ "expect": [],
+ "tables": {
+  "inserts": {
+   "kinds": {
+    "M3x4x5": {
+     "measured_under": [
+      {
+       "nozzle": 0.4,
+       "material": "PETG",
+       "xy_hole_compensation": 0.1,
+       "layer_height": 0.2
+      }
+     ]
+    }
+   }
+  }
+ },
+ "ctx": {
+  "target": {
+   "nozzle": 0.4,
+   "line_width": 0.42,
+   "material": "PETG",
+   "layer_height": 0.2,
+   "xy_hole_compensation": 0.1
+  }
+ }
 }

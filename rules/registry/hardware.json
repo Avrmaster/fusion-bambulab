@@ -50,45 +50,33 @@
       "statement": "Every fastener feature of a printed part has its named reference body: a screw (head and shank), an insert, a washer, a dowel, a bearing, in a hardware component that belongs to that part. No orphans. The length in a name is the modelled length. When a hole moves, its refs are rebuilt in the same pass. Purchase lists and build notes are made from the refs.",
       "why": "Six refs were named 2 to 6 mm shorter than the screw the stack needed, so a parts list made from the names would have bought the wrong screws. Changes repeatedly ended with \"hardware refs not updated\". The screw and washer checks see only fasteners that have a ref body: a hole without one passes them in silence.",
       "params": [
-        "screws.any_hole_d_max"
+        "screws.any_hole_d_max",
+        "inserts.ref_pattern",
+        "screws.min_engagement",
+        "screws.wood_pattern",
+        "fits.pin_ref_pattern",
+        "sensors.magnet_pocket_d",
+        "sensors.magnet_pocket_depth",
+        "sensors.magnet_d6_pocket_d",
+        "sensors.magnet_d6_pocket_depth",
+        "screws.ref_pattern",
+        "washers.ref_pattern",
+        "screws.nut_ref_pattern",
+        "bearings.ref_pattern"
       ],
-      "check": null,
-      "level": "attest",
+      "check": {
+        "probe": "fusion_screws",
+        "judge": "hardware_refs_present",
+        "needs": "fusion"
+      },
+      "level": "block",
       "stage": "design",
       "fix_order": [
         "Rebuild the refs of the part from its holes before the gate run.",
         "Remove refs whose hole is gone."
       ],
-      "attest": {
-        "question": "Does every screw hole, insert pocket and washer landing of this part have its ref body, rebuilt after the last change of a hole?",
-        "evidence": [
-          "label"
-        ],
-        "per": "part",
-        "labels": [
-          "every fastener feature of this part has its ref body, rebuilt after the last hole change",
-          "this part has no fastener features",
-          "some refs are missing or stale: listed in the report for the owner"
-        ],
-        "auto": [
-          {
-            "when": [
-              "no_screw_feature"
-            ],
-            "label": "this part has no fastener features"
-          }
-        ],
-        "held": {
-          "this part has no fastener features": {
-            "none": [
-              "fusion_screws.screws",
-              "fusion_screws.washers",
-              "fusion_screws.fastener_holes"
-            ]
-          }
-        }
-      },
-      "note": "A question until a judge reads the census: a classified screw hole or insert pocket with nothing on its axis. See also access.screws_modelled_first. Which part a ref belongs to is assembly.hardware_owner. The label \"no fastener features\" is refused while the screw probe lists a screw, a washer, a screw hole or an insert pocket on the part. A ref that is there and that no probe recognised is hardware.recognised."
+      "attest": null,
+      "note": "Judged from the fastener holes of fusion_screws and the census: an insert pocket with no insert ref on its axis fails, a screw hole with nothing on its axis fails, and a screw ref that stands in no hole and no opening of the part fails. A pocket for a bought part and the hole of a wood screw are no insert pockets here, and a blind hole shallower than the least engagement holds no fastener. Which part a ref belongs to is assembly.hardware_owner. A ref that is there and that no probe recognised is hardware.recognised."
     },
     {
       "id": "hardware.recognised",

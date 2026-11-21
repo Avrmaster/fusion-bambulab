@@ -1,0 +1,78 @@
+{
+ "judge": "print_relief_layers",
+ "case": "the declared target does not say the layer heights: NOT_RUN",
+ "facts": {
+  "holes": [
+   {
+    "id": "h1",
+    "anchor": {
+     "kind": "insert_pocket",
+     "axis": [
+      0,
+      0,
+      1
+     ],
+     "point": [
+      10.0,
+      0.0,
+      12.0
+     ]
+    },
+    "segments": [
+     {
+      "d": 7.5,
+      "len": 0.54
+     },
+     {
+      "d": 4.4,
+      "len": 1.5
+     },
+     {
+      "d": 3.6,
+      "len": 5.0
+     }
+    ],
+    "depth": 7.04,
+    "through": false,
+    "floor": 2.0,
+    "exit": null,
+    "class": {
+     "table": "inserts",
+     "kind": "M3x4x5",
+     "role": "insert_pocket",
+     "match": "exact"
+    },
+    "coaxial": []
+   }
+  ]
+ },
+ "params": {
+  "target.layer_height": 0.3,
+  "target.initial_layer_print_height": 0.3,
+  "inserts.relief_depth_min": 0.4,
+  "inserts.relief_depth_max": 0.6,
+  "print.z_layer_tol": 0.02,
+  "sensors.magnet_pocket_d": 4.2,
+  "sensors.magnet_pocket_depth": 2.1,
+  "sensors.magnet_d6_pocket_d": 6.2,
+  "sensors.magnet_d6_pocket_depth": 2.6
+ },
+ "ctx": {
+  "print": {
+   "up": [
+    0,
+    0,
+    1
+   ],
+   "bed": 0.0,
+   "from": "project",
+   "why": null
+  },
+  "target": null
+ },
+ "expect": [
+  {
+   "verdict": "NOT_RUN"
+  }
+ ]
+}

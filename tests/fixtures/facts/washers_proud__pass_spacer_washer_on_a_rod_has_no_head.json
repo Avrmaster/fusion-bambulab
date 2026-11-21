@@ -1,0 +1,75 @@
+{
+ "judge": "washers_proud",
+ "case": "a headless spacer washer on a steel rod touches the roller of its own stack: no screw on it, no head stack stands proud",
+ "incident": "spacer washers of a roller stack were judged as screw head stacks",
+ "facts": {
+  "screws": [],
+  "washers": [
+   {
+    "id": "w1",
+    "ref": "ref clamp / washer M3 (w1)",
+    "od": 7.0,
+    "id_d": 3.2,
+    "t": 0.5,
+    "anchor": {
+     "kind": "face",
+     "axis": [
+      0,
+      0,
+      1
+     ],
+     "point": [
+      28,
+      0,
+      4
+     ]
+    },
+    "landing": {
+     "share": 0.54,
+     "share_all": 0.54,
+     "gap": 0.0,
+     "open_d": 4.2,
+     "ring_shares": [
+      0.333,
+      0.5,
+      0.5,
+      0.583,
+      0.583,
+      0.542
+     ],
+     "on_bearing": null,
+     "look": 2.0,
+     "on": "demo/plate",
+     "spot_face_d": null,
+     "wall_angles": 0,
+     "covers": [
+      {
+       "name": "Plate",
+       "kind": "printed",
+       "part": "demo/plate",
+       "share": 1.0,
+       "gap": 0.0
+      }
+     ]
+    },
+    "proud": {
+     "height": 1.2,
+     "nearest": {
+      "name": "ref rollers / 686 roller 1",
+      "kind": "hardware",
+      "part": null,
+      "gap": 0.0
+     }
+    },
+    "screw": null
+   }
+  ]
+ },
+ "params": {
+  "washers.gap_to_neighbour": 0.5
+ },
+ "ctx": {
+  "part": "demo/plate"
+ },
+ "expect": []
+}

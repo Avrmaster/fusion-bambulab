@@ -11,6 +11,7 @@
     python3 gate/tools/gate.py export PART [...] [--for KEY] [--wall 20]   quarantine STL -> STL checks -> promote + stamp
     python3 gate/tools/gate.py export --generated STL [--for KEY]  a part made by code: STL checks + its attest, then stamp
     python3 gate/tools/gate.py verify [PROJECT.3mf]        stamps <-> STLs <-> meshes, project consistency; no Fusion
+    python3 gate/tools/gate.py slice [PROJECT] [--changed | --all | --plates 1,4]   the slicer's support per object, on a copy
     python3 gate/tools/gate.py report [--last]
     python3 gate/tools/gate.py triage [--md]               inherited findings grouped for the owner
     python3 gate/tools/gate.py owner waive F-ID|Q-ID --reason "..." --quote "..."
@@ -19,6 +20,7 @@
     python3 gate/tools/gate.py owner param NAME VALUE --tag M|U|D|S --source "..." [--key SIZE] [--under KEY] --quote "..."
     python3 gate/tools/gate.py owner bundle PROPOSAL [--dry-run] --quote "..."   a prepared proposal of param, target, waiver,
                                                            triage and mode entries, applied in one call or not at all
+    python3 gate/tools/gate.py owner baseline PROJECT "OBJECT" [...] --quote "..." [--reason "..."]   support baseline from the last slice
 
 `--for KEY` names the .3mf project (its key in gate/layout.json) whose declared target a part is judged for. A project
 with one declared target needs none; with several, `run` and `export` refuse to guess.
@@ -55,17 +57,19 @@ COMMANDS = {                                   # sub-command -> (module, functio
     'attest': ('gate_attest', 'cmd_attest'),
     'export': ('gate_stamp', 'cmd_export'),
     'verify': ('gate_guard', 'cmd_verify'),
+    'slice': ('gate_slice', 'cmd_slice'),
+    'coupons': ('gate_coupons', 'cmd_coupons'),
     'report': ('gate_report', 'cmd_report'),
     'triage': ('gate_report', 'cmd_triage'),
     'owner': ('gate', 'cmd_owner'),
 }
 NO_ROOT = ('doctor', 'rules')                  # these also work in a folder that is not gated (root is then None)
 # commands that judge, stamp or write: they do not run on a vendored copy that was changed by hand (gate/LOCK.json)
-NEEDS_INTACT = ('run', 'scan', 'export', 'verify', 'owner')
+NEEDS_INTACT = ('run', 'scan', 'export', 'verify', 'owner', 'slice')
 # commands after which the digest the SessionStart hook prints is built again (gate_report.refresh_digest): those that
 # can change the state of the gate. `status` builds it itself; a `run` or `scan` that needs more calls (exit 3) does
 # not, it would add a judgement of every part to every short call: the hook then says the digest is stale.
-REFRESH_DIGEST = ('scan', 'run', 'attest', 'export', 'verify', 'triage', 'owner', 'params')
+REFRESH_DIGEST = ('scan', 'run', 'attest', 'export', 'verify', 'triage', 'owner', 'params', 'slice')
 DECISIONS = ('fix', 'waive', 'tolerate', 'rule_wrong')
 
 
@@ -95,12 +99,14 @@ def parser():
               target (--for KEY or None), part (list: the questions of one part, waiting ones too), waiting (bool)
     export    parts (list of part ids), generated (STL path or None), target (--for KEY or None), wall (seconds)
     verify    project (path of a .3mf or None = every registered project)
+    slice     project (key or path, None = every registered project), changed, all (bool), plates (text or None),
+              keep (bool), timeout (seconds)
     report    last (bool)
     triage    md (bool)
-    owner     action ("waive" | "decide" | "adopt" | "param" | "bundle"); waive: finding, reason, quote; decide: item (T-id
+    owner     action ("waive" | "decide" | "adopt" | "param" | "bundle" | "baseline"); waive: finding, reason, quote; decide: item (T-id
               of a row or G-id of a group), decision, quote, note, part (with a G-id: only the rows of this part); adopt:
               quote; param: name, value (text as typed), tag, source, key, quote; bundle: proposal (path), dry_run (bool),
-              quote (None with --dry-run)"""
+              quote (None with --dry-run); baseline: project, objects (list), quote, reason"""
     p = _Parser(prog='gate.py', description='One gate for printed parts: rules, checks, stamps.')
     p.add_argument('--root', help='project root (default: the nearest folder above the working directory with gate/project.json)')
     sub = p.add_subparsers(dest='command', parser_class=_Parser)
@@ -125,6 +131,11 @@ def parser():
     s = sub.add_parser('export'); s.add_argument('parts', nargs='*'); s.add_argument('--generated'); s.add_argument('--for', dest='target')
     s.add_argument('--wall', type=float, default=20.0)
     s = sub.add_parser('verify'); s.add_argument('project', nargs='?')
+    s = sub.add_parser('slice'); s.add_argument('project', nargs='?')
+    g = s.add_mutually_exclusive_group()
+    g.add_argument('--changed', action='store_true'); g.add_argument('--all', action='store_true'); g.add_argument('--plates')
+    s.add_argument('--keep', action='store_true'); s.add_argument('--timeout', type=float, default=1800.0)
+    s = sub.add_parser('coupons'); s.add_argument('--for', dest='target', metavar='KEY')
     s = sub.add_parser('report'); s.add_argument('--last', action='store_true')
     s = sub.add_parser('triage'); s.add_argument('--md', action='store_true')
     s = sub.add_parser('owner')
@@ -138,6 +149,7 @@ def parser():
     o.add_argument('--source', required=True); o.add_argument('--key'); o.add_argument('--quote', required=True)
     o.add_argument('--under', metavar='KEY', help='with --tag M on a fit parameter: the .3mf project the value was printed from; its declared target is stored as "measured_under"')
     o = osub.add_parser('bundle'); o.add_argument('proposal'); o.add_argument('--quote'); o.add_argument('--dry-run', dest='dry_run', action='store_true')
+    o = osub.add_parser('baseline'); o.add_argument('project'); o.add_argument('objects', nargs='+'); o.add_argument('--quote', required=True); o.add_argument('--reason')
     return p
 
 
@@ -171,7 +183,7 @@ def _open_rows(root, reg):
 
 def _owner_waive(root, args):
     import gate_features, gate_registry
-    reg = gate_registry.load_default()
+    reg = gate_registry.load_default(root)
     row = _open_rows(root, reg).get(args.finding)
     if row is None:
         raise GateError('%s is not an open finding or question of the present geometry (gate.py status and gate.py attest list show them)' % args.finding)
@@ -328,7 +340,7 @@ def _owner_decide(root, args):
 
 def _owner_param(root, args):
     import gate_params, gate_registry
-    reg = gate_registry.load_default()
+    reg = gate_registry.load_default(root)
     if args.name not in reg['params']:
         gate_params.explain(reg, args.name)      # raises ParamError with the nearest names
     definition = reg['params'][args.name]
@@ -462,7 +474,10 @@ def cmd_owner(root, args):
             A fit parameter tagged M also gets "measured_under": nozzle, material, X-Y hole compensation and layer height
             of the declared target of the .3mf project it was printed from (args.under, or the only declared target).
             That project file must exist and hold those values today (_printed_as_declared): the coupon was printed
-            from the file. A per-size value (--key) cannot be M while the base value of the parameter is not."""
+            from the file. A per-size value (--key) cannot be M while the base value of the parameter is not.
+    baseline  gate/owner/support_baseline.json["projects"][args.project][object] = the support the last slice of the
+            gate measured for that object (gate_slice.owner_baseline); refused for an object not sliced from the mesh
+            the project holds now."""
     if args.action == 'bundle' and getattr(args, 'dry_run', False):
         return _owner_bundle(root, args)         # writes nothing: no prompt, no quote needed to show what would change
     if _agent_session():
@@ -474,7 +489,7 @@ def cmd_owner(root, args):
                         '(setup_project.py --gate prints them); nothing was written' % '; '.join(missing))
     if not str(getattr(args, 'quote', '') or '').strip():
         raise GateError('an owner command needs --quote: the owner\'s own words for this decision; nothing was written')
-    return {'waive': _owner_waive, 'decide': _owner_decide, 'adopt': _owner_adopt, 'param': _owner_param, 'bundle': _owner_bundle}[args.action](root, args)
+    return {'waive': _owner_waive, 'decide': _owner_decide, 'adopt': _owner_adopt, 'param': _owner_param, 'bundle': _owner_bundle, 'baseline': _owner_baseline}[args.action](root, args)
 
 
 AGENT_ENV = ('CLAUDECODE', 'CLAUDE_CODE_ENTRYPOINT', 'CLAUDE_CODE_SESSION_ID')
@@ -542,6 +557,7 @@ BUNDLE_KINDS = {                                 # kind -> (required fields, opt
     'decide': (('item', 'decision'), ('note', 'part')),
     'adopt': ((), ()),
     'mode': (('mode',), ()),
+    'baseline': (('project', 'objects'), ('reason',)),
 }
 BUNDLE_COMMON = ('kind', 'why')                  # "why": the evidence, for the owner to read; never applied
 
@@ -653,7 +669,7 @@ def _owner_target(root, args):
     gate/project.json, or of one object of it under "objects" (args.object). A "print" block is merged key by key.
     Refused when the project is not registered in gate/layout.json or gate_params.check() objects."""
     import gate_params, gate_registry
-    reg = gate_registry.load_default()
+    reg = gate_registry.load_default(root)
     keys = [e.get('key') for e in gate_common.load_layout(root).get('projects') or [] if isinstance(e, dict)]
     if args.project not in keys:
         raise GateError('%s is no .3mf project of gate/layout.json (registered: %s)' % (args.project, ', '.join(k for k in keys if k) or 'none'))
@@ -727,7 +743,7 @@ def _owner_bundle(root, args):
         raise GateError('an owner command needs --quote: the owner\'s own words for this decision; nothing was written')
     with open(path, 'rb') as f:
         sha = hashlib.sha256(f.read()).hexdigest()
-    funcs = {'param': _owner_param, 'target': _owner_target, 'waive': _owner_waive, 'decide': _owner_decide, 'adopt': _owner_adopt, 'mode': _owner_mode}
+    funcs = {'param': _owner_param, 'target': _owner_target, 'waive': _owner_waive, 'decide': _owner_decide, 'adopt': _owner_adopt, 'mode': _owner_mode, 'baseline': _owner_baseline}
     print('%s %s: %d entr%s%s' % ('DRY RUN of' if dry else 'bundle', gate_common.rel(root, path), len(data['entries']), 'y' if len(data['entries']) == 1 else 'ies',
                                   (' - ' + data['title']) if data.get('title') else ''))
     stage = _Stage()
@@ -752,7 +768,7 @@ def _owner_bundle(root, args):
         try:                                     # the end state as a whole: every declared target and every parameter
             import gate_params, gate_registry
             project = gate_common.load_project(root)
-            reg = gate_registry.load_default()
+            reg = gate_registry.load_default(root)
             overrides = gate_params.load_overrides(root)
             errors = []
             for key, t in sorted((project.get('targets') or {}).items()):
@@ -782,6 +798,11 @@ def _owner_bundle(root, args):
     print('bundle applied: %d file(s) written: %s' % (len(changes), ', '.join(r for r, _ in changes)))
     print('stored judgements were made with the old values: python3 gate/tools/gate.py run --offline judges them again')
     return EXIT_PASS
+
+
+def _owner_baseline(root, args):
+    import gate_slice
+    return gate_slice.owner_baseline(root, args)
 
 
 def _forked(root):
@@ -817,6 +838,7 @@ def main(argv=None):
                                  '`gate.py doctor` lists the files\n' % (forked, args.command))
                 return EXIT_INFRA
         fn = cmd_owner if module == 'gate' else getattr(importlib.import_module(module), func)
+        importlib.import_module('gate_registry').use_root(root)         # the project's own table rows (gate/owner/tables.json)
         code = fn(root, args)
         _checked(root, args, code, started)
         dry = args.command == 'owner' and getattr(args, 'dry_run', False)       # a dry run changed nothing: the kept digest stays

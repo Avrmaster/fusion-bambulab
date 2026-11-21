@@ -327,7 +327,7 @@ def cmd_rules(root, args):
     """gate.py rules [--md] [--category C]. root may be None (not a gated folder): registry defaults are shown.
     Prints the effective rules: level, id, title, statement with this project's numbers, fix order; args.md: as
     markdown (the content of gate/RULES.md). Returns 0; 4 for an unknown category or a parameter error."""
-    reg = gate_registry.load_default()
+    reg = gate_registry.load_default(root)
     category = getattr(args, 'category', None)
     if category is not None and category not in reg['categories']:
         raise GateError('unknown category %r (known: %s)' % (category, ', '.join(c for c in gate_registry.CATEGORIES if c in reg['categories'])))

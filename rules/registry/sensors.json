@@ -74,6 +74,88 @@
       "class": "limit",
       "formula": null,
       "description": "least plastic under the pilot hole of a self-tapping board screw"
+    },
+    "sensors.magnet_d6_d": {
+      "default": 6.0,
+      "unit": "mm",
+      "looser": null,
+      "measured_on": "placeholder: a common D6 disc magnet; measure the magnet in hand",
+      "class": "geometry",
+      "formula": null,
+      "description": "diameter of the second magnet size"
+    },
+    "sensors.magnet_d6_h": {
+      "default": 2.5,
+      "unit": "mm",
+      "looser": null,
+      "measured_on": "placeholder: a common D6 disc magnet; measure the magnet in hand",
+      "class": "geometry",
+      "formula": null,
+      "description": "height of the second magnet size"
+    },
+    "sensors.magnet_d6_pocket_d": {
+      "default": null,
+      "unit": "mm",
+      "looser": null,
+      "measured_on": "computed",
+      "class": "fit",
+      "formula": "sensors.magnet_d6_d + sensors.magnet_d_extra",
+      "description": "diameter of the pocket of the second magnet size"
+    },
+    "sensors.magnet_d6_pocket_depth": {
+      "default": null,
+      "unit": "mm",
+      "looser": null,
+      "measured_on": "computed",
+      "class": "fit",
+      "formula": "sensors.magnet_d6_h + sensors.magnet_depth_extra",
+      "description": "depth of the pocket of the second magnet size"
+    },
+    "sensors.board_w": {
+      "default": 23.0,
+      "unit": "mm",
+      "looser": null,
+      "measured_on": "placeholder: a common small square sensor breakout board; measure the board in hand",
+      "class": "geometry",
+      "formula": null,
+      "description": "width of the sensor board"
+    },
+    "sensors.board_l": {
+      "default": 23.0,
+      "unit": "mm",
+      "looser": null,
+      "measured_on": "placeholder: a common small square sensor breakout board; measure the board in hand",
+      "class": "geometry",
+      "formula": null,
+      "description": "length of the sensor board"
+    },
+    "sensors.board_extra": {
+      "default": 0.3,
+      "unit": "mm",
+      "looser": null,
+      "measured_on": "decided, not printed",
+      "class": "fit",
+      "formula": null,
+      "description": "width and length of a board pocket over the board",
+      "measured_under": null
+    },
+    "sensors.board_pocket_w": {
+      "default": null,
+      "unit": "mm",
+      "looser": null,
+      "measured_on": "computed",
+      "class": "fit",
+      "formula": "sensors.board_w + sensors.board_extra",
+      "description": "width of the board pocket"
+    },
+    "sensors.board_pocket_l": {
+      "default": null,
+      "unit": "mm",
+      "looser": null,
+      "measured_on": "computed",
+      "class": "fit",
+      "formula": "sensors.board_l + sensors.board_extra",
+      "description": "length of the board pocket"
     }
   },
   "rules": [
@@ -156,7 +238,9 @@
         "sensors.magnet_pocket_depth",
         "sensors.magnet_d_extra",
         "sensors.magnet_depth_extra",
-        "sensors.magnet_floor_min"
+        "sensors.magnet_floor_min",
+        "sensors.magnet_d6_pocket_d",
+        "sensors.magnet_d6_pocket_depth"
       ],
       "check": null,
       "level": "advice",

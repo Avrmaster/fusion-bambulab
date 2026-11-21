@@ -621,14 +621,26 @@ def bed_normal(orient):
 
 
 def orientations(root, layout, stl_rel):
-    """How the build tables of the registered .3mf projects lay the part whose STL is `stl_rel` (relative to the root):
+    """How the registered .3mf projects lay the part whose STL is `stl_rel` (relative to the root):
     [{"project": key, "table": file, "plate": plate name, "object": object name, "orient": the value as written,
-      "down": bed_normal(orient) or None}], one row per object of a table that is built from that STL.
-    Also returns the reasons why a table could not be read: (rows, [texts])."""
+      "down": bed_normal(orient) or None}], one row per object that is built from that STL.
+    Also returns the reasons why a table could not be read: (rows, [texts]).
+
+    The saved project comes first (probes.project_bed.placed): an object whose mesh is this STL turned as a rigid body
+    gives the face it really lies on, measured, with "source": "project" ("table" is then the .3mf). A build table is
+    read only for the projects that hold no such object yet (the part is not placed there): its rows have "source":
+    "table". So a project the slicer or an arrange step has turned since the build is judged as it is saved."""
+    from probes import project_bed
     rows, why = [], []
+    try:
+        placed, problems, done = project_bed.placed(root, layout, stl_rel)
+    except Exception as e:                       # what could not be measured is unknown; the build tables may still say it
+        placed, problems, done = [], ['the saved projects could not be measured (%s: %s)' % (type(e).__name__, e)], set()
+    rows += placed
+    why += problems
     want = os.path.normpath(os.path.join(root, *str(stl_rel).replace(os.sep, '/').split('/'))) if stl_rel else None
     for entry in (layout or {}).get('projects') or []:
-        if not isinstance(entry, dict) or not entry.get('build_table'):
+        if not isinstance(entry, dict) or not entry.get('build_table') or entry.get('key') in done:
             continue
         rel_table = str(entry['build_table']).replace(os.sep, '/')
         plates, problem = _table_literal(root, rel_table)
@@ -643,7 +655,8 @@ def orientations(root, layout, stl_rel):
                 if os.path.normpath(o[1] if os.path.isabs(o[1]) else os.path.join(folder, o[1])) != want:
                     continue
                 orient = o[2] if len(o) > 2 else False
-                rows.append({'project': entry.get('key'), 'table': rel_table, 'plate': plate[0], 'object': o[0], 'orient': orient, 'down': bed_normal(orient)})
+                rows.append({'project': entry.get('key'), 'table': rel_table, 'plate': plate[0], 'object': o[0], 'orient': orient,
+                             'down': bed_normal(orient), 'source': 'table'})
     return rows, why
 
 
@@ -687,6 +700,61 @@ def _build_table(root, rel_path, objects, exists):
     return out
 
 
+_SETTINGS_NAMES = ('PROJECT', 'PROJECT_SETTINGS', 'SETTINGS', 'project_settings')
+
+
+def _build_table_settings(root, rel_path, saved, keys):
+    """The fit settings a build script writes into its project, compared with the saved project (read with ast, the
+    script is never run): {"literal": [keys the script gives as plain literals], "computed": [keys it may set from values
+    that are not literals: an unpacked dict, a name], "differs": [{"what", "table", "project"}]} or None when the script
+    assigns no settings dict at the top level (_SETTINGS_NAMES). Only keys of the fit settings are looked at.
+    A dict with a "**" unpacking holds keys nobody can read without running the script: "computed" says so and those
+    keys are not compared; a literal key that the unpacking could override is not compared either."""
+    path = os.path.join(root, rel_path)
+    try:
+        with open(path, encoding='utf-8') as f:
+            tree = ast.parse(f.read())
+    except (OSError, SyntaxError, ValueError):
+        return None
+    node = None
+    for st in tree.body:
+        targets = st.targets if isinstance(st, ast.Assign) else []
+        if any(isinstance(t, ast.Name) and t.id in _SETTINGS_NAMES for t in targets) and isinstance(st.value, ast.Dict):
+            node = st.value
+    if node is None:
+        return None
+    literal, computed, unpacked = {}, [], False
+    for k, v in zip(node.keys, node.values):
+        if k is None:
+            unpacked = True
+            continue
+        try:
+            key = ast.literal_eval(k)
+        except (ValueError, SyntaxError):
+            continue
+        if key not in keys:
+            continue
+        try:
+            literal[key] = ast.literal_eval(v)
+        except (ValueError, SyntaxError):
+            computed.append(key)
+    if unpacked:
+        computed = sorted(set(computed) | set(k for k in keys if k not in literal))
+    out = {'literal': sorted(literal), 'computed': sorted(computed), 'differs': []}
+    if not isinstance(saved, dict):
+        return out
+    num = lambda x: _number(x[0] if isinstance(x, list) and x else x)
+    for key in sorted(literal):
+        if unpacked:
+            continue                                     # an unpacked dict before or after it may set the same key
+        have, want = saved.get(key), literal[key]
+        a, b = num(want), num(have)
+        same = (a is not None and b is not None and abs(a - b) <= 5e-4) or (a is None and str(want).strip().lower() == str(have).strip().lower())
+        if not same:
+            out['differs'].append({'what': 'fit setting %s' % key, 'table': want, 'project': have})
+    return out
+
+
 def measure(root, project_entry, layout, census, declared_target=None, reg=None, fit_settings=None):
     """Facts of one .3mf project.
 
@@ -695,7 +763,7 @@ def measure(root, project_entry, layout, census, declared_target=None, reg=None,
     layout           gate_common.load_layout(root) (every project and STL folder, to know where else an STL is placed)
     census           gate_common.load_census(root) (part ids, STL names, current signatures)
     declared_target  gate/project.json "targets"[key] or None
-    reg              gate_registry.load_default(), or None to load it here (gate_stamp.verify needs it)
+    reg              gate_registry.load_default(root), or None to load it here (gate_stamp.verify needs it)
     fit_settings     the value of the parameter target.fit_settings (text or list); None = FIT_SETTINGS
 
     Returns {"project": key, "file": path relative to the root, "exists": bool,
@@ -737,6 +805,10 @@ def measure(root, project_entry, layout, census, declared_target=None, reg=None,
       (its part id, when the object is tied to one). None when the file does not exist. "settings_write": None here (no write is under way: the guard fills it at a save).
       "print_settings": read_fit_settings() of the file for print_keys(declared_target) (supports, wall order): what the
       "print" block of the declared target is compared with. None when the file does not exist.
+      "overhangs": overhang_facts() (the geometry pre-check of every object as it lies on its plate, with whether the
+      slicer supports it; print.overhang_angle) and "slice": probes.project_slice.facts_for() (the support of every
+      object in the last slice of the gate against the owner's baseline; print.slice_support_growth); both None when
+      the file does not exist.
     When the project file does not exist: "exists" False, no objects, the STL folder is still listed."""
     import gate_stamp
     key = project_entry.get('key')
@@ -750,7 +822,7 @@ def measure(root, project_entry, layout, census, declared_target=None, reg=None,
     def registry():
         if state['reg'] is None:
             import gate_registry
-            state['reg'] = gate_registry.load_default()
+            state['reg'] = gate_registry.load_default(root)
         return state['reg']
 
     # ---- parts by STL path, STL files of every registered folder
@@ -939,8 +1011,125 @@ def measure(root, project_entry, layout, census, declared_target=None, reg=None,
         printing = read_fit_settings(path, print_keys(declared_target))
         for o in printing['objects']:
             o['part'] = part_of.get(str(o['id'])) or by_name_part.get(o['name'])
+    if table is not None:
+        table['fit_settings'] = _build_table_settings(root, str(project_entry['build_table']).replace(os.sep, '/'),
+                                                      (settings or {}).get('global') if exists else None, fit_keys(fit_settings) if fit_settings else list(FIT_SETTINGS))
+    rows = [{k: r[k] for k in public} for r in objects]
     return {'project': key, 'file': rel_file, 'exists': exists, 'target_declared': declared_target, 'fit_settings': settings, 'settings_write': None,
             'print_settings': printing,
             'target_file': _target_of_settings(mine['settings']) if exists else None,
-            'objects': [{k: r[k] for k in public} for r in objects], 'stls': stls, 'build_table': table,
-            'stl_dir': project_entry.get('stl_dir'), 'writes': len(writes.get(rel_file, {})), 'unread_projects': unread}
+            'objects': rows, 'stls': stls, 'build_table': table,
+            'stl_dir': project_entry.get('stl_dir'), 'writes': len(writes.get(rel_file, {})), 'unread_projects': unread,
+            'overhangs': overhang_facts(root, path, rows, registry, declared_target) if exists else None,
+            'placed_walls': placed_wall_facts(root, path, rows, registry, declared_target) if exists else None,
+            'slice': _slice_facts(root, key, rows, path) if exists else None}
+
+
+SUPPORT_KEYS = ('enable_support', 'support_type', 'support_on_build_plate_only', 'support_remove_small_overhang')
+
+
+def _slice_facts(root, key, rows, path=None):
+    from probes import project_slice
+    try:
+        return project_slice.facts_for(root, key, rows, path)
+    except Exception as e:                          # unreadable state of the gate: the judge says NOT_RUN with this reason
+        return {'error': '%s: %s' % (type(e).__name__, e)}
+
+
+def _support_of(settings, name, oid):
+    """(supports on: True | False | None, how it is known) for one object out of read_fit_settings(..., SUPPORT_KEYS).
+    True means only that the slicer is asked for supports: its type (a manual type supports painted places only), "on
+    the build plate only" and its own threshold angle can still leave a region bare. The text names them, and
+    print.overhang_angle holds every region against the slice itself."""
+    over = next((o.get('overrides') or {} for o in settings.get('objects') or [] if str(o.get('id')) == str(oid) or (oid is None and o.get('name') == name)), {})
+    glob, listed = settings.get('global') or {}, settings.get('listed')
+    kind = over.get('support_type', glob.get('support_type'))
+    plate = over.get('support_on_build_plate_only', glob.get('support_on_build_plate_only'))
+    extra = '%s%s' % (kind if kind is not None else 'type not read', ', on the build plate only' if plate not in (None, 0, 0.0, '0', 'false') else '')
+    if 'enable_support' in over:
+        v = over['enable_support']
+        return (v not in (0, 0.0, '0', 'false', None)), 'the object overrides enable_support = %s (%s)' % (v, extra)
+    v = glob.get('enable_support')
+    if v is None:
+        return None, 'the project settings do not hold enable_support'
+    if isinstance(listed, dict) and listed.get('enable_support') is False:
+        return None, 'enable_support = %s is not among the settings that differ from the preset: the slicer takes the preset\'s value' % v
+    return (v not in (0, 0.0, '0', 'false')), 'enable_support = %s for the whole project (%s)' % (v, extra)
+
+
+def _walls_budget():
+    """s of one process for measuring the walls of placed meshes that are not measured yet (all projects together): 20,
+    or GATE_WALLS_BUDGET (seconds) for a run that has more time: a mesh whose walls were cut short at 20 s is measured
+    again, whole, by `GATE_WALLS_BUDGET=120 gate.py verify`."""
+    try:
+        v = float(os.environ.get('GATE_WALLS_BUDGET') or 20.0)
+    except ValueError:
+        v = 20.0
+    return max(1.0, min(600.0, v))
+
+
+PLACED_WALLS_BUDGET = _walls_budget()
+_PLACED_SPENT = {'s': 0.0}
+
+
+def placed_wall_facts(root, path, rows, registry, declared_target=None):
+    """The "placed_walls" block of the facts: stl_mesh and stl_walls on the stored mesh of every object
+    (probes.placed_walls), measured with the report width the export uses (twice the largest of walls.min_wall_effective,
+    two line widths and walls.slit_min), within what is left of PLACED_WALLS_BUDGET in this process. {"error": text}
+    when the parameters cannot be read."""
+    import time
+    from probes import placed_walls
+    try:
+        import gate_params
+        reg = registry()
+        names = ['walls.min_wall_effective', 'target.line_width', 'walls.slit_min']
+        vals = gate_params.values(gate_params.resolve(reg, gate_params.load_overrides(root), declared_target), names)
+        under = 2 * max(float(vals.get('walls.min_wall_effective') or 0), 2 * float(vals.get('target.line_width') or 0), float(vals.get('walls.slit_min') or 0))
+        t = time.time()
+        out = placed_walls.facts(root, path, rows, round(under, 4), budget_s=max(0.0, _walls_budget() - _PLACED_SPENT['s']))
+        _PLACED_SPENT['s'] += time.time() - t
+        return out
+    except (GateError, KeyError, ValueError, TypeError) as e:
+        return {'error': '%s: %s' % (type(e).__name__, e)}
+
+
+def overhang_facts(root, path, rows, registry, declared_target=None):
+    """The "overhangs" block of the facts: the geometry pre-check (probes.mesh_overhang) of every object as it lies on
+    its plate, and whether the slicer puts supports under it. {"max_angle", "max_bridge" (the values measured with),
+    "objects": [{"name", "part", "plate", "plate_index", "printable", "pose", "support": True | False | None,
+    "support_how", "faces", "ridges", "bridges", "totals"}]} or {"error": text}."""
+    from probes import mesh_overhang, project_bed
+    try:
+        import gate_params
+        reg = registry()
+        try:
+            vals = gate_params.values(gate_params.resolve(reg, gate_params.load_overrides(root), declared_target), ['overhang.max_angle', 'overhang.max_bridge'])
+        except GateError:
+            vals = {n: reg['params'][n]['default'] for n in ('overhang.max_angle', 'overhang.max_bridge')}
+        angle, bridge = float(vals['overhang.max_angle']), float(vals['overhang.max_bridge'])
+        placed = {str(o['id']): o for o in project_bed.read_placed(path)['objects']}
+        sup = read_fit_settings(path, list(SUPPORT_KEYS))
+        out = {'max_angle': angle, 'max_bridge': bridge, 'objects': []}
+        for r in rows:
+            o = placed.get(str(r.get('id')))
+            row = {k: r.get(k) for k in ('name', 'part', 'plate', 'plate_index', 'printable', 'pose')}
+            if o is None:
+                row.update(error='the mesh of this object could not be read')
+            elif not project_bed.is_rotation(o['linear']):
+                row.update(error='the object is scaled or sheared by its build item: not measured')
+            else:
+                key = (o['pose'], tuple(round(c, 9) for c in o['linear']), angle, bridge)
+                if key not in _OVERHANGS:
+                    if len(_OVERHANGS) > 512:
+                        _OVERHANGS.clear()
+                    _OVERHANGS[key] = mesh_overhang.measure(project_bed.world(o), o['triangles'], angle, bridge)
+                m = _OVERHANGS[key]
+                row.update(faces=m['faces'], ridges=m['ridges'], bridges=m['bridges'], totals=m['totals'], all=m.get('all'))
+            row['support'], row['support_how'] = _support_of(sup, r.get('name'), r.get('id'))
+            out['objects'].append(row)
+        return out
+    except Exception as e:                          # what could not be measured is NOT_RUN in the judge, never a pass
+        return {'error': '%s: %s' % (type(e).__name__, e)}
+
+
+_OVERHANGS = {}          # (pose, turn, angle, bridge) -> mesh_overhang.measure()

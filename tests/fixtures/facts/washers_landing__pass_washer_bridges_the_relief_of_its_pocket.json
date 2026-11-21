@@ -51,10 +51,10 @@
   ]
  },
  "params": {
-  "bearings.clamp_room": 1.0,
   "washers.landing_gap_max": 0.05,
   "washers.landing_share_min": 0.95,
-  "washers.spot_face_clearance": 1.2
+  "washers.spot_face_clearance": 1.2,
+  "bearings.clamp_room_washer": 1.0
  },
  "expect": []
 }

@@ -1,0 +1,75 @@
+{
+ "judge": "fits_decided_not_printed",
+ "case": "a straight D22.25 bore for a 608 is only near the seat size (census match \"band\"), and bearings.seat takes it within its tolerance on the same never-printed seat fit: the question names the seat fit",
+ "facts": {
+  "holes": [
+   {
+    "id": "h3",
+    "anchor": {
+     "kind": "hole",
+     "axis": [
+      0,
+      0,
+      1
+     ],
+     "point": [
+      0.0,
+      0.0,
+      0.0
+     ]
+    },
+    "segments": [
+     {
+      "d": 22.25,
+      "len": 7.0
+     }
+    ],
+    "depth": 7.0,
+    "through": false,
+    "floor": 2.0,
+    "exit": null,
+    "class": {
+     "kind": "608",
+     "match": "band",
+     "role": "bearing_seat",
+     "table": "bearings"
+    },
+    "coaxial": []
+   }
+  ],
+  "openings": [],
+  "counts": {}
+ },
+ "params": {
+  "sensors.magnet_pocket_d": 4.2,
+  "sensors.magnet_pocket_depth": 2.1,
+  "sensors.magnet_pocket_d#tag": "D",
+  "sensors.magnet_pocket_depth#tag": "D",
+  "fits.pin_press_extra#tag": "D",
+  "fits.pin_press_extra": 0.0,
+  "fits.pin_slip_extra": 0.05,
+  "fits.pin_running_extra": 0.3,
+  "sensors.magnet_d6_pocket_d": 6.2,
+  "sensors.magnet_d6_pocket_depth": 2.6,
+  "bearings.seat_taper": 0.25,
+  "bearings.seat_taper_thick_base": 0.5
+ },
+ "ctx": {
+  "target": {
+   "nozzle": 0.6,
+   "line_width": 0.62,
+   "material": "PETG",
+   "layer_height": 0.3,
+   "xy_hole_compensation": 0.0
+  }
+ },
+ "expect": [
+  {
+   "verdict": "INFO",
+   "ask": "fits.decided_not_printed",
+   "by": [
+    "bearings table, seat fit"
+   ]
+  }
+ ]
+}

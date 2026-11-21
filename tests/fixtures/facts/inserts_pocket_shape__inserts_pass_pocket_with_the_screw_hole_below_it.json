@@ -1,6 +1,6 @@
 {
  "judge": "inserts_pocket_shape",
- "case": "an insert pocket whose screw comes through from the far side: relief, lead-in, D3.6 x 4.7, then a D3.4 clearance hole through the part. The tail is depth below the insert",
+ "case": "an insert pocket whose screw comes through from the far side: relief, lead-in, D3.6 x 4.7, then a D3.4 clearance hole through the part. The tail is depth below the insert; the row was printed under the declared target",
  "facts": {
   "holes": [
    {
@@ -82,5 +82,30 @@
   "sensors.magnet_pocket_d#tag": "D",
   "sensors.magnet_pocket_depth#tag": "D"
  },
- "expect": []
+ "expect": [],
+ "tables": {
+  "inserts": {
+   "kinds": {
+    "M3x4x5": {
+     "measured_under": [
+      {
+       "nozzle": 0.4,
+       "material": "PETG",
+       "xy_hole_compensation": 0.1,
+       "layer_height": 0.2
+      }
+     ]
+    }
+   }
+  }
+ },
+ "ctx": {
+  "target": {
+   "nozzle": 0.4,
+   "line_width": 0.42,
+   "material": "PETG",
+   "layer_height": 0.2,
+   "xy_hole_compensation": 0.1
+  }
+ }
 }

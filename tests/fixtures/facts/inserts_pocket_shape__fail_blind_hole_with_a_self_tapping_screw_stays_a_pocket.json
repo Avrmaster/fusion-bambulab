@@ -1,0 +1,65 @@
+{
+ "judge": "inserts_pocket_shape",
+ "case": "twin of the wood screw hole: a BLIND D4.2 x 8 hole with a self-tapping screw on its axis forms its thread in this plastic, where an M3 screw has no grip in D4.2: it stays in the insert rules, FAIL as a pocket of the wrong shape",
+ "incident": "wood-screw holes were failed as insert pockets",
+ "facts": {
+  "holes": [
+   {
+    "id": "h1",
+    "anchor": {
+     "kind": "hole",
+     "axis": [
+      0,
+      0,
+      1
+     ],
+     "point": [
+      85,
+      15,
+      -25
+     ]
+    },
+    "segments": [
+     {
+      "d": 4.2,
+      "len": 8.0
+     }
+    ],
+    "depth": 8.0,
+    "through": false,
+    "floor": null,
+    "exit": null,
+    "class": {
+     "kind": "M3x4x5",
+     "match": "band",
+     "role": "insert_pocket",
+     "table": "inserts"
+    },
+    "coaxial": [
+     {
+      "name": "Cover HW / M3x10 self-tapping screw for plastic",
+      "kind": "hardware",
+      "part": null
+     }
+    ],
+    "arc": 1.0
+   }
+  ],
+  "openings": [],
+  "counts": {}
+ },
+ "params": {
+  "screws.wood_pattern": "(?i)wood|chipboard|self[- ]?tapping|tapping screw|spax",
+  "inserts.ref_pattern": "(?i)insert",
+  "fits.pin_ref_pattern": "(?i)(?<![a-z])(?:pins?|dowels?|rods?|shafts?|axles?)(?![a-z])",
+  "sensors.magnet_pocket_d": 4.2,
+  "sensors.magnet_pocket_depth": 2.1,
+  "sensors.magnet_d6_pocket_d": 6.2,
+  "sensors.magnet_d6_pocket_depth": 2.6
+ },
+ "expect": [
+  {
+   "verdict": "FAIL"
+  }
+ ]
+}

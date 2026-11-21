@@ -1,0 +1,125 @@
+{
+ "judge": "bearings_shaft_sleeve",
+ "case": "a D4 pin in the 6 bore with nothing printed between (the sleeve was left out of the model): 2.0 under the bore is the rule, a pass",
+ "facts": {
+  "bearings": [
+   {
+    "ref": "ref bearing 686",
+    "designation": "686",
+    "by": "geometry",
+    "d": 6.0,
+    "D": 13.0,
+    "B": 5.0,
+    "anchor": {
+     "kind": "bearing",
+     "axis": [
+      0,
+      0,
+      1
+     ],
+     "point": [
+      0.0,
+      0.0,
+      34.0
+     ]
+    },
+    "rings": {
+     "inner": {
+      "faces": [
+       {
+        "side": "+",
+        "covered": [
+         {
+          "name": "Base",
+          "kind": "printed",
+          "part": "demo/base",
+          "share": 1.0,
+          "points": 1,
+          "gap": 0.0,
+          "touches_other_ring": false
+         }
+        ]
+       },
+       {
+        "side": "-",
+        "covered": [
+         {
+          "name": "Base",
+          "kind": "printed",
+          "part": "demo/base",
+          "share": 1.0,
+          "points": 1,
+          "gap": 0.0,
+          "touches_other_ring": false
+         }
+        ]
+       }
+      ]
+     },
+     "outer": {
+      "faces": [
+       {
+        "side": "+",
+        "covered": [
+         {
+          "name": "ref washer M3 large (x6)",
+          "kind": "hardware",
+          "part": null,
+          "share": 0.22,
+          "points": 6,
+          "gap": 0.0,
+          "touches_other_ring": false
+         }
+        ]
+       },
+       {
+        "side": "-",
+        "covered": [
+         {
+          "name": "Column tube",
+          "kind": "printed",
+          "part": "demo/column_tube",
+          "share": 1.0,
+          "points": 1,
+          "gap": 0.0,
+          "touches_other_ring": false
+         }
+        ]
+       }
+      ]
+     }
+    },
+    "clamps": [],
+    "seat": {
+     "inner": {
+      "d": 4.0,
+      "kind": "bought",
+      "name": "Pins / pin 4m6 x 32",
+      "part": null,
+      "len": 5.0,
+      "entry_d": 4.0,
+      "entry_open": false,
+      "entry_side": "+"
+     },
+     "outer": {
+      "d": 13.0,
+      "part": "demo/base",
+      "len": 5.0,
+      "entry_d": 13.25,
+      "entry_open": false,
+      "entry_side": "+"
+     }
+    }
+   }
+  ],
+  "seats_without_bearing": []
+ },
+ "params": {
+  "bearings.contact_gap_max": 0.05,
+  "bearings.shaft_under_bore": 2.0
+ },
+ "ctx": {
+  "part": "demo/base"
+ },
+ "expect": []
+}

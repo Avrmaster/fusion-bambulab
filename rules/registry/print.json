@@ -37,13 +37,22 @@
       "class": "limit",
       "formula": null,
       "description": "how far a height may be from a whole number of layers and still count as on a layer"
+    },
+    "print.fit_axis_deg": {
+      "default": 1.0,
+      "unit": "deg",
+      "looser": "higher",
+      "measured_on": "decided: the angle print.z_layers already takes for \"along the print axis\"; not measured",
+      "class": "limit",
+      "formula": null,
+      "description": "how far the axis of a fit hole (insert pocket, bought pocket, pin pocket, bearing seat) may be off the print axis"
     }
   },
   "rules": [
     {
       "id": "print.bed_face",
       "title": "The bed face is chosen",
-      "statement": "The face on the bed and what faces down are named before export: ramps, bridge steps, pads, and every hole or tunnel that does not run along the print axis.",
+      "statement": "The face on the bed and what faces down are known before export: ramps, bridge steps, pads, and every hole or tunnel that does not run along the print axis. Once the part is placed, the bed face is measured on the saved project: the object is the STL turned as a rigid body, and the face that turn sends down is the bed face.",
       "why": "A seat printed on its side sagged and the bearing did not go on. Holes that lay flat were closed by supports.",
       "params": [],
       "check": null,
@@ -60,7 +69,16 @@
         "labels": [
           "bed face is the modelled bottom; nothing faces down unsupported",
           "bed face chosen in the project; the overhangs were looked at in the slice",
-          "bed face named in the build table; what faces down is listed in the report, a look at the sliced plate is owed after placement"
+          "bed face named in the build table; what faces down is listed in the report, a look at the sliced plate is owed after placement",
+          "bed face measured in the saved project; what faces down is judged there by print.overhang_angle and the slice"
+        ],
+        "auto": [
+          {
+            "when": [
+              "bed_face_measured"
+            ],
+            "label": "bed face measured in the saved project; what faces down is judged there by print.overhang_angle and the slice"
+          }
         ]
       },
       "x_see": [
@@ -69,7 +87,7 @@
         "print.closed_channels",
         "access.hole_supports"
       ],
-      "note": "Asked at export, once per changed part. A new geometry is in no .3mf project at that moment: take the second label only when this geometry was sliced. The third label is the honest one before placement: the report lists it for the owner and the slice is looked at before the print."
+      "note": "Asked at export, once per changed part. A part that a registered .3mf places already is answered by the facts: the saved project shows its bed face, measured (gate_plan.print_frame, probes.project_bed). A new geometry is in no .3mf project at that moment: take the second label only when this geometry was sliced. The third label is the honest one before placement: the report lists it for the owner and the slice is looked at before the print."
     },
     {
       "id": "print.z_layers",
@@ -85,7 +103,11 @@
         "sensors.magnet_pocket_depth",
         "sensors.magnet_h",
         "inserts.ref_pattern",
-        "screws.ref_pattern"
+        "screws.ref_pattern",
+        "sensors.magnet_d6_pocket_d",
+        "sensors.magnet_d6_pocket_depth",
+        "fits.pin_ref_pattern",
+        "sensors.magnet_d6_h"
       ],
       "check": {
         "probe": "fusion_census",
@@ -101,6 +123,43 @@
       ],
       "attest": null,
       "note": "Built for pockets of the pockets table whose axis is the print axis. The bed face comes from the build table of a registered .3mf project and the pose of the part in the census; when neither says it, the rule is NOT_RUN. The layers are counted from the first layer height of the declared target; a target that does not say it leaves the rule NOT_RUN. A height-range modifier or a variable layer profile on single objects is not read: project.settings_match says NOT_RUN for a project that holds one."
+    },
+    {
+      "id": "print.relief_layers",
+      "title": "A melt relief prints as deep as it must",
+      "statement": "The melt relief of an insert pocket that lies along the print axis prints {inserts.relief_depth_min} to {inserts.relief_depth_max} deep in the layers of the target ({target.initial_layer_print_height} first, then {target.layer_height}), counted from the bed face: the slicer opens a layer where its middle lies in the relief.",
+      "why": "A 0.54 relief was modelled for 0.3 mm layers: it prints 0.3 or 0.6 deep, and 0.3 is under the least relief of 0.4. The rules passed it on the model's number.",
+      "params": [
+        "target.layer_height",
+        "target.initial_layer_print_height",
+        "inserts.relief_depth_min",
+        "inserts.relief_depth_max",
+        "print.z_layer_tol",
+        "sensors.magnet_pocket_d",
+        "sensors.magnet_pocket_depth",
+        "sensors.magnet_d6_pocket_d",
+        "sensors.magnet_d6_pocket_depth",
+        "fits.pin_ref_pattern",
+        "inserts.ref_pattern",
+        "screws.ref_pattern",
+        "screws.wood_pattern"
+      ],
+      "check": {
+        "probe": "fusion_census",
+        "judge": "print_relief_layers",
+        "needs": "fusion"
+      },
+      "level": "block",
+      "stage": "design",
+      "fix_order": [
+        "Make the relief a whole number of layers inside the band (for 0.3 layers: 0.6), with its mouth on a layer.",
+        "Or move the face the pocket opens in onto a layer."
+      ],
+      "attest": null,
+      "x_see": [
+        "print.z_layers",
+        "inserts.relief_missing"
+      ]
     },
     {
       "id": "print.orientation_first",
@@ -132,6 +191,41 @@
       "stage": "design",
       "fix_order": [],
       "attest": null
+    },
+    {
+      "id": "print.fit_axis",
+      "title": "Fit holes print upright and open upwards",
+      "statement": "Every hole a fit is cut for (an insert pocket, a pocket or pin pocket of a bought part, a bearing seat) prints with its axis within {print.fit_axis_deg} of the print axis, and a blind one opens upwards, away from the bed. The bed face is the one measured on the saved project, or the build table's until the part is placed.",
+      "why": "The locating pegs of a small cradle lay horizontal over air, and a seat printed on its side sagged: the bearing did not go on. Insert pockets open on top faces.",
+      "params": [
+        "print.fit_axis_deg",
+        "sensors.magnet_pocket_d",
+        "sensors.magnet_pocket_depth",
+        "sensors.magnet_d6_pocket_d",
+        "sensors.magnet_d6_pocket_depth",
+        "fits.pin_ref_pattern",
+        "inserts.ref_pattern",
+        "screws.ref_pattern",
+        "screws.wood_pattern"
+      ],
+      "check": {
+        "probe": "fusion_census",
+        "judge": "print_fit_axis",
+        "needs": "fusion"
+      },
+      "level": "block",
+      "stage": "design",
+      "fix_order": [
+        "Turn the part on the bed so that the fit holes stand upright and open upwards.",
+        "Or move the fit into a face that prints upright: a pocket in a side wall becomes a pocket in a boss or a bolt-on part.",
+        "When the orientation is meant (a part with fits on two axes), the owner waives the holes that lie across it, with the reason."
+      ],
+      "attest": null,
+      "x_see": [
+        "print.accurate_faces",
+        "bearings.seat_prints_upward",
+        "print.bed_face"
+      ]
     },
     {
       "id": "print.warp_flat_plates",
@@ -211,21 +305,28 @@
     {
       "id": "print.overhang_angle",
       "title": "No face hangs flatter than the overhang angle",
-      "statement": "No down-facing face is flatter than {overhang.max_angle} from vertical and nothing hangs: use a planar chamfer, a roof or a cone. The edge where two slopes meet is shallower than either face: check edges, not only faces. A groove that ends under a flange gets a roof that closes from every side. Where a round part meets a sharp one above it, both get the same corner radius.",
+      "statement": "No down-facing face is flatter than {overhang.max_angle} from vertical and nothing hangs: use a planar chamfer, a roof or a cone. The edge where two slopes meet is shallower than either face: check edges, not only faces. A face that faces straight down spans at most {overhang.max_bridge}. A groove that ends under a flange gets a roof that closes from every side. Where a round part meets a sharp one above it, both get the same corner radius. On the saved project each object is measured as it lies on its plate; what hangs passes only where the slice of that very object puts support under it (a region narrower than one line of {target.line_width} prints from the layer below, one under the middle of the first layer of {target.initial_layer_print_height} from the bed), and then print.slice_support_growth judges how much.",
       "why": "A cradle designed as support-free still got a support tree: the ridge between two 45 deg faces lay at about 11 deg. The owner found it in the slicer.",
       "params": [
-        "overhang.max_angle"
+        "overhang.max_angle",
+        "overhang.max_bridge",
+        "target.line_width",
+        "target.initial_layer_print_height"
       ],
-      "check": null,
-      "level": "advice",
-      "stage": "design",
+      "check": {
+        "probe": "project_consistency",
+        "judge": "print_overhang_angle",
+        "needs": "3mf"
+      },
+      "level": "block",
+      "stage": "project",
       "fix_order": [
-        "Turn the face into a planar 45 deg chamfer or a cone.",
-        "Give the two parts the same corner radius.",
-        "Look at the edge between two slopes in the slice."
+        "Switch the slicer supports on for this object (tree, small overhangs kept) when it already prints: a printing part keeps its shape.",
+        "Or turn the face into a planar 45 deg chamfer or a cone, and give two parts that meet the same corner radius.",
+        "Or turn the part on the bed so that the face rises from it."
       ],
       "attest": null,
-      "note": "Asked through print.bed_face. The slicer is the judge, not the face angles: print.slice_support_growth (deferred).",
+      "note": "A geometry pre-check on the mesh as placed (probes.mesh_overhang), run by gate.py verify: it warns before anything is sliced. The bottom face on the bed is left out. With supports on the rows are INFO and the slicer is the judge (print.slice_support_growth); with supports off they are FAIL; when the slicer's support setting cannot be read they are NOT_RUN. Only the owner waives such a row.",
       "x_see": [
         "print.bed_face",
         "print.slice_support_growth"
@@ -245,7 +346,7 @@
       "stage": "design",
       "fix_order": [],
       "attest": null,
-      "note": "Two practices met here: bridge layers under bed-face counterbores, and a slice that supported them anyway. The rule keeps the bridge layers and makes the slice the judge."
+      "note": "Two practices met here: bridge layers under bed-face counterbores, and a slice that supported them anyway. The rule keeps the bridge layers and makes the slice the judge. Bridges wider than the limit on the saved project are rows of print.overhang_angle."
     },
     {
       "id": "print.closed_channels",
@@ -274,33 +375,27 @@
     {
       "id": "print.slice_support_growth",
       "title": "Supports are judged by the slicer, against a baseline per part",
-      "statement": "Supports are judged by the slicer. Every changed plate is sliced and the support of each part is compared with its recorded baseline. It fails when the support line grew by more than a share of {overhang.support_growth_share} of its baseline or by more than {overhang.support_growth_abs}, when the support ends more than {overhang.support_top_growth} higher, or when there is any support where the baseline is zero. The baseline is keyed by part, not by plate number. Recording never overwrites a baseline that has just failed. Raising a baseline is the decision of the owner, shown with the reason and the grams. A new part declares the support it may need.",
+      "statement": "Supports are judged by the slicer. Every changed plate is sliced and the support of each object is compared with its recorded baseline. It fails when the support line grew by more than a share of {overhang.support_growth_share} of its baseline or by more than {overhang.support_growth_abs}, when the support ends more than {overhang.support_top_growth} higher, or when there is any support where the baseline is zero. The baseline is keyed by the object's name in its project, not by plate number. Only the owner records or raises a baseline, from a slice the gate made, after looking at the plate. An object whose mesh changed since its last slice is not judged until it is sliced again.",
       "why": "A large pulley passed the geometry check with no overhang and the slicer supported its whole rim: the support line grew to about twenty times its baseline and the owner saw it in the slicer. A baseline keyed by plate number went off by one when a plate left the project.",
       "params": [
         "overhang.support_growth_share",
         "overhang.support_growth_abs",
         "overhang.support_top_growth"
       ],
-      "check": null,
-      "level": "attest",
-      "stage": "project",
-      "fix_order": [],
-      "attest": {
-        "question": "Sliced plate of this part: did its support grow against the recorded baseline?",
-        "evidence": [
-          "label",
-          "shot",
-          "waiver"
-        ],
-        "per": "part",
-        "labels": [
-          "sliced: support within the baseline",
-          "sliced: no support at all",
-          "new part: the support it needs is in the report for the owner"
-        ]
+      "check": {
+        "probe": "project_consistency",
+        "judge": "print_slice_support_growth",
+        "needs": "3mf"
       },
-      "deferred": true,
-      "note": "Deferred: becomes a check on the sliced plate. An object that is switched off is not sliced: project.object_not_printable.",
+      "level": "block",
+      "stage": "project",
+      "fix_order": [
+        "Slice the changed plates: gate.py slice <project> --changed (a copy is sliced; the GUI may stay open).",
+        "Look at the plate in the slicer: what grew is the overhang to fix in the model (a chamfer, a roof, another bed face).",
+        "When the support is wanted, ask the owner to record it: gate.py owner baseline <project> \"<object>\" --quote \"...\"."
+      ],
+      "attest": null,
+      "note": "Run from gate.py verify on the record of the last slice (gate/run/slice/<key>.json, written by gate.py slice). The baseline is gate/owner/support_baseline.json. An object that is switched off is not sliced: project.object_not_printable.",
       "x_see": [
         "project.object_not_printable",
         "process.owner_sets_limits",

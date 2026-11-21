@@ -16,6 +16,11 @@ How it measures (the way tools/fusion/screw_access.py does, for every opening an
             one path radius early for a slanted one.
   share     the larger of: volume of the cut piece over the volume of the path along its stretch, and the fullest of up
             to 12 sections sampled with pointContainment (17 points each).
+  profile   for a measured hit that begins within 0.5 mm of the mouth: [[mm from the mouth, share of one section]] at
+            stations from the start of the hit, up to the first full section (share 0.95) or one path radius plus 1 mm
+            ("full_window"). A plate flat on the mouth is full at once; a shaft lying across it covers a strip at once
+            and is full within its sagitta; a body that clips the rim of the mouth and covers the whole section only
+            2 mm out has a "share" of 1 and a profile that stays near 0 at the mouth.
   expected  a hit by another body that has a cylinder or cone on the path's axis (the screw or insert that belongs
             there, a mating hole), or that the census lists as coaxial. The part itself is never expected.
   mesh      a mesh body has no B-rep: its vertices inside the path, else its triangles against nine lines; with no
@@ -97,6 +102,10 @@ def _opn_above(rec):
     return ' / '.join(str(n) for n in (rec.get('above') or []))
 
 
+_OPN_FULL_PAST = 1.0          # mm past one path radius in front of a mouth that "full_at" is looked for
+_OPN_FULL_AT = (0.02, 0.1, 0.2, 0.3, 0.45, 0.6, 0.8, 1.0, 1.3, 1.7, 2.2, 2.8, 3.5, 4.5, 6.0, 8.0, 10.0)   # mm past the start of a hit
+
+
 class _OpnLate(Exception):
     """The time of the call is used up inside a path. state = {"k": the index in `world` of the next body, "hits": the
     hits of the bodies before it}; probe() adds the name of the path and keeps it in the cursor."""
@@ -106,7 +115,7 @@ class _OpnLate(Exception):
         self.state = state
 
 
-def _opn_path(point, axis, r, reach, world, skip, coax_names, part=None, clock=None, seen=None):
+def _opn_path(point, axis, r, reach, world, skip, coax_names, part=None, clock=None, seen=None, mesh_by_box=False):
     """PATH of the contract: one straight cylinder against every body of `world` but those in `skip` (ids).
     One body is one step: a cut of a temporary cylinder with a copy of the body, and some point tests.
     clock  callable() -> True when the time of the call is used up. It is asked before every body whose box the path
@@ -114,7 +123,9 @@ def _opn_path(point, axis, r, reach, world, skip, coax_names, part=None, clock=N
     part   the state of such a stop ({"k", "hits"}), handed in by the call that goes on: the bodies before "k" are not
            cut again. The hits of a path made over several calls are the hits of one call.
     seen   a set that gets the index of every body the path looked at (cut, sampled or read as a mesh): probe() keeps
-           the state of those bodies in the cursor of a feature in progress."""
+           the state of those bodies in the cursor of a feature in progress.
+    mesh_by_box  a mesh body is met by its bounding box only, its nodes are not walked (the swing of a key: twelve paths per
+           head beside a large STL ref would walk its nodes twelve times; a mesh hit is never a measurement anyway)."""
     TB = adsk.fusion.TemporaryBRepManager.get()
     rr = max(0.05, r - 0.05)
     start = v_add(point, v_scale(axis, 0.05))
@@ -132,7 +143,7 @@ def _opn_path(point, axis, r, reach, world, skip, coax_names, part=None, clock=N
         if seen is not None:
             seen.add(k)
         if rec['mesh']:
-            nodes, tris = _opn_mesh(rec)
+            nodes, tris = _opn_mesh(rec) if not mesh_by_box else (None, None)
             if nodes:
                 got = mesh_blocks_path(nodes, tris, start, axis, rr, length)
             else:
@@ -174,6 +185,26 @@ def _opn_path(point, axis, r, reach, world, skip, coax_names, part=None, clock=N
         expected = (not rec['own']) and (rec['name'] in coax_names or any(coaxial(point, axis, o, a, 0.15) for o, a, _ in _opn_axes(rec)))
         hit = {'name': rec['name'], 'kind': body_kind(rec['printed'], rec['hardware'], rec['visible'], False, rec['own']),
                'part': rec['part'], 'at': round(at + 0.05, 2), 'share': round(min(1.0, share), 3), 'approx': approx, 'expected': expected}
+        if not approx and at <= 0.5:
+            # how the section fills in front of the mouth: [distance from the mouth, share] at _OPN_FULL_AT past the start
+            # of the hit, up to the first full section, looked for up to one path radius plus _OPN_FULL_PAST. A plate flat
+            # on the mouth is full at once, a shaft or rod lying across it covers a strip at once and is full within its
+            # sagitta, a body that only clips the rim covers a sliver and is full far out or never. "full_window" says
+            # how far was looked
+            win = min(length, rr + _OPN_FULL_PAST)
+            try:
+                prof = []
+                for t in _OPN_FULL_AT:
+                    s_ = at + t
+                    if s_ > win:
+                        break
+                    got_ = path_share(rec['_inside'], start, axis, rr, s_, s_ + 1e-4, 1)
+                    prof.append([round(s_ + 0.05, 2), round(min(1.0, got_), 3)])
+                    if got_ >= 0.95:
+                        break
+                hit['profile'], hit['full_window'] = prof, round(win + 0.05, 2)
+            except Exception:
+                hit.pop('profile', None); hit.pop('full_window', None)  # not measured: the judge keeps "share"
         if why:
             hit['by_points'] = why
         if _opn_above(rec) and not rec['own']:
@@ -248,6 +279,19 @@ def _opn_within(path):
     return [rows[k] for k in sorted(rows)]
 
 
+def _opn_blocks(hits):
+    """What blocks one swing direction, for the judge to sort as it sorts every path (access.screw_path): each body
+    once, nearest hit first, [{"name", "kind", "at", "share", "approx", "part"}]. "approx" is true for a mesh, a box and
+    a body sampled with points: such a hit proves nothing."""
+    rows = {}
+    for h in sorted(hits, key=lambda h: h.get('at') or 0.0):
+        if h['name'] in rows:
+            continue
+        rows[h['name']] = {'name': h['name'], 'kind': h.get('kind'), 'at': h.get('at'), 'share': h.get('share'), 'part': h.get('part'),
+                           'approx': bool(h.get('approx') or h.get('by_box') or h.get('by_points') or h.get('kind') == 'mesh')}
+    return sorted(rows.values(), key=lambda r: (r['at'] if isinstance(r['at'], (int, float)) else 0.0, r['name']))
+
+
 def _opn_small(rec):
     """Can this body be a screw by its size alone? At most 80 faces, and the two shorter sides of its box at most 40 mm.
     Only a filter for cost: the shape decides (_opn_screws)."""
@@ -256,6 +300,17 @@ def _opn_small(rec):
         return d[1] <= 40.0 and rec['body'].faces.count <= 80
     except Exception:
         return False
+
+
+def _opn_swing_frame(params):
+    """How the swing of an L key over a screw head is looked at: its long arm (access.key_long_arm) lies square to the
+    screw axis, access.key_short_arm above the top of the head (the short arm stands in the socket), as a path of radius
+    access.key_side_clearance / 2, in _OPN_SWING_N directions round the axis."""
+    return {'h': float(params.get('access.key_short_arm', 20.0)), 'reach': float(params.get('access.key_long_arm', 60.0)),
+            'r': max(0.5, float(params.get('access.key_side_clearance', 5.0)) / 2.0), 'n': _OPN_SWING_N}
+
+
+_OPN_SWING_N = 12               # directions of the key swing round a head: every 30 degrees
 
 
 def _opn_screws(world, pattern, washers, part_box, own, job, holes, doc_pt):
@@ -410,7 +465,12 @@ def probe(job):
                     "anchor": the census anchor; for a screw head {"kind": "screw", "axis": tip -> head, "point": head seat}
                     "paths": {"own": PATH,                 the opening's own section over access.reach
                               "tool": PATH (screw heads: head radius + access.tool_clearance / 2),
-                              "iron": PATH (insert pockets: inserts.iron_d / 2 over inserts.iron_reach)}}]
+                              "iron": PATH (insert pockets: inserts.iron_d / 2 over inserts.iron_reach)},
+                    "swing": (screw heads only) {"h": mm above the head top, "r": mm, "reach": mm, "n": directions,
+                              "from": the first direction in the part frame (the others follow it at 360 / n degrees,
+                              right-handed about the screw axis), "free": [mm free along each direction], "first":
+                              [name of the first body met that is not expected, or None]}: the long arm of an L key
+                              turning over the head (_opn_swing_frame)}]
             PATH = {"r": 2.2, "reach": 60.0,
                     "free": 60.0        mm from the mouth to the first hit that is not expected; = reach when clear
                     "hits": [{"name": "Cover", "kind": "self" | "printed" | "bought" | "hardware" | "hidden" | "mesh",
@@ -478,7 +538,8 @@ def probe(job):
     iron_r, iron_reach = float(params.get('inserts.iron_d', 8.0)) / 2.0, float(params.get('inserts.iron_reach', 30.0))
     screws_pat = params.get('screws.ref_pattern') or '(?i)screw|bolt'
     global _OPN_WALK
-    walk = max(reach, iron_reach) + 12.0
+    swing = _opn_swing_frame(params)
+    walk = max(reach, iron_reach, swing['h'] + swing['reach']) + 12.0
     _OPN_WALK = (tuple(c - walk for c in part_box[0]), tuple(c + walk for c in part_box[1]))
     # the facts depend on the bodies the paths, the look for screws and the look behind caps meet: each notes its own
     # region (gate_read), not the whole walk
@@ -538,7 +599,7 @@ def probe(job):
             return begun['paths'][key]
         part = begun['path'] if (isinstance(begun['path'], dict) and begun['path'].get('key') == key) else None
         try:
-            got = _opn_path(*a, part=part, clock=clock, seen=touched)
+            got = _opn_path(*a, part=part, clock=clock, seen=touched, mesh_by_box=key.startswith('swing.'))
         except _OpnLate as e:
             e.state['key'] = key
             raise
@@ -590,9 +651,23 @@ def probe(job):
                 skip = set(id(r) for r in world if r['path'] == it['path'] and r['body_name'] in it['bodies'])       # the screw itself
                 anchor = {'kind': 'screw', 'axis': [round(c, 4) for c in v_unit(mat_vector(inv, axis))],
                           'point': [round(c, 2) for c in mat_point(inv, seat)]}
-                rows.append({'feature': 's%d' % it['n'], 'of': 'screw_head', 'anchor': anchor, 'end': 'mouth', 'ref': it['name'],
-                             'paths': {'own': path('own', top, axis, head_r, reach, world, skip, []),
-                                       'tool': path('tool', top, axis, head_r + clear / 2.0, reach, world, skip, [])}})
+                paths = {'own': path('own', top, axis, head_r, reach, world, skip, []),
+                         'tool': path('tool', top, axis, head_r + clear / 2.0, reach, world, skip, [])}
+                base = v_add(top, v_scale(axis, swing['h']))                  # where the long arm of an L key lies while its short arm is in the head
+                u, v = axis_frame(v_unit(axis))
+                free, first, blocks = [], [], []
+                for k in range(swing['n']):
+                    t = 2.0 * math.pi * k / swing['n']
+                    d = v_add(v_scale(u, math.cos(t)), v_scale(v, math.sin(t)))
+                    got = path('swing.%d' % k, base, d, swing['r'], swing['reach'], world, skip, [])
+                    free.append(got['free'])
+                    blocking = [h for h in got['hits'] if not h.get('expected')]
+                    first.append(blocking[0]['name'] if blocking else None)
+                    blocks.append(_opn_blocks(blocking))
+                u_part = v_unit(mat_vector(inv, u))
+                rows.append({'feature': 's%d' % it['n'], 'of': 'screw_head', 'anchor': anchor, 'end': 'mouth', 'ref': it['name'], 'paths': paths,
+                             'swing': {'h': swing['h'], 'r': swing['r'], 'reach': swing['reach'], 'n': swing['n'],
+                                       'from': [round(c, 4) for c in u_part], 'free': free, 'first': first, 'blocks': blocks}})
         except _OpnLate as e:                                           # out of time inside this feature: what is done goes with the cursor
             state = {'i': i, 'screws': heads, 'paths': begun['paths'], 'path': e.state, 'world': here, 'asked': gate_states(world, touched)}
             if i == start and again:

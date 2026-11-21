@@ -169,6 +169,15 @@
       "class": "geometry",
       "formula": null,
       "description": "a ref body whose name matches is a nut: a thread a screw may end in"
+    },
+    "screws.wood_pattern": {
+      "default": "(?i)wood|chipboard|self[- ]?tapping|tapping screw|spax",
+      "unit": "regex",
+      "looser": null,
+      "measured_on": "decided, not measured: the words a wood or self-tapping screw is named with. Set it to how the project names them",
+      "class": "geometry",
+      "formula": null,
+      "description": "a screw ref whose own name matches cuts its own thread in wood or plastic: no heat-set insert goes on its axis, so its holes are no insert pockets"
     }
   },
   "rules": [
@@ -252,30 +261,26 @@
     {
       "id": "screws.family_lengths",
       "title": "One screw family, in stock lengths",
-      "statement": "A project uses one screw family and drive ({screws.family}) in the lengths its owner stocks (rules/tables/screws.json, stock_lengths). The length that reaches the thread is chosen; no long through-bolts. A length outside the stock list is flagged before the design depends on it.",
+      "statement": "A project uses one screw family and drive ({screws.family}) in the lengths its owner stocks (rules/tables/screws.json \"stock_lengths\", the project's own list in gate/owner/tables.json). The length that reaches the thread is chosen; no long through-bolts. A screw of another family, a length outside the stock list, and a ref named with another length than it is modelled with fail before the design depends on it.",
       "why": "Twelve parts had short screws at the bottom of 7 to 15 mm deep counterbores because only three lengths were allowed, and all were exported again once longer screws were bought. Later a length outside the agreed list was designed in twice.",
       "params": [
-        "screws.family"
+        "screws.family",
+        "screws.wood_pattern"
       ],
-      "check": null,
-      "level": "attest",
-      "stage": "design",
-      "fix_order": [],
-      "attest": {
-        "question": "Is every screw of this part of the project family and of a length in the stock list?",
-        "evidence": [
-          "label",
-          "na"
-        ],
-        "per": "part",
-        "labels": [
-          "every screw of this part is of the project family and a stock length",
-          "some are not: listed in the report for the owner",
-          "this part has no screws"
-        ]
+      "check": {
+        "probe": "fusion_screws",
+        "judge": "screws_family_lengths",
+        "needs": "fusion"
       },
-      "deferred": true,
-      "note": "Deferred: no judge yet. The facts are there: the screw probe reads size and length of every screw ref.",
+      "level": "block",
+      "stage": "design",
+      "fix_order": [
+        "Take the stock length that reaches the thread, and move the head or the counterbore to it.",
+        "A family the project really uses (a set screw, a wood screw): the owner names it in screws.family.",
+        "Name the ref with the length it is modelled with."
+      ],
+      "attest": null,
+      "note": "Judged on the part that carries the head (a set screw: the part its thread is in). The stock list is per thread size; set screws have their own list. A wood or self-tapping screw (screws.wood_pattern) is the family \"wood\".",
       "supersedes": [
         "only three short lengths, with a deep counterbore instead"
       ]
@@ -289,28 +294,19 @@
         "screws.head_recess_min",
         "screws.head_recess_max"
       ],
-      "check": null,
-      "level": "attest",
+      "check": {
+        "probe": "fusion_screws",
+        "judge": "screws_head_recess",
+        "needs": "fusion"
+      },
+      "level": "block",
       "stage": "design",
       "fix_order": [
         "Use the next longer stock screw and a shallower counterbore.",
         "Fill under the head rather than leaving it proud or deep."
       ],
-      "attest": {
-        "question": "Does every head of this part sit between the two recess limits?",
-        "evidence": [
-          "label",
-          "na"
-        ],
-        "per": "part",
-        "labels": [
-          "every head sits within the recess limits",
-          "some heads sit deeper because raising them would enter a swept zone: listed in the report for the owner",
-          "this part has no screw heads"
-        ]
-      },
-      "deferred": true,
-      "note": "Deferred: no judge yet. The facts are there: the screw probe reads the recess of every head seat. screws.under_head already stops the worst case, a counterbore that eats the plastic under the head."
+      "attest": null,
+      "note": "Judged from the head seat of fusion_screws (\"seat\".\"recess\": the head top under the face round the counterbore) on the part the head bears on. A head on a flat face or in a countersink has no recess. A head that sits deeper on purpose (raising it would enter a swept zone) is the owner's waiver."
     },
     {
       "id": "screws.count_load_joint",
@@ -329,7 +325,8 @@
         "question": "Does this part sit in a joint that carries torque or tipping, and how many screws hold it?",
         "evidence": [
           "label",
-          "na"
+          "na",
+          "waiver"
         ],
         "per": "part",
         "labels": [
@@ -353,7 +350,7 @@
           }
         }
       },
-      "note": "Asked once per changed part. The load per screw is not computed: the count is the answer, and \"fewer\" goes to the owner in the report."
+      "note": "Asked once per changed part. The load per screw is not computed: the count is the answer, and \"fewer\" goes to the owner in the report. A joint that holds with fewer screws on purpose is the owner's waiver of the question (gate.py owner waive Q-...)."
     },
     {
       "id": "screws.head_seat_full_ring",
@@ -361,25 +358,20 @@
       "statement": "A head bears on a full ring of plastic: hole and seat lie fully inside material, with a margin to the edge. A counterbore near an edge becomes a U-slot or gets a boss. Heads of neighbouring screws do not overlap, and no screw ends in air.",
       "why": "Heads bore half on plastic over the corner of a motor body, two screws sat half outside their tab, and a bracket had intersecting heads. All were found in models.",
       "params": [],
-      "check": null,
-      "level": "attest",
-      "stage": "design",
-      "fix_order": [],
-      "attest": {
-        "question": "Does every head of this part bear on a full ring of plastic?",
-        "evidence": [
-          "label",
-          "na"
-        ],
-        "per": "part",
-        "labels": [
-          "every head bears on a full ring",
-          "some heads sit in a U-slot on purpose and bear on both flanks: listed in the report for the owner",
-          "this part has no screw heads"
-        ]
+      "check": {
+        "probe": "fusion_screws",
+        "judge": "screws_head_seat_full_ring",
+        "needs": "fusion"
       },
-      "deferred": true,
-      "note": "Deferred: no judge yet. The facts are there: the screw probe reads the share of each head seat that lies on material."
+      "level": "block",
+      "stage": "design",
+      "fix_order": [
+        "Move the screw inward, or add a boss under the head.",
+        "Make the seat a U-slot that bears on both flanks.",
+        "A head on the sacrificial bridge steps of a counterbore printed face down: the owner waives the group once."
+      ],
+      "attest": null,
+      "note": "Judged from the head seat of fusion_screws (\"seat\".\"share\": two circles of points under the head on this part's material). A head on a washer is the washer's (washers.landing). Heads of neighbouring screws that overlap are not measured yet."
     },
     {
       "id": "screws.shell_bears",

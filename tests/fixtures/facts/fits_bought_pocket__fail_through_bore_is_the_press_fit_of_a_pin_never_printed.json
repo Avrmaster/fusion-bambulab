@@ -1,6 +1,6 @@
 {
  "judge": "fits_bought_pocket",
- "case": "the same D6 bore with the pin on its axis: asked once what goes in",
+ "case": "a D6 through bore with a steel pin D6 x 50 on its axis is the press fit of that pin (no longer asked what goes in): the press fit was never printed, so it fails; 50 is a stock length",
  "facts": {
   "holes": [
    {
@@ -58,14 +58,17 @@
   "sensors.magnet_pocket_d": 5.2,
   "sensors.magnet_pocket_depth": 2.1,
   "sensors.magnet_pocket_d#tag": "D",
-  "sensors.magnet_pocket_depth#tag": "D"
+  "sensors.magnet_pocket_depth#tag": "D",
+  "fits.pin_press_extra": 0.0,
+  "fits.pin_slip_extra": 0.05,
+  "fits.pin_running_extra": 0.3
  },
  "expect": [
   {
-   "verdict": "INFO",
-   "ask": "fits.pocket_content",
+   "verdict": "FAIL",
    "by": [
-    "ref pin D6 x 50"
+    "ref pin D6 x 50",
+    "fits.pin_press_extra"
    ]
   }
  ]

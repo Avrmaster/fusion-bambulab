@@ -80,14 +80,15 @@
     {
       "id": "washers.landing",
       "title": "A washer lies on its landing",
-      "statement": "Every washer lies on material over at least {washers.landing_share_min} of its ring, within {washers.landing_gap_max}, in its real seated position and at its measured outer diameter. The ring is counted outside the opening the washer sits over (its screw hole, a pocket mouth with its relief). A washer over a slot of the part bears on the two flanks of the slot: it passes when it reaches at least {washers.slot_land_min} over each flank and its ring is on material everywhere beside the slot. It fails when a flank is missing, and when the slot is nearly as wide as the washer. A spot face is at least {washers.spot_face_clearance} wider than the washer. A clamp washer on a bearing ring is the one washer that bridges: it bears on its ring, and everything else under it stays at least {bearings.clamp_room} below its face.",
+      "statement": "Every washer lies on material over at least {washers.landing_share_min} of its ring, within {washers.landing_gap_max}, in its real seated position and at its measured outer diameter. The ring is counted outside the opening the washer sits over (its screw hole, a pocket mouth with its relief). A washer over a slot of the part bears on the two flanks of the slot: it passes when it reaches at least {washers.slot_land_min} over each flank and its ring is on material everywhere beside the slot. It fails when a flank is missing, and when the slot is nearly as wide as the washer. A spot face is at least {washers.spot_face_clearance} wider than the washer. A clamp washer on a bearing ring is the one washer that bridges: it bears on its ring, and everything else under it stays at least {bearings.clamp_room_washer} below its face. A clamp washer reaches at least {washers.ring_overlap_min} over its ring.",
       "why": "Six clamp washers landed on plastic beside the ring they were meant to clamp, once print shrink had used up a 0.3 mm set-back. A washer heeled on the edge of a spot face.",
       "params": [
         "washers.landing_share_min",
         "washers.landing_gap_max",
         "washers.spot_face_clearance",
-        "bearings.clamp_room",
-        "washers.slot_land_min"
+        "bearings.clamp_room_washer",
+        "washers.slot_land_min",
+        "washers.ring_overlap_min"
       ],
       "check": {
         "probe": "fusion_screws",

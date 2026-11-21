@@ -1,0 +1,323 @@
+{
+ "judge": "hardware_refs_present",
+ "case": "pocket h1 has its insert ref: a pass; pocket h2 has none and hole h3 has no screw: two FAIL; a 2 deep blind marker h4 holds no fastener; a screw ref at (80, 0) stands in no hole",
+ "facts": {
+  "fastener_holes": [
+   {
+    "hole": "h1",
+    "role": "insert_pocket",
+    "anchor": {
+     "kind": "insert_pocket",
+     "axis": [
+      0,
+      0,
+      1
+     ],
+     "point": [
+      0,
+      0,
+      10
+     ]
+    },
+    "screw": "ref HW / screw M3x10 (1)",
+    "bodies": []
+   },
+   {
+    "hole": "h2",
+    "role": "insert_pocket",
+    "anchor": {
+     "kind": "insert_pocket",
+     "axis": [
+      0,
+      0,
+      1
+     ],
+     "point": [
+      20,
+      0,
+      10
+     ]
+    },
+    "screw": null,
+    "bodies": []
+   },
+   {
+    "hole": "h3",
+    "role": "clearance",
+    "anchor": {
+     "kind": "hole",
+     "axis": [
+      0,
+      0,
+      1
+     ],
+     "point": [
+      40,
+      0,
+      10
+     ]
+    },
+    "screw": null,
+    "bodies": []
+   },
+   {
+    "hole": "h4",
+    "role": "clearance",
+    "anchor": {
+     "kind": "hole",
+     "axis": [
+      0,
+      0,
+      1
+     ],
+     "point": [
+      60,
+      0,
+      10
+     ]
+    },
+    "screw": null,
+    "bodies": []
+   }
+  ],
+  "screws": [
+   {
+    "ref": "ref HW / screw M3x10 (1)",
+    "size": "M3",
+    "length": 10.0,
+    "named_length": 10.0,
+    "named_size": "M3",
+    "head": "cap",
+    "head_h": 3.0,
+    "head_d": 5.5,
+    "anchor": {
+     "kind": "screw",
+     "axis": [
+      0,
+      0,
+      1
+     ],
+     "point": [
+      0,
+      0,
+      10
+     ]
+    },
+    "role": "both",
+    "under_head": 4.0,
+    "seat": null,
+    "engagement": 4.0,
+    "into": null,
+    "tip_room": 1.0,
+    "air_gap": 0.0,
+    "washer": null
+   },
+   {
+    "ref": "ref HW / screw M3x10 (2)",
+    "size": "M3",
+    "length": 10.0,
+    "named_length": 10.0,
+    "named_size": "M3",
+    "head": "cap",
+    "head_h": 3.0,
+    "head_d": 5.5,
+    "anchor": {
+     "kind": "screw",
+     "axis": [
+      0,
+      0,
+      1
+     ],
+     "point": [
+      80,
+      0,
+      10
+     ]
+    },
+    "role": "head",
+    "under_head": 4.0,
+    "seat": null,
+    "engagement": 4.0,
+    "into": null,
+    "tip_room": 1.0,
+    "air_gap": 0.0,
+    "washer": null
+   }
+  ],
+  "washers": []
+ },
+ "params": {
+  "inserts.ref_pattern": "(?i)insert",
+  "screws.min_engagement": 3.2
+ },
+ "ctx": {
+  "census": {
+   "holes": [
+    {
+     "id": "h1",
+     "anchor": {
+      "kind": "insert_pocket",
+      "axis": [
+       0,
+       0,
+       1
+      ],
+      "point": [
+       0,
+       0,
+       10
+      ]
+     },
+     "segments": [
+      {
+       "d": 7.5,
+       "len": 0.54
+      },
+      {
+       "d": 4.4,
+       "len": 1.5
+      },
+      {
+       "d": 3.6,
+       "len": 5.0
+      }
+     ],
+     "depth": 7.04,
+     "through": false,
+     "class": {
+      "table": "inserts",
+      "kind": "M3x4x5",
+      "role": "insert_pocket",
+      "match": "exact"
+     },
+     "coaxial": [
+      {
+       "name": "ref HW / insert M3x4x5 (1)",
+       "kind": "hardware",
+       "part": null
+      }
+     ]
+    },
+    {
+     "id": "h2",
+     "anchor": {
+      "kind": "insert_pocket",
+      "axis": [
+       0,
+       0,
+       1
+      ],
+      "point": [
+       20,
+       0,
+       10
+      ]
+     },
+     "segments": [
+      {
+       "d": 7.5,
+       "len": 0.54
+      },
+      {
+       "d": 4.4,
+       "len": 1.5
+      },
+      {
+       "d": 3.6,
+       "len": 5.0
+      }
+     ],
+     "depth": 7.04,
+     "through": false,
+     "class": {
+      "table": "inserts",
+      "kind": "M3x4x5",
+      "role": "insert_pocket",
+      "match": "exact"
+     },
+     "coaxial": []
+    },
+    {
+     "id": "h3",
+     "anchor": {
+      "kind": "hole",
+      "axis": [
+       0,
+       0,
+       1
+      ],
+      "point": [
+       40,
+       0,
+       10
+      ]
+     },
+     "segments": [
+      {
+       "d": 3.4,
+       "len": 6.0
+      }
+     ],
+     "depth": 6.0,
+     "through": true,
+     "class": {
+      "table": "screws",
+      "kind": "M3",
+      "role": "clearance",
+      "match": "exact"
+     },
+     "coaxial": []
+    },
+    {
+     "id": "h4",
+     "anchor": {
+      "kind": "hole",
+      "axis": [
+       0,
+       0,
+       1
+      ],
+      "point": [
+       60,
+       0,
+       10
+      ]
+     },
+     "segments": [
+      {
+       "d": 3.3,
+       "len": 2.0
+      }
+     ],
+     "depth": 2.0,
+     "through": false,
+     "class": {
+      "table": "screws",
+      "kind": "M4",
+      "role": "clearance",
+      "match": "exact"
+     },
+     "coaxial": []
+    }
+   ],
+   "openings": [],
+   "counts": {}
+  }
+ },
+ "expect": [
+  {
+   "verdict": "FAIL",
+   "by": []
+  },
+  {
+   "verdict": "FAIL",
+   "by": []
+  },
+  {
+   "verdict": "FAIL",
+   "by": [
+    "ref HW / screw M3x10 (2)"
+   ]
+  }
+ ]
+}

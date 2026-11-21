@@ -1,0 +1,67 @@
+{
+ "judge": "print_fit_axis",
+ "case": "the bed face of the part is not known yet (no project places it, no build table names it): one INFO row, judged by the first run after placement; print.bed_face is asked at its export",
+ "facts": {
+  "holes": [
+   {
+    "id": "h1",
+    "anchor": {
+     "kind": "insert_pocket",
+     "axis": [
+      0,
+      0,
+      1
+     ],
+     "point": [
+      10.0,
+      0.0,
+      12.0
+     ]
+    },
+    "segments": [
+     {
+      "d": 7.5,
+      "len": 0.54
+     },
+     {
+      "d": 4.4,
+      "len": 1.5
+     },
+     {
+      "d": 3.6,
+      "len": 5.0
+     }
+    ],
+    "depth": 7.04,
+    "through": false,
+    "floor": 2.0,
+    "exit": null,
+    "class": {
+     "table": "inserts",
+     "kind": "M3x4x5",
+     "role": "insert_pocket",
+     "match": "exact"
+    },
+    "coaxial": []
+   }
+  ]
+ },
+ "ctx": {
+  "print": {
+   "up": null,
+   "why": "no saved project places this part and no build table names it"
+  }
+ },
+ "expect": [
+  {
+   "verdict": "INFO"
+  }
+ ],
+ "params": {
+  "print.fit_axis_deg": 1.0,
+  "sensors.magnet_pocket_d": 4.2,
+  "sensors.magnet_pocket_depth": 2.1,
+  "sensors.magnet_d6_pocket_d": 6.2,
+  "sensors.magnet_d6_pocket_depth": 2.6
+ }
+}

@@ -1,0 +1,351 @@
+{
+ "judge": "access_key_swing",
+ "case": "an STL ref beside the head is known by its box only, and an old hidden body lies in the swing: NOT_RUN per body, never a FAIL",
+ "facts": {
+  "openings": [
+   {
+    "feature": "s1",
+    "of": "screw_head",
+    "ref": "ref HW / screw s1",
+    "anchor": {
+     "kind": "screw",
+     "axis": [
+      0,
+      0,
+      1
+     ],
+     "point": [
+      10.0,
+      0,
+      5
+     ]
+    },
+    "end": "mouth",
+    "paths": {
+     "own": {
+      "r": 2.75,
+      "reach": 60.0,
+      "free": 8.0,
+      "hits": [
+       {
+        "name": "ref wrist stl",
+        "kind": "mesh",
+        "at": 8.0,
+        "share": 1.0,
+        "approx": true,
+        "expected": false,
+        "part": null
+       }
+      ]
+     },
+     "tool": {
+      "r": 3.25,
+      "reach": 60.0,
+      "free": 8.0,
+      "hits": [
+       {
+        "name": "ref wrist stl",
+        "kind": "mesh",
+        "at": 8.0,
+        "share": 1.0,
+        "approx": true,
+        "expected": false,
+        "part": null
+       }
+      ]
+     }
+    },
+    "swing": {
+     "h": 20.0,
+     "r": 2.5,
+     "reach": 60.0,
+     "n": 12,
+     "from": [
+      1,
+      0,
+      0
+     ],
+     "free": [
+      60.0,
+      60.0,
+      60.0,
+      8.0,
+      8.0,
+      8.0,
+      60.0,
+      60.0,
+      8.0,
+      8.0,
+      8.0,
+      60.0
+     ],
+     "first": [
+      null,
+      null,
+      null,
+      "ref wrist stl",
+      "ref wrist stl",
+      "ref wrist stl",
+      null,
+      null,
+      "ref wrist stl",
+      "ref wrist stl",
+      "ref wrist stl",
+      null
+     ],
+     "blocks": [
+      [],
+      [],
+      [],
+      [
+       {
+        "name": "ref wrist stl",
+        "kind": "mesh",
+        "at": 8.0,
+        "share": 1.0,
+        "approx": true,
+        "part": null
+       }
+      ],
+      [
+       {
+        "name": "ref wrist stl",
+        "kind": "mesh",
+        "at": 8.0,
+        "share": 1.0,
+        "approx": true,
+        "part": null
+       }
+      ],
+      [
+       {
+        "name": "ref wrist stl",
+        "kind": "mesh",
+        "at": 8.0,
+        "share": 1.0,
+        "approx": true,
+        "part": null
+       }
+      ],
+      [],
+      [],
+      [
+       {
+        "name": "ref wrist stl",
+        "kind": "mesh",
+        "at": 8.0,
+        "share": 1.0,
+        "approx": true,
+        "part": null
+       }
+      ],
+      [
+       {
+        "name": "ref wrist stl",
+        "kind": "mesh",
+        "at": 8.0,
+        "share": 1.0,
+        "approx": true,
+        "part": null
+       }
+      ],
+      [
+       {
+        "name": "ref wrist stl",
+        "kind": "mesh",
+        "at": 8.0,
+        "share": 1.0,
+        "approx": true,
+        "part": null
+       }
+      ],
+      []
+     ]
+    }
+   },
+   {
+    "feature": "s2",
+    "of": "screw_head",
+    "ref": "ref HW / screw s2",
+    "anchor": {
+     "kind": "screw",
+     "axis": [
+      0,
+      0,
+      1
+     ],
+     "point": [
+      20.0,
+      0,
+      5
+     ]
+    },
+    "end": "mouth",
+    "paths": {
+     "own": {
+      "r": 2.75,
+      "reach": 60.0,
+      "free": 10.0,
+      "hits": [
+       {
+        "name": "Old cover",
+        "kind": "hidden",
+        "at": 10.0,
+        "share": 1.0,
+        "approx": false,
+        "expected": false,
+        "part": null
+       }
+      ]
+     },
+     "tool": {
+      "r": 3.25,
+      "reach": 60.0,
+      "free": 10.0,
+      "hits": [
+       {
+        "name": "Old cover",
+        "kind": "hidden",
+        "at": 10.0,
+        "share": 1.0,
+        "approx": false,
+        "expected": false,
+        "part": null
+       }
+      ]
+     }
+    },
+    "swing": {
+     "h": 20.0,
+     "r": 2.5,
+     "reach": 60.0,
+     "n": 12,
+     "from": [
+      1,
+      0,
+      0
+     ],
+     "free": [
+      60.0,
+      60.0,
+      60.0,
+      10.0,
+      10.0,
+      10.0,
+      60.0,
+      60.0,
+      10.0,
+      10.0,
+      10.0,
+      60.0
+     ],
+     "first": [
+      null,
+      null,
+      null,
+      "Old cover",
+      "Old cover",
+      "Old cover",
+      null,
+      null,
+      "Old cover",
+      "Old cover",
+      "Old cover",
+      null
+     ],
+     "blocks": [
+      [],
+      [],
+      [],
+      [
+       {
+        "name": "Old cover",
+        "kind": "hidden",
+        "at": 10.0,
+        "share": 1.0,
+        "approx": false,
+        "part": null
+       }
+      ],
+      [
+       {
+        "name": "Old cover",
+        "kind": "hidden",
+        "at": 10.0,
+        "share": 1.0,
+        "approx": false,
+        "part": null
+       }
+      ],
+      [
+       {
+        "name": "Old cover",
+        "kind": "hidden",
+        "at": 10.0,
+        "share": 1.0,
+        "approx": false,
+        "part": null
+       }
+      ],
+      [],
+      [],
+      [
+       {
+        "name": "Old cover",
+        "kind": "hidden",
+        "at": 10.0,
+        "share": 1.0,
+        "approx": false,
+        "part": null
+       }
+      ],
+      [
+       {
+        "name": "Old cover",
+        "kind": "hidden",
+        "at": 10.0,
+        "share": 1.0,
+        "approx": false,
+        "part": null
+       }
+      ],
+      [
+       {
+        "name": "Old cover",
+        "kind": "hidden",
+        "at": 10.0,
+        "share": 1.0,
+        "approx": false,
+        "part": null
+       }
+      ],
+      []
+     ]
+    }
+   }
+  ]
+ },
+ "params": {
+  "access.key_swing_deg": 180.0,
+  "access.key_long_arm": 60.0,
+  "access.free_height_over_head": 27.0,
+  "access.key_short_arm": 20.0,
+  "access.key_side_clearance": 5.0,
+  "access.min_blocked_share": 0.02,
+  "access.seal_gap": 0.2
+ },
+ "expect": [
+  {
+   "verdict": "NOT_RUN",
+   "by": [
+    "Old cover"
+   ]
+  },
+  {
+   "verdict": "NOT_RUN",
+   "by": [
+    "ref wrist stl"
+   ]
+  }
+ ]
+}

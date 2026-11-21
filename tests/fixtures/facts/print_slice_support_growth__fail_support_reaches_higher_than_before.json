@@ -1,0 +1,60 @@
+{
+ "judge": "print_slice_support_growth",
+ "case": "the same amount of support, but it now ends 4 mm higher: a new overhang up the part",
+ "facts": {
+  "project": "main",
+  "file": "bambulab/demo.3mf",
+  "exists": true,
+  "slice": {
+   "record": "gate/run/slice/main.json",
+   "time": "2026-03-05T10:00:00Z",
+   "studio": "BambuStudio 01.00.00.00",
+   "baseline_file": "gate/owner/support_baseline.json",
+   "baseline_problem": null,
+   "plates": {},
+   "objects": [
+    {
+     "name": "housing",
+     "part": "demo/housing",
+     "plate": "plate 1",
+     "plate_index": 1,
+     "printable": true,
+     "pose": "3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a",
+     "sliced": {
+      "support_e": 400.0,
+      "interface_e": 40.0,
+      "low_z": 0.2,
+      "top_z": 9.3,
+      "plate_index": 1,
+      "time": "2026-03-05T10:00:00Z",
+      "pose": "3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a"
+     },
+     "why": null,
+     "baseline": {
+      "support_e": 398.0,
+      "top_z": 5.1,
+      "pose": "3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a",
+      "date": "2026-03-01",
+      "quote": "that support is fine, I looked at it"
+     }
+    }
+   ]
+  }
+ },
+ "params": {
+  "overhang.support_growth_share": 0.1,
+  "overhang.support_growth_abs": 20.0,
+  "overhang.support_top_growth": 0.31
+ },
+ "ctx": {
+  "part": "main:"
+ },
+ "expect": [
+  {
+   "verdict": "FAIL",
+   "part": "demo/housing",
+   "measure": 9.3,
+   "limit": 5.41
+  }
+ ]
+}

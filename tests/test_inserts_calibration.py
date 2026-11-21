@@ -299,8 +299,9 @@ class Texts(unittest.TestCase):
         self.assertEqual([f['verdict'] for f in short], ['FAIL', 'FAIL'])
         for f in short:
             self.assertIn('the table says 5: one relief depth short (a relief that is cut into a pocket later', f['text']); self.assertNotIn('lead-in is D13.2', f['text'])
-        self.assertEqual(judged('inserts_pocket_shape', FX['inserts_pocket_shape__final_fail_relief_cut_later_hole_one_relief_short']['facts'],
-                                FX['inserts_pocket_shape__final_fail_relief_cut_later_hole_one_relief_short'].get('params'), tables=late_tables()), [])
+        self.assertEqual([f for f in judged('inserts_pocket_shape', FX['inserts_pocket_shape__final_fail_relief_cut_later_hole_one_relief_short']['facts'],
+                                            FX['inserts_pocket_shape__final_fail_relief_cut_later_hole_one_relief_short'].get('params'), tables=late_tables())
+                          if 'printed under named settings' not in f['text']], [])        # the profile row; the row of where it was printed is another rule's matter
         text = of_fixture('inserts_pocket_shape__inserts_fail_hole_gets_narrower_before_the_insert_ends')[0]['text']
         self.assertIn('gets narrower there (D3.4)', text)
 

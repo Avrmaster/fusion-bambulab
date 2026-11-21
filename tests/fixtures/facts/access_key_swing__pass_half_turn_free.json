@@ -1,0 +1,235 @@
+{
+ "judge": "access_key_swing",
+ "case": "every head with a free half turn or more: a pass",
+ "facts": {
+  "openings": [
+   {
+    "feature": "s1",
+    "of": "screw_head",
+    "ref": "ref HW / screw s1",
+    "anchor": {
+     "kind": "screw",
+     "axis": [
+      0,
+      0,
+      1
+     ],
+     "point": [
+      10.0,
+      0,
+      5
+     ]
+    },
+    "end": "mouth",
+    "paths": {
+     "own": {
+      "r": 2.75,
+      "reach": 60.0,
+      "free": 60.0,
+      "hits": []
+     },
+     "tool": {
+      "r": 3.25,
+      "reach": 60.0,
+      "free": 60.0,
+      "hits": []
+     }
+    },
+    "swing": {
+     "h": 20.0,
+     "r": 2.5,
+     "reach": 60.0,
+     "n": 12,
+     "from": [
+      1,
+      0,
+      0
+     ],
+     "free": [
+      60.0,
+      60.0,
+      60.0,
+      60.0,
+      60.0,
+      60.0,
+      60.0,
+      14.0,
+      14.0,
+      14.0,
+      14.0,
+      14.0
+     ],
+     "first": [
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      "Rib",
+      "Rib",
+      "Rib",
+      "Rib",
+      "Rib"
+     ],
+     "blocks": [
+      [],
+      [],
+      [],
+      [],
+      [],
+      [],
+      [],
+      [
+       {
+        "name": "Rib",
+        "kind": "self",
+        "at": 14.0,
+        "share": 1.0,
+        "approx": false,
+        "part": null
+       }
+      ],
+      [
+       {
+        "name": "Rib",
+        "kind": "self",
+        "at": 14.0,
+        "share": 1.0,
+        "approx": false,
+        "part": null
+       }
+      ],
+      [
+       {
+        "name": "Rib",
+        "kind": "self",
+        "at": 14.0,
+        "share": 1.0,
+        "approx": false,
+        "part": null
+       }
+      ],
+      [
+       {
+        "name": "Rib",
+        "kind": "self",
+        "at": 14.0,
+        "share": 1.0,
+        "approx": false,
+        "part": null
+       }
+      ],
+      [
+       {
+        "name": "Rib",
+        "kind": "self",
+        "at": 14.0,
+        "share": 1.0,
+        "approx": false,
+        "part": null
+       }
+      ]
+     ]
+    }
+   },
+   {
+    "feature": "s2",
+    "of": "screw_head",
+    "ref": "ref HW / screw s2",
+    "anchor": {
+     "kind": "screw",
+     "axis": [
+      0,
+      0,
+      1
+     ],
+     "point": [
+      20.0,
+      0,
+      5
+     ]
+    },
+    "end": "mouth",
+    "paths": {
+     "own": {
+      "r": 2.75,
+      "reach": 60.0,
+      "free": 60.0,
+      "hits": []
+     },
+     "tool": {
+      "r": 3.25,
+      "reach": 60.0,
+      "free": 60.0,
+      "hits": []
+     }
+    },
+    "swing": {
+     "h": 20.0,
+     "r": 2.5,
+     "reach": 60.0,
+     "n": 12,
+     "from": [
+      1,
+      0,
+      0
+     ],
+     "free": [
+      60.0,
+      60.0,
+      60.0,
+      60.0,
+      60.0,
+      60.0,
+      60.0,
+      60.0,
+      60.0,
+      60.0,
+      60.0,
+      60.0
+     ],
+     "first": [
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null
+     ],
+     "blocks": [
+      [],
+      [],
+      [],
+      [],
+      [],
+      [],
+      [],
+      [],
+      [],
+      [],
+      [],
+      []
+     ]
+    }
+   }
+  ]
+ },
+ "params": {
+  "access.key_swing_deg": 180.0,
+  "access.key_long_arm": 60.0,
+  "access.free_height_over_head": 27.0,
+  "access.key_short_arm": 20.0,
+  "access.key_side_clearance": 5.0,
+  "access.min_blocked_share": 0.02,
+  "access.seal_gap": 0.2
+ },
+ "expect": []
+}

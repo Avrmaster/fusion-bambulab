@@ -190,7 +190,7 @@ def _stamp_holds(root, name, model, ctx):
             ctx['stamps'] = gate_stamp.all_stamps(root)
         if 'reg' not in ctx:
             import gate_registry
-            ctx['reg'] = gate_registry.load_default()
+            ctx['reg'] = gate_registry.load_default(root)
         if 'census' not in ctx:
             ctx['census'] = gate_common.load_census(root)
         for s in ctx['stamps']:
@@ -288,7 +288,7 @@ def _judge_mesh(root, mesh, model, ctx):
     cands.sort(key=lambda s: os.path.basename(str(s.get('stl') or '')) != base)     # identical bodies: the one of this file first
     if 'reg' not in ctx:
         import gate_registry
-        ctx['reg'] = gate_registry.load_default()
+        ctx['reg'] = gate_registry.load_default(root)
     if 'census' not in ctx:
         ctx['census'] = gate_common.load_census(root)
     first = None
@@ -556,6 +556,8 @@ def _check(root, path, meshes, files=None, asked=None, via=None):
     remember = (lambda facts: None) if outside else (lambda facts: _remember(root, prel, facts))
     try:
         res = _check_meshes(root, path, meshes, project, layout, entry, res, prel, via)
+        _slice_line(root, path, files, mode, entry, res)    # before _remember: a refused save leaves the memory of the file on disk
+        _overhang_line(root, path, files, mode, entry, res)
     except GuardRefusal:                                    # refused: the file stays as it is on disk
         remember(got.get('disk'))
         raise
@@ -564,6 +566,49 @@ def _check(root, path, meshes, files=None, asked=None, via=None):
         raise
     remember(got.get('after') or got.get('disk'))           # the save goes on: this is what the file holds next
     return res
+
+
+def _slice_line(root, path, files, mode, entry, res):
+    """print.slice_support_growth on the archive of a save that brings new meshes (gate_slice.before_write): one line,
+    logged and printed; a refusal only in enforce mode with the owner's "slice_before_write". A save that brings nothing
+    new says nothing here. Any other trouble is logged and the save goes on."""
+    if not entry or not isinstance(files, dict) or not res.get('new'):
+        return
+    try:
+        import gate_slice
+        got = gate_slice.before_write(root, path, files, mode, entry)
+    except GateError as e:
+        if type(e).__name__ == 'SliceRefusal':
+            log(root, '%s REFUSED (supports)' % mode)
+            raise GuardRefusal(str(e), getattr(e, 'rows', []))
+        got = {'line': 'gate slice: the supports of this save were not judged (%s)' % e, 'error': True}
+    except Exception as e:
+        got = {'line': 'gate slice: the supports of this save were not judged (%s: %s)' % (type(e).__name__, e), 'error': True}
+    res['slice'] = {k: v for k, v in got.items() if k != 'open'}
+    if got.get('line') and (got.get('grew') or got.get('error')):         # loud when a support grew; a slice still owed is said by verify
+        log(root, got['line'])
+        print(got['line'])
+
+
+def _overhang_line(root, path, files, mode, entry, res):
+    """print.overhang_angle on the objects of a save that bring new meshes (gate_slice.overhangs_before_write): loud
+    for every object that hangs over air, a refusal in enforce mode. Other trouble is logged and the save goes on."""
+    if not entry or not isinstance(files, dict) or not res.get('new'):
+        return
+    try:
+        import gate_slice
+        got = gate_slice.overhangs_before_write(root, path, files, mode, entry, res['new'])
+    except GateError as e:
+        if type(e).__name__ == 'SliceRefusal':
+            log(root, '%s REFUSED (overhangs)' % mode)
+            raise GuardRefusal(str(e), getattr(e, 'rows', []))
+        got = {'line': 'gate overhang: the overhangs of this save were not judged (%s)' % e}
+    except Exception as e:
+        got = {'line': 'gate overhang: the overhangs of this save were not judged (%s: %s)' % (type(e).__name__, e)}
+    res['overhang'] = {'line': got.get('line'), 'fail': len(got.get('open') or [])}
+    if got.get('line'):
+        log(root, got['line'])
+        print(got['line'])
 
 
 def _check_meshes(root, path, meshes, project, layout, entry, res, prel, via=None):
@@ -723,7 +768,7 @@ def check(path, meshes, root=None, files=None, asked=None, via=None):
             is not the declared target's, is refused in enforce mode and is one loud line in observe mode. The result
             holds the comparison under "settings" (check_settings).
     via     how the caller found `root` for a file outside it: "stl" | "cwd" | "env" (bambu3mf._gate_root); said in the line
-    The registry is loaded here (gate_registry.load_default()) only when a new mesh has to be judged.
+    The registry is loaded here (gate_registry.load_default(root)) only when a new mesh has to be judged.
 
     Returns {"gated": bool, "mode": "observe" | "enforce", "project": key or None (None = not a registered project: not
     guarded), "meshes": n, "new": [object names], "unstamped": [object names], "stale": [object names],
@@ -814,7 +859,7 @@ def cmd_verify(root, args):
     if not entries:
         print('gate verify: no .3mf project is registered in gate/layout.json: NOTHING was verified')
         return EXIT_INFRA
-    reg = gate_registry.load_default()
+    reg = gate_registry.load_default(root)
     census = gate_common.load_census(root); project = gate_common.load_project(root)
     overrides = gate_params.load_overrides(root)
     # no Fusion here: a stamp is held against the model as the last scan saw it (its part, and what its units read)

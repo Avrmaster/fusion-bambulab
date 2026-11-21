@@ -101,13 +101,17 @@
     {
       "id": "inserts.pocket_shape",
       "title": "Every heat-set pocket has a known profile",
-      "statement": "A hole whose diameters fall in the band of an insert kind of rules/tables/inserts.json has exactly the pocket profile of that kind: melt relief, lead-in, hole, depth. The profile is cut by the shared pocket tool from the table, never typed into a part script. A pocket shortened for a thin part is a named exception, not a second profile.",
-      "why": "Three pocket shapes that were not the measured one were printed. A lead-in as wide as the knurl let the inserts drop 65 % of their length in cold and grip weakly. A straight datasheet hole came out loose once the slicer hole compensation was on: inserts pulled out by hand with a screw, and every pocket of the project was converted. A hole tuned on full parts took five re-exports in one day. The old check listed only pockets that already had the right shape, so a wrong pocket was never a row.",
+      "statement": "A hole whose diameters fall in the band of an insert kind of rules/tables/inserts.json has exactly the pocket profile of that kind: melt relief, lead-in, hole, depth. The profile is cut by the shared pocket tool from the table, never typed into a part script. A pocket shortened for a thin part is a named exception, not a second profile. A profile counts only where it was printed: an exact pocket of a row that records prints (\"measured_under\" of the row) fails as \"measured under other settings\" when the declared target of the part (nozzle, material, hole compensation, layer height) is none of them.",
+      "why": "Three pocket shapes that were not the measured one were printed. A lead-in as wide as the knurl let the inserts drop 65 % of their length in cold and grip weakly. A straight datasheet hole came out loose once the slicer hole compensation was on: inserts pulled out by hand with a screw, and every pocket of the project was converted. A hole tuned on full parts took five re-exports in one day. The old check listed only pockets that already had the right shape, so a wrong pocket was never a row. A profile measured at hole compensation 0.125 was accepted for a project that printed at 0: an insert hole came out too tight and bulged.",
       "params": [
         "sensors.magnet_pocket_d",
         "sensors.magnet_pocket_depth",
         "inserts.ref_pattern",
-        "screws.ref_pattern"
+        "screws.ref_pattern",
+        "sensors.magnet_d6_pocket_d",
+        "sensors.magnet_d6_pocket_depth",
+        "fits.pin_ref_pattern",
+        "screws.wood_pattern"
       ],
       "check": {
         "probe": "fusion_census",
@@ -119,10 +123,11 @@
       "fix_order": [
         "Cut the pocket again from the table with the shared pocket tool, together with its relief.",
         "A kind with no measured row: print a coupon in the final filament first (inserts.coupon_first), then add the row.",
+        "A profile measured under other settings: print the coupon plate of the target (gate.py coupons --for KEY) and record the print in gate/owner/tables.json, or cut the profile measured for this target.",
         "If the hole is not an insert pocket, answer the question \"what is this hole\" once."
       ],
       "attest": null,
-      "note": "A blind hole that is a pocket for a bought part at the size of its fit parameter (rules/tables/pockets.json: today the magnet) is not judged here, whatever insert band its diameter lies in: fits.bought_part_pocket judges it. A hole that holds an insert or a screw (a ref on its axis that inserts.ref_pattern or screws.ref_pattern names) is never such a pocket. A pocket whose relief was cut later ends one relief depth short of its row: that is a row here, and its text names the cause (the row was measured with its full depth; the table's \"hole_short_by_relief\" would allow it, a decision that no print measured, so it is false as shipped). A narrower hole below the pocket (a tip hole, the screw hole from the far side) is depth, as long as the insert itself ends in the row's own hole diameter. A through hole with the pocket at each end is two pockets. The insert ref on the axis decides the kind: a longer insert in the pocket of the short one is a wrong pocket. A hole too short to hold the insert at all is one row of inserts.floor, not a row here."
+      "note": "A blind hole that is a pocket for a bought part at the size of its fit parameter (rules/tables/pockets.json: today the magnet) is not judged here, whatever insert band its diameter lies in: fits.bought_part_pocket judges it. A hole that holds an insert or a screw (a ref on its axis that inserts.ref_pattern or screws.ref_pattern names) is never such a pocket. A pocket whose relief was cut later ends one relief depth short of its row: that is a row here, and its text names the cause (the row was measured with its full depth; the table's \"hole_short_by_relief\" would allow it, a decision that no print measured, so it is false as shipped). A narrower hole below the pocket (a tip hole, the screw hole from the far side) is depth, as long as the insert itself ends in the row's own hole diameter. A through hole with the pocket at each end is two pockets. The insert ref on the axis decides the kind: a longer insert in the pocket of the short one is a wrong pocket. A hole too short to hold the insert at all is one row of inserts.floor, not a row here. A hole with a steel pin, dowel or rod on its axis (fits.pin_ref_pattern, and no insert or screw) is a pin pocket of fits.bought_part_pocket, and a hole with only a wood or self-tapping screw on its axis (screws.wood_pattern) holds no insert: neither is judged by the insert rules."
     },
     {
       "id": "inserts.wall",
@@ -136,7 +141,11 @@
         "sensors.magnet_pocket_d",
         "sensors.magnet_pocket_depth",
         "inserts.ref_pattern",
-        "screws.ref_pattern"
+        "screws.ref_pattern",
+        "sensors.magnet_d6_pocket_d",
+        "sensors.magnet_d6_pocket_depth",
+        "fits.pin_ref_pattern",
+        "screws.wood_pattern"
       ],
       "check": {
         "probe": "fusion_inserts",
@@ -171,7 +180,11 @@
         "sensors.magnet_pocket_d",
         "sensors.magnet_pocket_depth",
         "inserts.ref_pattern",
-        "screws.ref_pattern"
+        "screws.ref_pattern",
+        "sensors.magnet_d6_pocket_d",
+        "sensors.magnet_d6_pocket_depth",
+        "fits.pin_ref_pattern",
+        "screws.wood_pattern"
       ],
       "check": {
         "probe": "fusion_inserts",
@@ -203,7 +216,11 @@
         "sensors.magnet_pocket_d",
         "sensors.magnet_pocket_depth",
         "inserts.ref_pattern",
-        "screws.ref_pattern"
+        "screws.ref_pattern",
+        "sensors.magnet_d6_pocket_d",
+        "sensors.magnet_d6_pocket_depth",
+        "fits.pin_ref_pattern",
+        "screws.wood_pattern"
       ],
       "check": {
         "probe": "fusion_inserts",
@@ -234,7 +251,11 @@
         "sensors.magnet_pocket_d",
         "sensors.magnet_pocket_depth",
         "inserts.ref_pattern",
-        "screws.ref_pattern"
+        "screws.ref_pattern",
+        "sensors.magnet_d6_pocket_d",
+        "sensors.magnet_d6_pocket_depth",
+        "fits.pin_ref_pattern",
+        "screws.wood_pattern"
       ],
       "check": {
         "probe": "fusion_inserts",
@@ -266,7 +287,11 @@
         "sensors.magnet_pocket_d",
         "sensors.magnet_pocket_depth",
         "inserts.ref_pattern",
-        "screws.ref_pattern"
+        "screws.ref_pattern",
+        "sensors.magnet_d6_pocket_d",
+        "sensors.magnet_d6_pocket_depth",
+        "fits.pin_ref_pattern",
+        "screws.wood_pattern"
       ],
       "check": {
         "probe": "fusion_openings",
@@ -330,7 +355,11 @@
         "sensors.magnet_pocket_d",
         "sensors.magnet_pocket_depth",
         "inserts.ref_pattern",
-        "screws.ref_pattern"
+        "screws.ref_pattern",
+        "sensors.magnet_d6_pocket_d",
+        "sensors.magnet_d6_pocket_depth",
+        "fits.pin_ref_pattern",
+        "screws.wood_pattern"
       ],
       "check": {
         "probe": "fusion_census",

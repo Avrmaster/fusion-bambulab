@@ -294,8 +294,7 @@ class FactFixtures(unittest.TestCase):
         for probes in gate_attest.TEST_PROBES.values():
             for probe in probes: self.assertIn(probe, gate_registry.PROBES)
         auto = {rid: r['attest']['auto'] for rid, r in self.reg['rules'].items() if (r.get('attest') or {}).get('auto')}
-        self.assertEqual(sorted(auto), ['access.key_swing', 'bearings.no_plastic_in_clamp', 'hardware.bought_from_step', 'hardware.refs_present',
-                                        'motors.lead_path', 'screws.count_load_joint'])
+        self.assertEqual(sorted(auto), ['hardware.bought_from_step', 'motors.lead_path', 'print.bed_face', 'screws.count_load_joint'])      # key swing, plastic in a clamp and refs present are judged now
         for rid, entries in auto.items():
             a = self.reg['rules'][rid]['attest']
             for e in entries:
@@ -315,7 +314,7 @@ class FactFixtures(unittest.TestCase):
         self.assertIsNone(gate_attest.FACT_SHOWN['no_screw_feature'](empty.get, {}, reg['tables']))           # an empty screw hole: asked, and nothing is shown
         self.assertIs(gate_attest.FACT_TESTS['no_screw_feature'](empty.get, {}, reg['tables'])[0], False)
         self.assertEqual(sorted(gate_attest.FACT_SHOWN), sorted(gate_attest.FACT_TESTS))
-        for rid in ('access.key_swing', 'hardware.refs_present', 'screws.count_load_joint'):                  # the three answers a blind screw unit must not get
+        for rid in ('screws.count_load_joint',):                                                             # the answer a blind screw unit must not get
             self.assertEqual([e['when'] for e in reg['rules'][rid]['attest']['auto']], [['no_screw_feature']], rid)
 
     def test_a_wrong_auto_entry_is_refused_by_the_registry(self):

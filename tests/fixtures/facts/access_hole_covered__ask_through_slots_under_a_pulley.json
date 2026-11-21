@@ -1,0 +1,156 @@
+{
+ "judge": "access_hole_covered",
+ "case": "the same pockets as through slots: what stands in front of a through slot is asked as before",
+ "facts": {
+  "openings": [
+   {
+    "feature": "o1",
+    "of": "slot",
+    "anchor": {
+     "kind": "face",
+     "axis": [
+      0,
+      0,
+      1
+     ],
+     "point": [
+      60.0,
+      10.0,
+      -30.0
+     ]
+    },
+    "end": "mouth",
+    "section": "inscribed circle",
+    "inside": [],
+    "paths": {
+     "own": {
+      "r": 12.0,
+      "reach": 60.0,
+      "free": 4.0,
+      "hits": [
+       {
+        "name": "Pulley",
+        "kind": "printed",
+        "part": "demo/pulley",
+        "at": 4.0,
+        "share": 0.6,
+        "approx": false,
+        "expected": false
+       }
+      ]
+     }
+    }
+   },
+   {
+    "feature": "o2",
+    "of": "slot",
+    "anchor": {
+     "kind": "face",
+     "axis": [
+      0,
+      0,
+      1
+     ],
+     "point": [
+      -60.0,
+      20.0,
+      -30.0
+     ]
+    },
+    "end": "mouth",
+    "section": "inscribed circle",
+    "inside": [],
+    "paths": {
+     "own": {
+      "r": 12.0,
+      "reach": 60.0,
+      "free": 4.0,
+      "hits": [
+       {
+        "name": "Pulley",
+        "kind": "printed",
+        "part": "demo/pulley",
+        "at": 4.0,
+        "share": 0.6,
+        "approx": false,
+        "expected": false
+       }
+      ]
+     }
+    }
+   }
+  ],
+  "closed": []
+ },
+ "params": {
+  "access.reach": 60.0,
+  "access.min_blocked_share": 0.02,
+  "access.seal_gap": 0.2,
+  "access.cap_max": 2.0,
+  "screws.min_engagement": 3.2
+ },
+ "ctx": {
+  "part": "demo/base",
+  "census": {
+   "holes": [],
+   "openings": [
+    {
+     "id": "o1",
+     "anchor": {
+      "kind": "face",
+      "axis": [
+       0,
+       0,
+       1
+      ],
+      "point": [
+       60.0,
+       10.0,
+       -30.0
+      ]
+     },
+     "shape": "slot",
+     "size": [
+      43.5,
+      24.0
+     ],
+     "depth": 6.0,
+     "through": true,
+     "wall": null
+    },
+    {
+     "id": "o2",
+     "anchor": {
+      "kind": "face",
+      "axis": [
+       0,
+       0,
+       1
+      ],
+      "point": [
+       -60.0,
+       20.0,
+       -30.0
+      ]
+     },
+     "shape": "slot",
+     "size": [
+      43.5,
+      24.0
+     ],
+     "depth": 6.0,
+     "through": true,
+     "wall": null
+    }
+   ],
+   "partial": [],
+   "counts": {}
+  }
+ },
+ "expect": [
+  {
+   "verdict": "FAIL",
+   "ask": "assembly.order"
+  }
+ ]
+}

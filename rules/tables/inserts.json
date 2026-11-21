@@ -5,6 +5,7 @@
     "d": 0.1,
     "depth": 0.3
   },
+  "measured_under_about": "What each row was printed with, in the shape of a parameter's \"measured_under\": {nozzle, material, xy_hole_compensation, layer_height}, null for a value that is not on record; the row is null while it was never printed. A list holds several prints of the same profile. inserts.pocket_shape fails every exact pocket of a measured row when the declared target of the part is none of them (\"profile measured under other settings\"): a profile measured at hole compensation 0.125 says nothing about a project that prints at 0. The owner adds the print of a coupon under his target in gate/owner/tables.json (\"inserts\": {\"measured_under\": {\"M3x4x5\": [{\"nozzle\": ..., \"material\": ..., \"xy_hole_compensation\": ..., \"layer_height\": ..., \"source\": ..., \"date\": ...}]}}); `gate.py coupons --for KEY` writes that coupon. A row that was never printed (null) is decided: fits.decided_not_printed names it for the part.",
   "melt_room": 2.5,
   "melt_room_about": "measured with the M3x4x5 row: hole depth = insert length + 2.5 below the relief floor, room for the displaced plastic and the screw tip",
   "hole_short_by_relief": false,
@@ -68,6 +69,7 @@
       },
       "tag": "M",
       "profile": "measured",
+      "measured_under": {"nozzle": null, "material": "PETG-CF", "xy_hole_compensation": 0.125, "layer_height": null},
       "measured_on": "coupon in PETG-CF on one Bambu P2S, slicer X-Y hole compensation 0.125; the nozzle of the coupon is not on record (0.4 in one note, 0.6 in another). The same numbers are POCKETS in tools/fusion/insert_pockets.py",
       "measured": {
         "material": "PETG-CF",
@@ -156,6 +158,7 @@
       },
       "tag": "D",
       "profile": "derived",
+      "measured_under": null,
       "measured_on": "not measured: derived from the M3x4x5 row (same make, same knurl and pilot band, 2.0 longer; depth = length + 2.5). Print a coupon before a part depends on it",
       "superseded": [
         {
@@ -194,6 +197,7 @@
       },
       "tag": "D",
       "profile": "recorded",
+      "measured_under": null,
       "measured_on": "not measured. Recorded: a D5.6 x 8 hole under a D6.1 lead-in. The lead-in, as wide as the knurl, is the loose form that failed for M3 and is not carried: the row keeps the straight hole only. Insert length and pilot band are not on record (7.0 and 6.0 here are placeholders: 8 less the 1.0 of the old depth rule, and the knurl). Measure the insert and print a coupon before a part depends on it",
       "superseded": [
         {
@@ -232,6 +236,7 @@
       },
       "tag": "D",
       "profile": "recorded",
+      "measured_under": null,
       "measured_on": "not measured. Recorded: a straight D6.4 x 11 hole under a D9 x 0.54 relief, for an insert 10 long and about D7 (one sample; the pilot band was not measured, 7.0 here is a placeholder). A straight datasheet hole is the form that failed for M3x4x5: print a coupon before a part depends on it"
     }
   },

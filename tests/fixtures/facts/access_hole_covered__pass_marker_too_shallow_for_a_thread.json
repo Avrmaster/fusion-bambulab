@@ -1,0 +1,99 @@
+{
+ "judge": "access_hole_covered",
+ "case": "a D3.175 x 2 blind phasing marker has the diameter of an M4 tap drill; 2 deep is under the least engagement of a thread, so it holds no screw and needs no key path past the disc stacked on it",
+ "incident": "phasing markers of stacked discs were judged as tap holes that need a key path",
+ "facts": {
+  "openings": [
+   {
+    "feature": "h10",
+    "of": "hole",
+    "anchor": {
+     "kind": "hole",
+     "axis": [
+      0,
+      0,
+      1
+     ],
+     "point": [
+      32.0,
+      0.0,
+      8.0
+     ]
+    },
+    "end": "mouth",
+    "paths": {
+     "own": {
+      "r": 1.59,
+      "reach": 60.0,
+      "free": 1.0,
+      "hits": [
+       {
+        "name": "Disc B",
+        "kind": "printed",
+        "part": "demo/disc_b",
+        "at": 1.0,
+        "share": 1.0,
+        "approx": false,
+        "expected": false
+       }
+      ]
+     }
+    }
+   }
+  ],
+  "closed": [],
+  "screws": [],
+  "screws_cut": false
+ },
+ "params": {
+  "access.reach": 60.0,
+  "access.min_blocked_share": 0.02,
+  "access.seal_gap": 0.2,
+  "access.cap_max": 2.0,
+  "screws.min_engagement": 3.2
+ },
+ "ctx": {
+  "part": "demo/disc_a",
+  "census": {
+   "holes": [
+    {
+     "id": "h10",
+     "anchor": {
+      "kind": "hole",
+      "axis": [
+       0,
+       0,
+       1
+      ],
+      "point": [
+       32.0,
+       0.0,
+       8.0
+      ]
+     },
+     "segments": [
+      {
+       "d": 3.175,
+       "len": 2.0
+      }
+     ],
+     "depth": 2.0,
+     "through": false,
+     "floor": 4.0,
+     "exit": null,
+     "class": {
+      "kind": "M4",
+      "match": "exact",
+      "role": "tap_pilot",
+      "table": "screws"
+     },
+     "coaxial": []
+    }
+   ],
+   "openings": [],
+   "partial": [],
+   "counts": {}
+  }
+ },
+ "expect": []
+}

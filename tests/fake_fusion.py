@@ -404,7 +404,7 @@ class DemoProject:
         self.fusion = FakeFusion(documents if documents is not None else {self.DOC: 12})
         rules_dir = self.rules
         patches = [mock.patch.dict(gate_judges.JUDGES, DEMO_JUDGES),
-                   mock.patch.object(gate_registry, 'load_default', lambda: gate_registry.load(rules_dir, judges=set(gate_judges.JUDGES), complete=False)),
+                   mock.patch.object(gate_registry, 'load_default', lambda root=None: gate_registry.load(rules_dir, judges=set(gate_judges.JUDGES), complete=False)),
                    mock.patch.object(gate_fusion_rpc, 'http_transport', self.fusion.transport),
                    mock.patch.object(gate_fusion_rpc, 'http_ping', self.fusion.ping),
                    mock.patch.object(gate_fusion_rpc, 'http_listening', self.fusion.listening),
@@ -415,7 +415,7 @@ class DemoProject:
 
     def registry(self):
         import gate_registry
-        return gate_registry.load_default()
+        return gate_registry.load_default(self.root)          # with the table rows of this project (gate/owner/tables.json)
 
     def model(self, parts, clean=True, doc_key=None, elapsed_s=0.1):
         """Say what the scan of the document finds: {part name: any word that stands for its geometry}. The answer

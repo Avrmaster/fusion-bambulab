@@ -1,0 +1,103 @@
+{
+ "judge": "access_hole_covered",
+ "case": "the same hole 8 deep is a tap hole: the disc in front of it is a cover the order of assembly must answer",
+ "facts": {
+  "openings": [
+   {
+    "feature": "h10",
+    "of": "hole",
+    "anchor": {
+     "kind": "hole",
+     "axis": [
+      0,
+      0,
+      1
+     ],
+     "point": [
+      32.0,
+      0.0,
+      8.0
+     ]
+    },
+    "end": "mouth",
+    "paths": {
+     "own": {
+      "r": 1.59,
+      "reach": 60.0,
+      "free": 1.0,
+      "hits": [
+       {
+        "name": "Disc B",
+        "kind": "printed",
+        "part": "demo/disc_b",
+        "at": 1.0,
+        "share": 1.0,
+        "approx": false,
+        "expected": false
+       }
+      ]
+     }
+    }
+   }
+  ],
+  "closed": [],
+  "screws": [],
+  "screws_cut": false
+ },
+ "params": {
+  "access.reach": 60.0,
+  "access.min_blocked_share": 0.02,
+  "access.seal_gap": 0.2,
+  "access.cap_max": 2.0,
+  "screws.min_engagement": 3.2
+ },
+ "ctx": {
+  "part": "demo/disc_a",
+  "census": {
+   "holes": [
+    {
+     "id": "h10",
+     "anchor": {
+      "kind": "hole",
+      "axis": [
+       0,
+       0,
+       1
+      ],
+      "point": [
+       32.0,
+       0.0,
+       8.0
+      ]
+     },
+     "segments": [
+      {
+       "d": 3.3,
+       "len": 8.0
+      }
+     ],
+     "depth": 8.0,
+     "through": false,
+     "floor": 4.0,
+     "exit": null,
+     "class": {
+      "kind": "M4",
+      "match": "exact",
+      "role": "tap_pilot",
+      "table": "screws"
+     },
+     "coaxial": []
+    }
+   ],
+   "openings": [],
+   "partial": [],
+   "counts": {}
+  }
+ },
+ "expect": [
+  {
+   "verdict": "FAIL",
+   "ask": "assembly.order"
+  }
+ ]
+}

@@ -668,6 +668,39 @@ def _scr_washer(w, job, world, own, inv, screws, threads, touch):
     centre = sp['centre']
     u, v = axis_frame(A)
     dirs = [v_add(v_scale(u, math.cos(k * math.pi / 8)), v_scale(v, math.sin(k * math.pi / 8))) for k in range(16)]
+    ring_overlap = None
+    if on_bearing:                                                       # how far the washer reaches over its ring: the longest radial run of
+        brg = next(c['_rec'] for c in covers if c['name'] == on_bearing)  # its face that lies on the bearing, over 16 directions (0.25 mm steps)
+        probe_at = v_add(face, v_scale(down, touch / 2.0 + 0.02))
+        R_, n = sp['od'] / 2.0, max(2, int(math.ceil((sp['od'] / 2.0) / 0.25)))
+        best_run = 0.0
+        for d in dirs:
+            on = lambda r_: brg['_inside'](v_add(probe_at, v_scale(d, r_)))
+            hits_ = [on(R_ * k / n) for k in range(n + 1)]
+            k = 0
+            while k <= n:
+                if not hits_[k]:
+                    k += 1
+                    continue
+                j = k
+                while j < n and hits_[j + 1]:
+                    j += 1
+                lo_, hi_ = R_ * k / n, R_ * j / n                       # the run, refined to 0.02 at each end that lies inside the washer (middle of the last step)
+                if k > 0:
+                    a_, b_ = R_ * (k - 1) / n, lo_
+                    while b_ - a_ > 0.02:
+                        m_ = (a_ + b_) / 2.0
+                        a_, b_ = (a_, m_) if on(m_) else (m_, b_)
+                    lo_ = (a_ + b_) / 2.0
+                if j < n:
+                    a_, b_ = hi_, R_ * (j + 1) / n
+                    while b_ - a_ > 0.02:
+                        m_ = (a_ + b_) / 2.0
+                        a_, b_ = (m_, b_) if on(m_) else (a_, m_)
+                    hi_ = (a_ + b_) / 2.0
+                best_run = max(best_run, hi_ - lo_)
+                k = j + 1
+        ring_overlap = round(best_run, 2)
     under = [c['_rec'] for c in covers if c['gap'] <= touch] or [c['_rec'] for c in covers]     # what it lies on: their walls
     landing = lambda p: any(r['_inside'](p) for r in under)
     walls = [_scr_wall(landing, centre, A, 0.0, d, sp['id'] / 2.0 + 0.5 * ring, sp['od'] / 2.0) for d in dirs]
@@ -697,7 +730,7 @@ def _scr_washer(w, job, world, own, inv, screws, threads, touch):
     return {'id': w['id'], 'ref': w['name'], 'od': round(sp['od'], 2), 'id_d': round(sp['id'], 2), 't': round(sp['t'], 2),
             'anchor': {'kind': 'face', 'axis': [round(c, 4) for c in v_unit(mat_vector(inv, A))], 'point': [round(c, 2) for c in mat_point(inv, face)]},
             'landing': {'share': share, 'share_all': total['share'] if total else 0.0, 'gap': total['gap'] if total else None,
-                        'open_d': open_d, 'ring_shares': ring_shares, 'on_bearing': on_bearing, 'look': look,
+                        'open_d': open_d, 'ring_shares': ring_shares, 'on_bearing': on_bearing, 'ring_overlap': ring_overlap, 'look': look,
                         'on': best['part'] or best['name'], 'spot_face_d': round(2 * min(walls), 2) if walls else None,
                         'wall_angles': len(walls), 'covers': [{k: c[k] for k in c if not k.startswith('_')} for c in covers]},
             'proud': {'height': round(height, 2), 'nearest': nearest}, 'screw': on_it[0]['name'] if on_it else None}
@@ -764,6 +797,8 @@ def probe(job):
                                "open_d": 6.85 or None (about the diameter of that opening: its screw hole, a pocket mouth
                                          with its relief; None = contact right up to the washer's own hole),
                                "on_bearing": name of the bearing ref it bears on (a clamp washer) or None,
+                               "ring_overlap": mm the washer reaches over that bearing (the longest radial run of its face
+                               on the ring, 16 directions, 0.25 mm steps) or None,
                                "gap": 0.0, "on": "demo/housing" | name of what it lies on, "spot_face_d": 13.2 or None},
                    "proud": {"height": 3.15 (washer + head above the landing),
                              "nearest": {"name": "...", "kind": "printed" | "bought" | "hardware", "part": id or None,

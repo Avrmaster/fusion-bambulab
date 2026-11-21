@@ -34,7 +34,7 @@
       "unit": "mm",
       "looser": "lower",
       "measured_on": "computed",
-      "class": "geometry",
+      "class": "fit",
       "formula": "motors.plug_width + 2 * motors.connector_clearance",
       "description": "least width of the channel the plug travels in"
     },
@@ -46,6 +46,15 @@
       "class": "geometry",
       "formula": null,
       "description": "a bought or mesh body whose name, or the name of a component above it, matches is a motor or a connector"
+    },
+    "motors.channel_height": {
+      "default": null,
+      "unit": "mm",
+      "looser": "lower",
+      "measured_on": "computed",
+      "class": "fit",
+      "formula": "motors.plug_height + 2 * motors.connector_clearance",
+      "description": "least height of the channel the plug travels in"
     }
   },
   "rules": [

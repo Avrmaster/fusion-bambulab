@@ -50,7 +50,8 @@
        "gap": 0.3,
        "bearing": false
       }
-     ]
+     ],
+     "ring_overlap": 2.5
     },
     "proud": {
      "height": 3.15,
@@ -60,10 +61,11 @@
   ]
  },
  "params": {
-  "bearings.clamp_room": 1.0,
   "washers.landing_gap_max": 0.05,
   "washers.landing_share_min": 0.95,
-  "washers.spot_face_clearance": 1.2
+  "washers.spot_face_clearance": 1.2,
+  "bearings.clamp_room_washer": 1.0,
+  "washers.ring_overlap_min": 2.0
  },
  "expect": [
   {

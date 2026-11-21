@@ -140,9 +140,14 @@ class BridgeSteps(unittest.TestCase):
                        {'point': [26.0, 10.0, 9.3]},                                     # outside the counterbore
                        {'point': [22.34, 10.0, 11.0]}):                                  # high up in the counterbore, not at its floor
             facts = copy.deepcopy(self.facts); facts['faces'][0]['anchor'].update(change)
-            self.assertEqual(verdicts(judged('walls.thin_faces', facts, self.census)), ['FAIL'], change)
+            out = judged('walls.thin_faces', facts, self.census)
+            self.assertIn(verdicts(out), (['FAIL'], ['FAIL', 'INFO']), change)               # the steps beside it may be counted as steps (_thin_bridge_split)
+            fail = [f for f in out if f['verdict'] == 'FAIL'][0]
+            self.assertEqual(fail['measure'], facts['faces'][0]['width'], change)           # the face that does not belong is the row, never dropped
         facts = copy.deepcopy(self.facts); facts['faces'][2]['anchor']['point'] = [21.4, 10.0, 9.15]     # a low wall that is not tangent to the hole
-        self.assertEqual(verdicts(judged('walls.thin_faces', facts, self.census)), ['FAIL'])
+        out = judged('walls.thin_faces', facts, self.census)
+        self.assertIn(verdicts(out), (['FAIL'], ['FAIL', 'INFO']))
+        self.assertEqual([f['measure'] for f in out if f['verdict'] == 'FAIL'], [facts['faces'][2]['width']])
 
     def test_a_crescent_on_the_floor_of_a_relief_is_not_excused_by_the_step_under_it(self):
         # the crescent an old hole left beside a pocket: it lies where a step down in diameter is, and it has no low wall tangent to the hole

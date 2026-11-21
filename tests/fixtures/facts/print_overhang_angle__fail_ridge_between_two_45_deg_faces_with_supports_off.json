@@ -1,0 +1,68 @@
+{
+ "judge": "print_overhang_angle",
+ "case": "a cradle designed support-free: its two 45 deg faces meet in a ridge at 79 deg from vertical (11 deg from horizontal), and supports are off for it",
+ "incident": "a cradle designed as support-free still got a support tree: the ridge between two 45 deg faces lay at about 11 deg; the owner found it in the slicer",
+ "facts": {
+  "project": "main",
+  "file": "bambulab/demo.3mf",
+  "exists": true,
+  "overhangs": {
+   "max_angle": 45.0,
+   "max_bridge": 6.0,
+   "objects": [
+    {
+     "name": "cradle",
+     "part": "demo/cradle",
+     "plate": "plate 1",
+     "plate_index": 1,
+     "printable": true,
+     "pose": "3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a",
+     "support": false,
+     "support_how": "the object overrides enable_support = 0",
+     "faces": [],
+     "ridges": [
+      {
+       "length": 18.2,
+       "flattest": 79.0,
+       "z": [
+        6.3,
+        6.8
+       ],
+       "at": [
+        12.0,
+        4.5,
+        6.3
+       ]
+      }
+     ],
+     "bridges": [],
+     "totals": {
+      "faces": 0,
+      "face_area": 0,
+      "ridges": 1,
+      "ridge_length": 18.2,
+      "bridges": 0
+     }
+    }
+   ]
+  }
+ },
+ "params": {
+  "overhang.max_angle": 45.0,
+  "overhang.max_bridge": 6.0,
+  "target.line_width": 0.42,
+  "target.initial_layer_print_height": 0.2
+ },
+ "ctx": {
+  "part": "main:"
+ },
+ "expect": [
+  {
+   "verdict": "FAIL",
+   "part": "demo/cradle",
+   "measure": 79.0,
+   "limit": 45.0,
+   "unit": "deg"
+  }
+ ]
+}

@@ -250,7 +250,7 @@ class Dispatch(Project):
             with self.subTest(command=name): self.assertTrue(callable(getattr(importlib.import_module(module), func)))
 
     def test_commands_of_the_build_spec(self):
-        self.assertEqual(sorted(gate.COMMANDS), sorted('doctor rules params scan run status attest export verify report triage owner'.split()))
+        self.assertEqual(sorted(gate.COMMANDS), sorted('doctor rules params scan run status attest export verify slice coupons report triage owner'.split()))
 
     def test_params_check_runs_end_to_end(self):
         code, out, err = self.gate('params', 'check')

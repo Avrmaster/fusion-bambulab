@@ -5,14 +5,14 @@ way a session goes: scan, run, answer, export. Fusion is tests/fake_fusion.FakeF
 paths a review found broken: several parts in one export call, a project with several declared targets, a waiver that
 is withdrawn behind an answer, a vendored copy that was changed by hand; and the first adoption of a project (the audit,
 inherited parts, the questions that wait until a part changes or is exported). Every name and number is invented."""
-import json, os, re, sys, unittest
+import json, os, re, subprocess, sys, unittest
 for _k in ('CLAUDECODE', 'CLAUDE_CODE_ENTRYPOINT', 'CLAUDE_CODE_SESSION_ID'): os.environ.pop(_k, None)      # gate.py owner from an agent session needs the hook's ticket: a test is no agent session
 os.environ.pop('CLAUDE_PROJECT_DIR', None)      # bambu3mf finds a gated root for a file outside it from this: never the session's project
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, 'tools', 'gate'))
 for d in (os.path.join(ROOT, 'tools', 'bambu'), os.path.dirname(os.path.abspath(__file__))):
     if d not in sys.path: sys.path.insert(0, d)
-import bambu3mf, fake_fusion, gate_common, gate_plan, gate_report, gate_stamp
+import bambu3mf, fake_fusion, fake_slicer, gate_common, gate_plan, gate_report, gate_stamp
 from gate_guard import GuardRefusal
 import test_guard as G
 import test_end_to_end as E
@@ -90,12 +90,12 @@ class TwoParts(Walk):
         report = self.latest()
         self.assertNotEqual(report['run'], before); self.assertEqual((report['command'], report['stage'], report['exit']), ('export', 'export', 0))
         answered = {q['rule'] for q in report['questions'] if q['part'] == FOOT and q.get('answer')}
-        for rule in ('access.hole_supports', 'print.bed_face', 'fits.decided_not_printed'): self.assertIn(rule, answered)       # asked at export, and now on record
+        for rule in ('access.hole_supports', 'print.bed_face'): self.assertIn(rule, answered)       # asked at export, and now on record
         row = next(p for p in report['parts'] if p['part'] == FOOT)
         facts = self.by_facts(FOOT, report)                                      # no bearing and no motor at the foot: the gate said so itself
-        self.assertEqual(facts, ['bearings.no_plastic_in_clamp', 'motors.lead_path'])
+        self.assertEqual(facts, ['motors.lead_path'])
         mine = self.n_asked - len(facts)                                         # an answer by facts is no statement of the agent: not "attested"
-        self.assertEqual((row['verdict'], row['attested'], row['by_facts']), ('pass_attested', mine, 2)); self.assertEqual(self.stamp(FOOT)['attested'], mine)
+        self.assertEqual((row['verdict'], row['attested'], row['by_facts']), ('pass_attested', mine, 1)); self.assertEqual(self.stamp(FOOT)['attested'], mine)
         self.assertEqual({p['part'] for p in report['parts']}, {FOOT, HUB, CLIP})       # the parts of the report before it stay listed
         text = self.gate('report', '--last')[1]
         self.assertIn('access.hole_supports', text); self.assertIn('pass_attested(%d)' % mine, text); self.assertIn('### Answered by facts', text)
@@ -149,6 +149,11 @@ class OwnStlNames(Walk):
         self.assertEqual((r.returncode, r.stderr), (0, ''), r.stdout); self.assertNotIn('gate guard', r.stdout)
         self.assertEqual([(e['object'], e['stl'], e['stamp']) for e in self.events() if e['kind'] == 'write'],
                          [('Lamp foot', 'stl/LampFoot_rev2.stl', '%s@%s' % (FOOT, self.sigs[FOOT][:12])), ('Turntable', 'stl/hub 40.stl', '%s@%s' % (HUB, self.sigs[HUB][:12]))])
+        r = self.own(GATE, 'verify')
+        self.assertEqual(r.returncode, 1, r.stdout); self.assertIn('was never sliced by the gate', r.stdout)      # the supports are not known yet
+        env = dict(E.clean_env(), BAMBU_STUDIO=fake_slicer.make(self.path('fake-slicer')))
+        r = subprocess.run([sys.executable, GATE, 'slice'], capture_output=True, text=True, cwd=self.root, env=env, timeout=120)
+        self.assertEqual((r.returncode, r.stderr), (0, ''), r.stdout); self.assertIn('support 0.0 mm (filament)', r.stdout)
         r = self.own(GATE, 'verify')
         self.assertEqual((r.returncode, r.stderr), (0, ''), r.stdout)
         self.assertNotIn('stl_without_stamp', r.stdout); self.assertNotIn('FAIL', r.stdout)
@@ -288,6 +293,11 @@ class SeveralTargets(Walk):
         self.assertEqual(judged['print.z_layers']['params']['target.layer_height'], 0.2)        # the run judged the design stage for the fine project
         code, out, err = self.gate('export', FOOT)
         self.assertEqual(code, 4); self.assertIn('name one with --for KEY (coarse, %s)' % PROJ_KEY, err); self.assertEqual(self.exports(), 0)
+        code, out, err = self.gate('export', FOOT, '--for', 'coarse')            # the insert profile was printed under the fine project only
+        self.assertEqual(code, 1, out); self.assertIn('profile measured under other settings', out); self.assertEqual(self.exports(), 0)
+        tables = self.read('gate', 'owner', 'tables.json')                       # the owner prints the coupon plate of the coarse project too
+        tables['inserts']['measured_under']['M3x4x5'].append(dict(tables['inserts']['measured_under']['M3x4x5'][0], layer_height=0.3))
+        gate_common.write_json(self.path('gate', 'owner', 'tables.json'), tables)
         code, out, err = self.gate('export', FOOT, '--for', 'coarse')            # the other project: the stored facts are judged again for it
         self.assertEqual((code, err), (0, ''), out); self.assertIn('stamped -> stl/lamp_foot.stl', out)
         s = self.stamp(FOOT)
@@ -314,8 +324,8 @@ class SeveralTargets(Walk):
 class Waiver(Walk):
     def test_a_withdrawn_waiver_behind_an_answer_opens_the_stamp_again(self):
         self.ask_rules()
-        self.ready(answer=False, near={FOOT: [INSERT, BEARING]})                 # a bearing ref stands 3 mm from the foot: the clamp question is asked
-        qid = next(q for q, part, rule in self.questions() if rule == 'bearings.no_plastic_in_clamp' and part == FOOT)
+        self.ready(answer=False)                                                 # the foot has an insert pocket: how many screws hold its joints is asked
+        qid = next(q for q, part, rule in self.questions() if rule == 'screws.count_load_joint' and part == FOOT)
         code, out, err = self.gate('owner', 'waive', qid, '--reason', STEEL, '--quote', SAID)
         self.assertEqual((code, err), (0, ''), out); self.assertIn('question %s is answered by it' % qid, out)
         self.answer_all()
@@ -367,11 +377,10 @@ class Adoption(Walk):
 
     def test_what_the_facts_prove_is_answered_and_the_rest_waits(self):
         self.audited(**{CLIP: [MOTOR]})                                                   # a motor stands 6.5 mm from the clip, named two levels up
-        self.assertEqual(self.by_facts(HUB), ['access.key_swing', 'bearings.no_plastic_in_clamp', 'hardware.bought_from_step', 'hardware.refs_present',
-                                              'motors.lead_path', 'screws.count_load_joint'])       # a plain ring: no hole, nothing near
-        self.assertEqual(self.by_facts(FOOT), ['bearings.no_plastic_in_clamp', 'motors.lead_path'])  # it has an insert pocket: the screw questions stay
+        self.assertEqual(self.by_facts(HUB), ['hardware.bought_from_step', 'motors.lead_path', 'screws.count_load_joint'])       # a plain ring: no hole, nothing near
+        self.assertEqual(self.by_facts(FOOT), ['motors.lead_path'])                                  # it has an insert pocket: the screw questions stay
         # the motor model beside the clip is a bought body named "Rotor": no unit read its shape, so "no bearing here" is not proven either
-        self.assertEqual(self.by_facts(CLIP), ['access.key_swing', 'hardware.refs_present', 'screws.count_load_joint'])
+        self.assertEqual(self.by_facts(CLIP), ['screws.count_load_joint'])
         waiting = self.gate('attest', 'list', '--part', CLIP)[1]
         self.assertIn('motors.lead_path', waiting); self.assertIn('the facts: 1 body(ies) near or on an axis match motors.ref_pattern (Rotor)', waiting)
         na = next(q for q in self.latest()['questions'] if q['part'] == HUB and q['rule'] == 'screws.count_load_joint')['answer']

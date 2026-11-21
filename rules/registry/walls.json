@@ -276,6 +276,32 @@
         "Scan the body for shallow faces after every fill."
       ],
       "attest": null
+    },
+    {
+      "id": "walls.placed_stl",
+      "title": "Walls are measured on the mesh each object prints from",
+      "statement": "Every object of a registered project is measured as the project holds it: closed, one shell, walls of at least {walls.min_wall} (and {walls.min_wall_effective} effective), no slit under {walls.slit_min}, no one-line wall where two lines of {target.line_width} belong. A part printed before the gate, or whose STL nobody exported again, is judged like a new export; the rows hold until the part is exported again.",
+      "why": "The wall rules ran only at export, never on an STL a project already held, and two insert wall limits (one per tool) let an agent pick the one that passed.",
+      "params": [
+        "walls.min_wall",
+        "walls.min_wall_effective",
+        "walls.coverage_min",
+        "target.line_width",
+        "walls.slit_min"
+      ],
+      "check": {
+        "probe": "project_consistency",
+        "judge": "walls_placed_stl",
+        "needs": "3mf"
+      },
+      "level": "block",
+      "stage": "project",
+      "fix_order": [
+        "Fix the part in the model and export it again: the new STL is judged at its export.",
+        "A part that is printed and stays: the owner decides its rows once in the triage list."
+      ],
+      "attest": null,
+      "note": "Measured by probes/placed_walls.py on the stored mesh of each object, kept per pose hash in gate/run/placed_walls/: a mesh is measured once and again only when it changes. One process measures for at most 20 s; the objects it did not reach are one NOT_RUN row, and the next verify goes on."
     }
   ]
 }

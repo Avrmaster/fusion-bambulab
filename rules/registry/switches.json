@@ -101,6 +101,42 @@
       "class": "limit",
       "formula": null,
       "description": "how far the soft limit lies inside the click angle"
+    },
+    "switches.body_l": {
+      "default": 20.0,
+      "unit": "mm",
+      "looser": null,
+      "measured_on": "placeholder: one common lever micro switch body; measure the switch in hand",
+      "class": "geometry",
+      "formula": null,
+      "description": "length of the switch body"
+    },
+    "switches.body_t": {
+      "default": 6.4,
+      "unit": "mm",
+      "looser": null,
+      "measured_on": "placeholder: one common lever micro switch body; measure the switch in hand",
+      "class": "geometry",
+      "formula": null,
+      "description": "thickness of the switch body"
+    },
+    "switches.pocket_l": {
+      "default": null,
+      "unit": "mm",
+      "looser": null,
+      "measured_on": "computed",
+      "class": "fit",
+      "formula": "switches.body_l + 2 * switches.cradle_fit_per_side",
+      "description": "length of a pocket that holds the switch body"
+    },
+    "switches.pocket_t": {
+      "default": null,
+      "unit": "mm",
+      "looser": null,
+      "measured_on": "computed",
+      "class": "fit",
+      "formula": "switches.body_t + 2 * switches.cradle_fit_per_side",
+      "description": "width of a pocket that holds the switch body"
     }
   },
   "rules": [

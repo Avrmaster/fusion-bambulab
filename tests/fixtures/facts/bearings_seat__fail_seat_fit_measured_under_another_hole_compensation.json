@@ -1,0 +1,161 @@
+{
+ "judge": "bearings_seat",
+ "case": "the seat fit of the table was printed at hole compensation 0.1; this part is declared at 0: measured under other settings",
+ "facts": {
+  "bearings": [
+   {
+    "ref": "ref bearing 61816 lower",
+    "designation": "61816",
+    "by": "geometry",
+    "d": 80.0,
+    "D": 100.0,
+    "B": 10.0,
+    "anchor": {
+     "kind": "bearing",
+     "axis": [
+      0,
+      0,
+      1
+     ],
+     "point": [
+      0.0,
+      0.0,
+      34.0
+     ]
+    },
+    "rings": {
+     "inner": {
+      "faces": [
+       {
+        "side": "+",
+        "covered": [
+         {
+          "name": "Base",
+          "kind": "printed",
+          "part": "demo/base",
+          "share": 1.0,
+          "points": 1,
+          "gap": 0.0,
+          "touches_other_ring": false
+         }
+        ]
+       },
+       {
+        "side": "-",
+        "covered": [
+         {
+          "name": "Base",
+          "kind": "printed",
+          "part": "demo/base",
+          "share": 1.0,
+          "points": 1,
+          "gap": 0.0,
+          "touches_other_ring": false
+         }
+        ]
+       }
+      ]
+     },
+     "outer": {
+      "faces": [
+       {
+        "side": "+",
+        "covered": [
+         {
+          "name": "ref washer M3 large (x6)",
+          "kind": "hardware",
+          "part": null,
+          "share": 0.22,
+          "points": 6,
+          "gap": 0.0,
+          "touches_other_ring": false
+         }
+        ]
+       },
+       {
+        "side": "-",
+        "covered": [
+         {
+          "name": "Column tube",
+          "kind": "printed",
+          "part": "demo/column_tube",
+          "share": 1.0,
+          "points": 1,
+          "gap": 0.0,
+          "touches_other_ring": false
+         }
+        ]
+       }
+      ]
+     }
+    },
+    "clamps": [],
+    "seat": {
+     "inner": {
+      "d": 80.31,
+      "entry_d": 79.9,
+      "entry_open": false,
+      "entry_other": 86.0,
+      "entry_side": "+",
+      "rows": [
+       80.5,
+       80.44,
+       80.38,
+       80.31,
+       80.25,
+       80.19,
+       80.12,
+       80.06,
+       80.0
+      ],
+      "part": "demo/base",
+      "len": 10.0
+     },
+     "outer": {
+      "d": 100.13,
+      "part": "demo/column_tube",
+      "len": 10.0,
+      "entry_d": 100.26
+     }
+    }
+   }
+  ],
+  "seats_without_bearing": []
+ },
+ "params": {
+  "bearings.seat_d_tol": 0.3,
+  "bearings.seat_taper": 0.25,
+  "bearings.seat_taper_thick_base": 0.5,
+  "bearings.contact_gap_max": 0.05
+ },
+ "ctx": {
+  "part": "demo/base",
+  "target": {
+   "nozzle": 0.6,
+   "line_width": 0.62,
+   "material": "PETG",
+   "layer_height": 0.3,
+   "xy_hole_compensation": 0.0
+  }
+ },
+ "expect": [
+  {
+   "verdict": "FAIL"
+  }
+ ],
+ "tables": {
+  "bearings": {
+   "seat_fit": {
+    "tag": "M",
+    "measured_under": [
+     {
+      "nozzle": 0.6,
+      "material": "PETG",
+      "xy_hole_compensation": 0.1,
+      "layer_height": 0.3
+     }
+    ]
+   }
+  }
+ }
+}

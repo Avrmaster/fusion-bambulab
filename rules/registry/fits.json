@@ -121,47 +121,134 @@
       "class": "limit",
       "formula": null,
       "description": "clearance steps on a fit coupon"
+    },
+    "fits.pin_press_extra": {
+      "default": 0.0,
+      "unit": "mm",
+      "looser": null,
+      "measured_on": "decided: a steel pin pressed into a hole of its own nominal diameter; never printed",
+      "class": "fit",
+      "formula": null,
+      "description": "hole diameter over the pin diameter for a press fit (the pin does not come out by hand)",
+      "measured_under": null
+    },
+    "fits.pin_ref_pattern": {
+      "default": "(?i)(?<![a-z])(?:pins?|dowels?|rods?|shafts?|axles?)(?![a-z])",
+      "unit": "regex",
+      "looser": null,
+      "measured_on": "decided, not measured: the words pin, dowel, rod, shaft and axle in the own name of a bought body (the part behind \" / \"). Set it to how the project names them",
+      "class": "geometry",
+      "formula": null,
+      "description": "a bought or hardware body on the axis of a hole whose own name matches is a steel pin, dowel or rod: the hole is its pocket (fits.bought_part_pocket)"
+    },
+    "fits.nut_m3_af": {
+      "default": 5.5,
+      "unit": "mm",
+      "looser": null,
+      "measured_on": "ISO 4032: width across flats of an M3 hex nut; measure the nuts in hand",
+      "class": "geometry",
+      "formula": null,
+      "description": "width across flats of the M3 nut"
+    },
+    "fits.nut_slot_extra": {
+      "default": 0.2,
+      "unit": "mm",
+      "looser": null,
+      "measured_on": "decided, not printed",
+      "class": "fit",
+      "formula": null,
+      "description": "width of a nut slot over the width across flats of its nut",
+      "measured_under": null
+    },
+    "fits.nut_slot_m3_w": {
+      "default": null,
+      "unit": "mm",
+      "looser": null,
+      "measured_on": "computed",
+      "class": "fit",
+      "formula": "fits.nut_m3_af + fits.nut_slot_extra",
+      "description": "width of a slot an M3 nut slides into from the side"
     }
   },
   "rules": [
     {
       "id": "fits.decided_not_printed",
       "title": "Fits that were never printed in this material are named",
-      "statement": "Every fit size of this part that was never printed in the target material and on the target nozzle is listed for the owner. A size measured in another material or on another nozzle counts as decided (D) here.",
+      "statement": "Every fit size of this part that was never printed under the declared target (its nozzle, material, hole compensation and layer height) is listed for the owner: the fit parameters and table rows the judges of this part read for its pockets, seats and pins, while they are D (decided) or S here. A size measured under other settings counts as D here.",
       "why": "A pocket \"validated\" in a PLA test was loose in the final material; a slide that ran in PLA had to be sanded in a filled nylon.",
-      "params": [],
-      "check": null,
+      "params": [
+        "sensors.magnet_pocket_d",
+        "sensors.magnet_pocket_depth",
+        "sensors.magnet_d6_pocket_d",
+        "sensors.magnet_d6_pocket_depth",
+        "fits.pin_ref_pattern",
+        "fits.pin_press_extra",
+        "fits.pin_slip_extra",
+        "fits.pin_running_extra",
+        "bearings.seat_taper",
+        "bearings.seat_taper_thick_base",
+        "inserts.ref_pattern",
+        "screws.ref_pattern",
+        "screws.wood_pattern"
+      ],
+      "check": {
+        "probe": "fusion_census",
+        "judge": "fits_decided_not_printed",
+        "needs": "fusion"
+      },
       "level": "attest",
-      "stage": "export",
-      "fix_order": [],
+      "stage": "design",
+      "fix_order": [
+        "Print the coupon plate of the target: python3 gate/tools/gate.py coupons --for KEY.",
+        "Record each fit that fits as measured: gate.py owner param NAME VALUE --tag M (a table row: gate/owner/tables.json).",
+        "Until then the part waits, or the owner sets the values (tag U)."
+      ],
       "attest": {
-        "question": "Which fit sizes of this part were decided and never printed in the target material and on the target nozzle?",
+        "question": "This part relies on fits that were never printed under its declared target: {by}. Print the coupon plate (gate.py coupons --for KEY) or list them for the owner.",
         "evidence": [
           "label",
-          "param",
-          "na"
+          "waiver"
         ],
-        "per": "part",
+        "per": "finding",
         "labels": [
-          "none: every fit size of this part is measured (M) or owner-set (U)",
-          "listed in the report for the owner"
-        ]
+          "listed in the report for the owner: the coupon plate is printed before the part",
+          "none: every fit size of this part is measured (M) or owner-set (U)"
+        ],
+        "held": {
+          "none: every fit size of this part is measured (M) or owner-set (U)": {
+            "by": "none"
+          }
+        }
       },
       "x_see": [
         "fits.per_material",
         "project.target_differs"
-      ]
+      ],
+      "note": "Answered from the facts: the judge lists the fit parameters and table rows this part reads (magnet and pin pockets of the census, exact insert pockets by their row, bearing seats by the seat fit of the bearings table) that are D or S for the declared target. With nothing on the list there is no question. The label \"none\" is refused while the list names anything."
     },
     {
       "id": "fits.bought_part_pocket",
       "title": "A pocket for a bought part takes its size from a printed fit",
-      "statement": "A pocket, seat or bore that receives a bought part (a magnet, a pin, a nut, a board) takes its size from a named fit parameter, never from a number typed in a script. While that parameter is D (decided, never printed) for the nozzle, material, hole compensation and layer height of the project, the part is not exported: a coupon print makes it M, or the owner makes it U. A pocket whose size matches no declared fit parameter is asked once: what goes in.",
+      "statement": "A pocket, seat or bore that receives a bought part (a magnet, a pin, a dowel, a rod, a nut, a board, a switch, a plug) takes its size from a named fit parameter, never from a number typed in a script. While that parameter is D (decided, never printed) for the nozzle, material, hole compensation and layer height of the project, the part is not exported: a coupon print makes it M, or the owner makes it U. A hole with a steel pin, dowel or rod on its axis is a press, slip or running fit of that pin (its diameter plus {fits.pin_press_extra}, {fits.pin_slip_extra} or {fits.pin_running_extra}), the pin is a stock length of the pins table, and a pin in a blind pocket is longer than the pocket. A slot or window of the size of a box kind of the pockets table (a board, a switch, a nut slot, a plug channel) is that pocket. A pocket whose size matches no declared fit parameter is asked once: what goes in.",
       "why": "A pocket for a bought magnet was modelled 0.2 wider than the magnet on an assumption. The number had never been printed with that nozzle and material. The magnet did not go in, and the part was printed again.",
       "params": [
         "sensors.magnet_pocket_d",
         "sensors.magnet_pocket_depth",
         "inserts.ref_pattern",
-        "screws.ref_pattern"
+        "screws.ref_pattern",
+        "fits.pin_ref_pattern",
+        "fits.pin_press_extra",
+        "fits.pin_slip_extra",
+        "fits.pin_running_extra",
+        "sensors.magnet_d6_pocket_d",
+        "sensors.magnet_d6_pocket_depth",
+        "sensors.board_pocket_w",
+        "sensors.board_pocket_l",
+        "switches.pocket_l",
+        "switches.pocket_t",
+        "motors.channel_width",
+        "motors.channel_height",
+        "fits.nut_slot_m3_w"
       ],
       "check": {
         "probe": "fusion_census",
@@ -171,13 +258,14 @@
       "level": "block",
       "stage": "design",
       "fix_order": [
-        "Print a coupon first: a small block with the pocket in three sizes, in the real material, from the real .3mf project. Try the bought part in each.",
+        "Print a coupon first: `python3 gate/tools/gate.py coupons --for KEY` writes the coupon plate of every fit this project has not printed (a pocket in three sizes, in the real material, from the real .3mf project). Try the bought part in each.",
         "Record the size that fits as the parameter: python3 gate/tools/gate.py owner param NAME VALUE --tag M --source \"coupon, date\". It is stored with what it was printed under.",
         "Or the owner sets the size without a print: the same command with --tag U.",
-        "Cut the pocket from the parameter, not from a typed number."
+        "Cut the pocket from the parameter, not from a typed number.",
+        "A pin: buy a stock length of the pins table (the project lists its stock in gate/owner/tables.json) and name the ref with its size, \"pin D5 x 20\"."
       ],
       "attest": null,
-      "note": "Built for round pockets of the pockets table (rules/tables/pockets.json: today the magnet). Insert pockets, bearing seats and screw holes are judged by their own tables and rules. A nut slot or a board pocket is not round: the census lists it as an opening and this rule does not see it yet."
+      "note": "Round pockets: the kinds of rules/tables/pockets.json (magnets). Pins: a hole, blind or through, with a bought or hardware body on its axis whose own name matches fits.pin_ref_pattern and no insert or screw: the diameter of the pin comes from its name (D5, 5 x 20, 4m6x32), else it is the row of the pins table whose press, slip or running fit the hole has; a hole that is none of the three for that pin fails, and so does a fit whose parameter is D here. Its length (from the name) must be a stock length of the pins table, and longer than a blind pocket; a name without a length is NOT_RUN. The length of the stack the pin crosses in OTHER parts is not measured here. Boxes: a census opening (slot or window) whose two sizes are those of a box kind within the table tolerance; a kind matched by one size (a nut slot) is matched by its width. A box pocket that no kind matches is not seen, and a missing pocket (a plug channel that was never cut) is not seen either: motors.plug_path. Insert pockets, bearing seats and screw holes are judged by their own tables and rules."
     },
     {
       "id": "fits.pocket_content",
@@ -203,9 +291,14 @@
         "param": {
           "class": "fit",
           "matches": "hole_d"
+        },
+        "held": {
+          "no bought part goes in: a printed part, a cable, a tool or air": {
+            "by": "none"
+          }
         }
       },
-      "note": "Asked through the findings of fits.bought_part_pocket. The parameter named with --param must be of class fit, tagged M or U in this project (a D value is refused), and its value must be the diameter of the pocket at its floor, within the tolerance of the pockets table: a pocket cut from a typed number is not covered by naming some parameter. One hole gets one question: a hole this rule asks about (a blind hole of no table, or a hole of no table with a bought or hardware body on its axis) is not asked by census.unknown_hole as well. A counterbore that goes on behind a bridge layer into its clearance hole is a screw hole, and a short cylinder that is only a piece of another hole is that hole: neither is asked."
+      "note": "Asked through the findings of fits.bought_part_pocket. The parameter named with --param must be of class fit, tagged M or U in this project (a D value is refused), and its value must be the diameter of the pocket at its floor, within the tolerance of the pockets table: a pocket cut from a typed number is not covered by naming some parameter. One hole gets one question: a hole this rule asks about (a blind hole of no table, or a hole of no table with a bought or hardware body on its axis) is not asked by census.unknown_hole as well. A counterbore that goes on behind a bridge layer into its clearance hole is a screw hole, and a short cylinder that is only a piece of another hole is that hole: neither is asked. The label \"no bought part goes in\" is refused while a bought or hardware body stands on the axis of the hole (the finding names it): a pin, a magnet or a shaft goes in, so its fit parameter is the answer."
     },
     {
       "id": "fits.per_material",

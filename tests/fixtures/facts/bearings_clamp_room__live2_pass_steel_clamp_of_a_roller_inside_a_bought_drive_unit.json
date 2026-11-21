@@ -1068,7 +1068,8 @@
  },
  "params": {
   "bearings.clamp_room": 1.0,
-  "bearings.contact_gap_max": 0.05
+  "bearings.contact_gap_max": 0.05,
+  "bearings.clamp_room_washer": 1.0
  },
  "ctx": {
   "part": "demo/arm"

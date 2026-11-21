@@ -13,7 +13,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, 'tools', 'gate'))
 for d in (os.path.join(ROOT, 'tools', 'bambu'), os.path.dirname(os.path.abspath(__file__))):
     if d not in sys.path: sys.path.insert(0, d)
-import gate, gate_common, gate_features, gate_fusion_rpc, gate_hook, gate_plan, gate_registry, gate_report, gate_stamp, gate_vendor
+import gate, gate_attest, gate_common, gate_features, gate_fusion_rpc, gate_hook, gate_plan, gate_registry, gate_report, gate_stamp, gate_vendor
 from gate_guard import GuardRefusal
 import bambu3mf, fake_fusion, meshid
 import test_guard as G
@@ -33,6 +33,9 @@ SLICER = {'nozzle_diameter': ['0.4'], 'line_width': '0.42', 'filament_type': ['P
 TARGET = {'nozzle': 0.4, 'line_width': 0.42, 'material': 'PETG', 'layer_height': 0.2, 'initial_layer_print_height': 0.2, 'xy_hole_compensation': 0.1, 'xy_contour_compensation': 0.0,
           'elefant_foot_compensation': 0.15, 'wall_generator': 'classic',
           'print': {'enable_support': 1.0, 'support_type': 'tree(auto)', 'support_remove_small_overhang': 0.0, 'wall_sequence': 'inner wall/outer wall'}}
+# what the owner recorded of his coupon prints (gate/owner/tables.json): the insert profile, printed under TARGET
+OWNER_TABLES = {'inserts': {'measured_under': {'M3x4x5': [dict({k: TARGET[k] for k in ('nozzle', 'material', 'xy_hole_compensation', 'layer_height')},
+                                                                source='coupon plate of the lamp, printed and tried', date='2031-01-05')]}}}
 PLATES = [('first plate', [('Lamp foot', 'lamp_foot.stl', False)]), ('second plate', [('Turntable', 'turntable.stl', False)])]
 WITH_CLIP = PLATES + [('third plate', [('Cable clip', 'cable_clip.stl', False)])]
 FREE_RING = 'a floating bearing: the bought axle carries a snap ring above the inner ring, and that ring closes this face'
@@ -51,7 +54,8 @@ CLEAN = {'fusion_census': {'holes': [], 'openings': [], 'counts': {}}, 'fusion_i
 def foot_census():
     """The foot has one heat-set pocket, of the table shape."""
     return {'holes': [{'id': 'h1', 'anchor': POCKET, 'segments': STACK, 'depth': 7.04, 'through': False, 'floor': 2.96, 'exit': None,
-                       'class': {'table': 'inserts', 'kind': 'M3x4x5', 'role': 'insert_pocket', 'match': 'exact'}, 'coaxial': []}],
+                       'class': {'table': 'inserts', 'kind': 'M3x4x5', 'role': 'insert_pocket', 'match': 'exact'},
+                       'coaxial': [{'name': 'ref hardware / insert M3x4x5 (foot)', 'kind': 'hardware', 'part': None}]}],
             'openings': [], 'counts': {'holes': 1, 'openings': 0, 'insert_pocket': 1, 'unknown': 0}}
 
 
@@ -73,7 +77,7 @@ def hub_bearing():
                           'rings': {'inner': {'faces': [{'side': '+', 'covered': []}, {'side': '-', 'covered': [on('ref axle', 'bought')]}]},
                                     'outer': {'faces': [{'side': '+', 'covered': [on('ref washer M3 large (x6)', 'hardware', share=0.25, points=6)]},
                                                         {'side': '-', 'covered': [on('Turntable', 'printed', HUB)]}]}},
-                          'clamps': [], 'seat': {'inner': None, 'outer': {'d': 40.0, 'part': HUB, 'len': 12.0, 'entry_d': 40.2}}}],
+                          'clamps': [], 'seat': {'inner': None, 'outer': {'d': 40.0, 'part': HUB, 'len': 12.0, 'entry_d': 40.2, 'entry_open': False, 'entry_side': '+'}}}],
             'seats_without_bearing': []}
 
 
@@ -121,11 +125,13 @@ class Lamp(unittest.TestCase):
         # and the calls gate.py makes in this process go to the fake
         layout = self.read('gate', 'layout.json'); layout['fusion']['endpoint'] = 'http://127.0.0.1:1/mcp'
         gate_common.write_json(self.path('gate', 'layout.json'), layout)
+        # the owner printed the insert coupon of the lamp under its own target: the profile of the table counts here
+        gate_common.write_json(self.path('gate', 'owner', 'tables.json'), OWNER_TABLES)
         self.fusion = fake_fusion.FakeFusion({DOC: 12})
         for p in (mock.patch.object(gate_fusion_rpc, 'http_transport', self.fusion.transport), mock.patch.object(gate_fusion_rpc, 'http_ping', self.fusion.ping),
                   mock.patch.object(gate_plan, '_clock', self.fusion.clock)):
             p.start(); self.addCleanup(p.stop)
-        self.reg = gate_registry.load_default()
+        self.reg = gate_registry.load_default(self.root)
         per_part = [r for r in gate_registry.rules(self.reg, level='attest', deferred=False) if r['attest']['per'] == 'part' and gate_registry.applies_to(r, 'fusion')]
         self.n_design = sum(1 for r in per_part if r['stage'] == 'design'); self.n_asked = len(per_part)       # questions one part is asked: in a run, and up to its stamp
         self.sigs = {}
@@ -424,8 +430,9 @@ class WholeChain(Lamp):
         self.assertEqual(found, [('project.build_table_differs', 'desklamp:build_3mf.py'), ('project.object_on_no_plate', HUB), ('project.settings_match', 'desklamp:DeskLamp.3mf'),
                                  ('project.stl_without_object', CLIP), ('project.stl_without_stamp', CLIP)])        # the stray STL of step 6 is named too
         self.assertNotIn('bambulab/ledger', r.stdout)                                                      # the ledger's copies of written STLs are not an STL folder
+        self.assertIn('NOT_RUN print.slice_support_growth desklamp:: project desklamp was never sliced by the gate: gate.py slice desklamp', r.stdout)   # no slice is no pass
         report = self.latest()
-        self.assertEqual((report['command'], report['stage'], report['totals']['block_open']), ('verify', 'project', 5))
+        self.assertEqual((report['command'], report['stage'], report['totals']['block_open']), ('verify', 'project', 6))
 
     def step_8_the_ledger_knows_what_was_printed(self):
         write = next(e for e in self.events() if e['object'] == 'Lamp foot')
@@ -451,7 +458,9 @@ class WholeChain(Lamp):
         code, out = self.run_gate('--part', FOOT)
         facts = self.by_facts(FOOT)
         self.assertEqual(code, 2); self.assertIn('1 parts, 0 open, %d questions' % (self.n_design - facts), out)     # its questions are asked again for the new body
-        self.assertEqual(self.answer_all(printed_interface_change='a copy is printed; no interface moved, the printed copies still fit'), self.n_asked - facts)
+        bed = gate_attest.fact_answer(self.root, self.reg, self.reg['rules']['print.bed_face'], FOOT, new)       # the project holds the foot: its bed face is measured
+        self.assertEqual((bed['kind'], bed['as']), ('facts', 'label')); self.assertIn('measured on the saved project: %s: Lamp foot' % PROJ, bed['proof'])
+        self.assertEqual(self.answer_all(printed_interface_change='a copy is printed; no interface moved, the printed copies still fit'), self.n_asked - facts - 1)
         self.assertEqual(self.run_gate('--offline', '--part', FOOT)[0], 0)
         self.fusion.clear('fusion_export', FOOT); self.fusion.set_export(FOOT, stl_bytes(MESHES['foot v3'](), 'Lamp foot'))
         code, out, err = self.gate('export', FOOT)
@@ -471,7 +480,10 @@ class WholeChain(Lamp):
     def step_9_the_session_start_digest_names_what_is_open(self):
         text = gate_hook.output(self.root)
         self.assertEqual(text.splitlines()[0], 'Print gate of %s (fusion-bambulab; skill: gate)' % self.root)
-        self.assertIn('gate [enforce]: 3 parts | 0 changed, not checked | 1 checked, no stamp | 2 stamped | 1 open findings | 0 questions | 1 STLs without a valid stamp', text)
+        # the foot was exported again and the project still places its earlier mesh: its bed face is known, but what faces down on the
+        # new geometry is not placed, pre-checked or sliced yet, so print.bed_face is asked again, not answered by the facts
+        self.assertIn('gate [enforce]: 3 parts | 0 changed, not checked | 1 checked, no stamp | 2 stamped | 1 open findings | 1 questions | 1 STLs without a valid stamp', text)
+        self.assertRegex(text, r'  ASK     %s  print.bed_face  ' % FOOT)
         self.assertRegex(text, r'  FAIL    %s  walls.min_material  wall 0.86 mm .* under 1.5  \[F-[0-9a-f]{6}\]' % CLIP)
         self.assertIn('  checked, no stamp yet (not exported): %s' % CLIP, text); self.assertIn('  STLs without a valid stamp: stl/cable_clip.stl', text)
         self.assertIn('python3 gate/tools/gate.py run --changed', text); self.assertNotIn('forked', text); self.assertNotIn('older than', text)

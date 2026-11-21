@@ -1,0 +1,70 @@
+{
+ "judge": "inserts_pocket_shape",
+ "case": "a straight D3.5 through hole 45.5 long with an insert ref on its axis, from a census that did not measure where along the axis the insert lies: NOT_RUN (the pocket rules judge it), never asked away",
+ "incident": "a key-access bore was failed as an insert pocket, and its walls and missing relief with it",
+ "facts": {
+  "holes": [
+   {
+    "id": "h2",
+    "anchor": {
+     "kind": "hole",
+     "axis": [
+      1,
+      0,
+      0
+     ],
+     "point": [
+      54,
+      0,
+      -14
+     ]
+    },
+    "segments": [
+     {
+      "d": 3.5,
+      "len": 45.5
+     }
+    ],
+    "depth": 45.5,
+    "through": true,
+    "floor": null,
+    "exit": null,
+    "class": {
+     "kind": "M3x4x5",
+     "match": "band",
+     "role": "insert_pocket",
+     "table": "inserts"
+    },
+    "coaxial": [
+     {
+      "name": "Clamp HW / insert M3x4x5 (set screw)",
+      "kind": "hardware",
+      "part": null
+     },
+     {
+      "name": "Clamp HW / grub screw M3x4 (set screw)",
+      "kind": "hardware",
+      "part": null
+     }
+    ],
+    "arc": 1.0
+   }
+  ],
+  "openings": [],
+  "counts": {}
+ },
+ "params": {
+  "screws.wood_pattern": "(?i)wood|chipboard|self[- ]?tapping|tapping screw|spax",
+  "inserts.ref_pattern": "(?i)insert",
+  "fits.pin_ref_pattern": "(?i)(?<![a-z])(?:pins?|dowels?|rods?|shafts?|axles?)(?![a-z])",
+  "sensors.magnet_pocket_d": 4.2,
+  "sensors.magnet_pocket_depth": 2.1,
+  "sensors.magnet_d6_pocket_d": 6.2,
+  "sensors.magnet_d6_pocket_depth": 2.6
+ },
+ "expect": [
+  {
+   "verdict": "NOT_RUN"
+  }
+ ]
+}

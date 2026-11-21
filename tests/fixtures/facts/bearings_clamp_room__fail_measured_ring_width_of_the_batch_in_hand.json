@@ -1,0 +1,154 @@
+{
+ "judge": "bearings_clamp_room",
+ "case": "the ring of the batch in hand is 10.4 wide (measured by the project): the washer room 9.7 leaves 0.7, enough for 0.3, and the printed cap 9.7 leaves 0.7, short of 1.0",
+ "facts": {
+  "bearings": [
+   {
+    "ref": "ref bearing 6814 lower",
+    "designation": "6814",
+    "by": "geometry",
+    "d": 70.0,
+    "D": 90.0,
+    "B": 10.0,
+    "anchor": {
+     "kind": "bearing",
+     "axis": [
+      0,
+      0,
+      1
+     ],
+     "point": [
+      0.0,
+      0.0,
+      34.0
+     ]
+    },
+    "rings": {
+     "inner": {
+      "faces": [
+       {
+        "side": "+",
+        "covered": [
+         {
+          "name": "Base",
+          "kind": "printed",
+          "part": "demo/base",
+          "share": 1.0,
+          "points": 1,
+          "gap": 0.0,
+          "touches_other_ring": false
+         }
+        ]
+       },
+       {
+        "side": "-",
+        "covered": [
+         {
+          "name": "Base",
+          "kind": "printed",
+          "part": "demo/base",
+          "share": 1.0,
+          "points": 1,
+          "gap": 0.0,
+          "touches_other_ring": false
+         }
+        ]
+       }
+      ]
+     },
+     "outer": {
+      "faces": [
+       {
+        "side": "+",
+        "covered": [
+         {
+          "name": "ref washer M3 large (x6)",
+          "kind": "hardware",
+          "part": null,
+          "share": 0.22,
+          "points": 6,
+          "gap": 0.0,
+          "touches_other_ring": false
+         }
+        ]
+       },
+       {
+        "side": "-",
+        "covered": [
+         {
+          "name": "Column tube",
+          "kind": "printed",
+          "part": "demo/column_tube",
+          "share": 1.0,
+          "points": 1,
+          "gap": 0.0,
+          "touches_other_ring": false
+         }
+        ]
+       }
+      ]
+     }
+    },
+    "clamps": [
+     {
+      "ring": "outer",
+      "side": "+",
+      "by": "washer",
+      "name": "ref washer M3 large (x6)",
+      "room": 9.7,
+      "ring_width": 10.0
+     },
+     {
+      "ring": "inner",
+      "side": "+",
+      "by": "printed",
+      "name": "Base",
+      "part": "demo/base",
+      "room": 9.7,
+      "ring_width": 10.0
+     }
+    ],
+    "seat": {
+     "inner": null,
+     "outer": {
+      "d": 90.0,
+      "part": "demo/column_tube",
+      "len": 10.0,
+      "entry_d": 90.25
+     }
+    }
+   }
+  ],
+  "seats_without_bearing": []
+ },
+ "params": {
+  "bearings.contact_gap_max": 0.05,
+  "bearings.clamp_room": 1.0,
+  "bearings.clamp_room_washer": 0.3
+ },
+ "ctx": {
+  "part": "demo/base"
+ },
+ "expect": [
+  {
+   "verdict": "FAIL",
+   "measure": 0.7,
+   "limit": 1.0
+  }
+ ],
+ "tables": {
+  "bearings": {
+   "sizes": {
+    "6814": {
+     "d": 70.0,
+     "D": 90.0,
+     "B": 10.4,
+     "measured": {
+      "source": "calliper on the batch",
+      "date": "2031-01-01"
+     }
+    }
+   }
+  }
+ }
+}

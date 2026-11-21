@@ -165,11 +165,12 @@ Checked by the gate. A finding stops the stamp of the part.
     1. Turn the pocket to a face that is open.
     2. Open a window in what covers the mouth.
     3. A neighbour in front of the mouth is no finding of this rule: write into the build notes that the insert is set before that part is mounted.
-- **Every heat-set pocket has a known profile** (`inserts.pocket_shape`, block at design). A hole whose diameters fall in the band of an insert kind of rules/tables/inserts.json has exactly the pocket profile of that kind: melt relief, lead-in, hole, depth. The profile is cut by the shared pocket tool from the table, never typed into a part script. A pocket shortened for a thin part is a named exception, not a second profile.
+- **Every heat-set pocket has a known profile** (`inserts.pocket_shape`, block at design). A hole whose diameters fall in the band of an insert kind of rules/tables/inserts.json has exactly the pocket profile of that kind: melt relief, lead-in, hole, depth. The profile is cut by the shared pocket tool from the table, never typed into a part script. A pocket shortened for a thin part is a named exception, not a second profile. A profile counts only where it was printed: an exact pocket of a row that records prints ("measured_under" of the row) fails as "measured under other settings" when the declared target of the part (nozzle, material, hole compensation, layer height) is none of them.
   - Fix, in this order:
     1. Cut the pocket again from the table with the shared pocket tool, together with its relief.
     2. A kind with no measured row: print a coupon in the final filament first (inserts.coupon_first), then add the row.
-    3. If the hole is not an insert pocket, answer the question "what is this hole" once.
+    3. A profile measured under other settings: print the coupon plate of the target (gate.py coupons --for KEY) and record the print in gate/owner/tables.json, or cut the profile measured for this target.
+    4. If the hole is not an insert pocket, answer the question "what is this hole" once.
 - **Every pocket has its melt relief** (`inserts.relief_missing`, block at design). Every heat-set pocket is cut together with a melt relief at its mouth: a step of a relief diameter of the table, 0.4 mm to 0.6 mm deep (whole layers), on the face the mating part lands on, wherever a relief diameter of the table leaves 2.45 mm beside it. The insert ends flush with the relief floor. A pocket with no relief is a row on every face, the bed face included. A pocket at the bottom of a recess (a spot face, a counterbore) needs its relief in the floor of that recess: the recess is not the relief.
   - Fix, in this order:
     1. Cut the relief with the shared pocket tool. A new pocket is never cut "relief later".
@@ -222,6 +223,20 @@ Checked by the gate. A finding stops the stamp of the part.
     2. Shorten the stack under the head.
     3. Never reach the thread by a deeper counterbore.
     4. Nothing receives the thread: model the insert or nut as a ref body, or name the body that is there so that its ref pattern matches.
+- **One screw family, in stock lengths** (`screws.family_lengths`, block at design). A project uses one screw family and drive ("hex socket: cap DIN 912, button ISO 7380, countersunk DIN 7991") in the lengths its owner stocks (rules/tables/screws.json "stock_lengths", the project's own list in gate/owner/tables.json). The length that reaches the thread is chosen; no long through-bolts. A screw of another family, a length outside the stock list, and a ref named with another length than it is modelled with fail before the design depends on it.
+  - Fix, in this order:
+    1. Take the stock length that reaches the thread, and move the head or the counterbore to it.
+    2. A family the project really uses (a set screw, a wood screw): the owner names it in screws.family.
+    3. Name the ref with the length it is modelled with.
+- **A counterbore is only as deep as the head** (`screws.head_recess`, block at design). A counterbore is the head height plus 0.5 mm to 2.0 mm. The thread is reached by the screw length, never by a deep counterbore. A head is not raised into a zone that a moving part sweeps.
+  - Fix, in this order:
+    1. Use the next longer stock screw and a shallower counterbore.
+    2. Fill under the head rather than leaving it proud or deep.
+- **A head bears on a full ring** (`screws.head_seat_full_ring`, block at design). A head bears on a full ring of plastic: hole and seat lie fully inside material, with a margin to the edge. A counterbore near an edge becomes a U-slot or gets a boss. Heads of neighbouring screws do not overlap, and no screw ends in air.
+  - Fix, in this order:
+    1. Move the screw inward, or add a boss under the head.
+    2. Make the seat a U-slot that bears on both flanks.
+    3. A head on the sacrificial bridge steps of a counterbore printed face down: the owner waives the group once.
 - **The whole screw path is open** (`screws.hole_through`, block at design). For every screw the path head seat, clearance hole, thread is open: no more than 0.1 mm of the shank lies in solid printed plastic. Holes are cut through-all or 1.0 mm past the face, never to a typed depth that a later growth of the body can close. Holes and pockets are checked again after every join or fill. One skin is meant: the sacrificial bridge right under a head whose counterbore prints facing the bed, up to one bridge step (0.3 mm) thick. It is told with its bench step and does not fail here; whether it is a bridge layer or a leftover skin is asked once, by access.hole_closed. The same skin anywhere else along the screw fails.
   - Fix, in this order:
     1. Cut the hole again through everything the screw passes, through-all or past the face.
@@ -246,9 +261,6 @@ Asked by the gate. Each is answered with evidence, never with a typed number.
 
 - **Enough screws on a joint that carries load** (`screws.count_load_joint`, attest at design, once per changed part). A joint that carries torque or tipping has at least 4 screws, on the largest bolt circle the parts allow; the count comes from the load on the farthest screw. A clamp plate in the load path keeps its thickness and its screw count: neighbours of the project's own design move before the plate is thinned or a screw is dropped.
   - Question: "Does this part sit in a joint that carries torque or tipping, and how many screws hold it?"
-- **One screw family, in stock lengths** (`screws.family_lengths`, attest at design, once per changed part, deferred: registered, not asked or run yet). A project uses one screw family and drive ("hex socket: cap DIN 912, button ISO 7380, countersunk DIN 7991") in the lengths its owner stocks (rules/tables/screws.json, stock_lengths). The length that reaches the thread is chosen; no long through-bolts. A length outside the stock list is flagged before the design depends on it.
-- **A counterbore is only as deep as the head** (`screws.head_recess`, attest at design, once per changed part, deferred: registered, not asked or run yet). A counterbore is the head height plus 0.5 mm to 2.0 mm. The thread is reached by the screw length, never by a deep counterbore. A head is not raised into a zone that a moving part sweeps.
-- **A head bears on a full ring** (`screws.head_seat_full_ring`, attest at design, once per changed part, deferred: registered, not asked or run yet). A head bears on a full ring of plastic: hole and seat lie fully inside material, with a margin to the edge. A counterbore near an edge becomes a U-slot or gets a boss. Heads of neighbouring screws do not overlap, and no screw ends in air.
 - **A clamp that goes on through a bearing is meant** (`screws.load_through_bearing`, attest at design, once per finding). Screws may clamp across an open gap between two parts when one part presses a bearing ring and the load goes on through the bearing to the other part: through its balls to the other ring, and on through what stands against that ring (a spacer, a second bearing) to the other part, so the screws preload a bearing stack. The gate measures only the bodies at the screw: it sees the ring one part presses and the other part standing off it, and asks.
   - Question: "The screws of this part clamp across an open gap; {by} is pressed by one of the two parts, and the other stands off it (the finding says by how much). Does the load go on from that bearing, through its balls and its other ring and what stands against that ring, to the other part, so that the screws preload a bearing stack?"
   - Fix, in this order:
@@ -273,7 +285,7 @@ The incident behind each rule, the evidence a question takes and the numbers of 
 
 Checked by the gate. A finding stops the stamp of the part.
 
-- **A washer lies on its landing** (`washers.landing`, block at design). Every washer lies on material over at least 95 % of its ring, within 0.05 mm, in its real seated position and at its measured outer diameter. The ring is counted outside the opening the washer sits over (its screw hole, a pocket mouth with its relief). A washer over a slot of the part bears on the two flanks of the slot: it passes when it reaches at least 1.0 mm over each flank and its ring is on material everywhere beside the slot. It fails when a flank is missing, and when the slot is nearly as wide as the washer. A spot face is at least 1.2 mm wider than the washer. A clamp washer on a bearing ring is the one washer that bridges: it bears on its ring, and everything else under it stays at least 1.0 mm below its face.
+- **A washer lies on its landing** (`washers.landing`, block at design). Every washer lies on material over at least 95 % of its ring, within 0.05 mm, in its real seated position and at its measured outer diameter. The ring is counted outside the opening the washer sits over (its screw hole, a pocket mouth with its relief). A washer over a slot of the part bears on the two flanks of the slot: it passes when it reaches at least 1.0 mm over each flank and its ring is on material everywhere beside the slot. It fails when a flank is missing, and when the slot is nearly as wide as the washer. A spot face is at least 1.2 mm wider than the washer. A clamp washer on a bearing ring is the one washer that bridges: it bears on its ring, and everything else under it stays at least 1.0 mm below its face. A clamp washer reaches at least 2.0 mm over its ring.
   - Fix, in this order:
     1. Widen the spot face.
     2. Move the screw so the whole ring lies on the landing.
@@ -305,7 +317,7 @@ The incident behind each rule, the evidence a question takes and the numbers of 
 
 Checked by the gate. A finding stops the stamp of the part.
 
-- **A clamped ring has clamp room** (`bearings.clamp_room`, block at design). The axial room between the two stops of a clamped ring is shorter than the ring by at least 1.0 mm: the screws close on the ring, not on the plastic, and a visible gap stays open at the flange. The same holds for a spacer clamped between two rings. Clamp screws sit next to the ring. The open gap is counted in every stack above it. A ring is clamped when two bodies touch its two faces (each within 0.05 mm); a body that only stands near a face clamps nothing, and bearings.holding fails that face.
+- **A clamped ring has clamp room** (`bearings.clamp_room`, block at design). The axial room between the two stops of a clamped ring is shorter than the ring by at least 1.0 mm for a printed clamp and 1.0 mm for a steel washer clamp: the screws close on the ring, not on the plastic, and a visible gap stays open at the flange. The same holds for a spacer clamped between two rings. Clamp screws sit next to the ring. The open gap is counted in every stack above it. A ring is clamped when two bodies touch its two faces (each within 0.05 mm); a body that only stands near a face clamps nothing, and bearings.holding fails that face.
   - Fix, in this order:
     1. Set the landing of the clamp (washer landing or cover face) back from the ring face by the clamp room.
     2. A spacer clamped between two rings: make the room for it shorter than the spacer by the clamp room too.
@@ -319,23 +331,36 @@ Checked by the gate. A finding stops the stamp of the part.
     3. A cover that touches both rings: relieve it over the other ring and the seal.
     4. A bearing with no table row: add its size to the bearing table. A bearing the gate did not find at all: name its ref so the pattern matches.
     5. A ring that is free on purpose (a floating bearing against one lip, an idler pair on its bolt): owner waiver that names the bearing and what closes it.
-- **A seat fits its bearing** (`bearings.seat`, block at design). Every bearing sits in a seat of its own size: the seat diameter where the ring ends up differs from the bearing diameter (bore for a seat on a post, outer diameter for a seat in a housing) by at most 0.3 mm, or the seat is a tapered press fit: a post nominal (within that tolerance) at the end the ring enters and at most 0.5 mm wider towards the shoulder that stops it, a bore nominal at its stop and at most 0.25 mm wider towards its mouth, measured end by end; the way into the seat is not in the bearing's way by more than that; and every bearing-sized seat of the part holds a bearing. Sizes come from the bearing table; a size or formula copied from another bearing is evaluated again. Every bought bearing exists as a named ref body in each document that uses it. A seat with a bought body on its axis that no pattern recognised is not called empty: the check is not run until the body is named. A hole that is only near a bearing diameter is asked, not failed.
+- **A bearing can reach its seat** (`bearings.insertion_path`, block at design). Everything a bearing passes on the way to its seat clears it by 0.2 mm on the radius: larger than its outer diameter in a housing, smaller than its bore on a post. That includes a ring, a lip or the seat of another bearing that lies on the way. A formula copied from another bearing size is evaluated again. Measured on the body that seats the ring, over the stretch beyond the ring face on its more open side: a wall there is the seat itself (within 0.3 mm, or the band of a tapered seat) or it clears the ring.
+  - Fix, in this order:
+    1. Widen everything between the seat mouth and the seat to the bearing diameter plus the pass clearance.
+    2. Move the narrow ring behind the seat, or make it a separate part fitted after the bearing.
+    3. Put the bearing in from the other side.
+- **No printed plastic in a bearing clamp stack** (`bearings.no_plastic_in_clamp`, block at design). Between the head of a clamp screw and the ring it clamps there is steel only: the washer and the ring. At most 0.0 mm of printed plastic lies in that stack: plastic under a clamp load creeps and the clamp loosens. A longer standard screw is no reason to put plastic into the stack.
+  - Fix, in this order:
+    1. Seat the washer on the ring and the screw head on the washer.
+    2. Thread the clamp screw into the part the ring sits in, next to the ring, so nothing printed lies under the head.
+    3. Plastic that must stay in the stack: owner waiver with its thickness, and a retighten step in the build notes.
+- **A seat fits its bearing** (`bearings.seat`, block at design). Every bearing sits in a seat of its own size: the seat diameter where the ring ends up differs from the bearing diameter (bore for a seat on a post, outer diameter for a seat in a housing) by at most 0.3 mm, or the seat is a tapered press fit: a post nominal (within that tolerance) at the end the ring enters and at most 0.5 mm wider towards the shoulder that stops it, a bore nominal at its stop and at most 0.25 mm wider towards its mouth, measured end by end; the way into the seat is not in the bearing's way by more than that; and every bearing-sized seat of the part holds a bearing. Sizes come from the bearing table; a size or formula copied from another bearing is evaluated again. Every bought bearing exists as a named ref body in each document that uses it. A seat with a bought body on its axis that no pattern recognised is not called empty: the check is not run until the body is named. A hole that is only near a bearing diameter is asked, not failed. With "any" "tapered" a straight seat fails, a taper fails unless its widening is 0.25 mm or 0.5 mm within 0.05 mm, and a seat whose entry end has no 0.3 mm x 45 degree lead-in (measured where the seat wall ends) fails. With "any", a straight seat more than 0.05 mm off its bearing is shown as INFO. A seat fit counts only where it was printed: when the seat fit of the bearings table records prints, a seat of a part whose declared target is none of them fails as "measured under other settings". A through hole thinner than the bearing it would seat is asked, not called an empty seat.
   - Fix, in this order:
     1. Take d, D and B from the bearing table of the rules (tables/bearings.json).
     2. Evaluate again every size that was copied from another bearing.
     3. An entry that is in the way: widen everything the bearing passes to its own diameter and more (bearings.insertion_path).
     4. A seat with no bearing in it: place the bearing ref (in every document that uses the bearing), or remove the seat.
     5. A seat that is tapered or compensated beyond the taper parameters on purpose: the project raises them with a measured or owner value, never the agent.
-
-Asked by the gate. Each is answered with evidence, never with a typed number.
-
-- **A bearing can reach its seat** (`bearings.insertion_path`, attest at design, once per changed part, deferred: registered, not asked or run yet). Everything a bearing passes on the way to its seat clears it by 0.2 mm on the radius: larger than its outer diameter in a housing, smaller than its bore on a post. That includes a ring, a lip or the seat of another bearing that lies on the way. A formula copied from another bearing size is evaluated again.
-- **No printed plastic in a bearing clamp stack** (`bearings.no_plastic_in_clamp`, attest at design, once per changed part). Between the head of a clamp screw and the ring it clamps there is steel only: the washer and the ring. At most 0.0 mm of printed plastic lies in that stack: plastic under a clamp load creeps and the clamp loosens. A longer standard screw is no reason to put plastic into the stack.
-  - Question: "For every bearing clamp of this part: what lies between the screw head and the ring?"
+- **A bought shaft through a bearing carries a printed sleeve** (`bearings.shaft_sleeve`, block at design). A bought shaft or pin through a bearing is 2.0 mm smaller than the bore and carries a printed sleeve with 0.2 mm of axial play. A shaft of the nominal bore size is bought only after its tolerance class is read: an m6 pin does not enter a bore of the same nominal size. Its length is checked against the pocket measured on the exported part, and only ready lengths are bought. The sleeve is a one-line wall: its two diameters come from a fit ladder (walls.one_line). A bought shaft that seats the inner ring itself (no printed sleeve between) at less than 2.0 mm under the bore fails.
   - Fix, in this order:
-    1. Seat the washer on the ring and the screw head on the washer.
-    2. Thread the clamp screw into the part the ring sits in, next to the ring, so nothing printed lies under the head.
-    3. Plastic that must stay in the stack: owner waiver with its thickness, and a retighten step in the build notes.
+    1. Read the tolerance class and the real length of the bought shaft before the order.
+    2. Size the sleeve from the fit ladder, not from the model.
+- **A sleeve end takes no clamp load** (`bearings.sleeve_end_and_preload`, block at design). The end of a printed sleeve or thin spacer never takes the clamp load of a bearing: the clamp closes on steel. Preload screws are tightened evenly and only until the play is gone. A ring is pressed home only through the ring that is being fitted, never through the balls.
+  - Fix, in this order:
+    1. Let the sleeve end short of the clamped faces: it has axial play.
+    2. Clamp the rings against a steel spacer, a shoulder of the shaft or washers.
+- **One stack of a bearing pair has room** (`bearings.spacer_room`, block at design). Between two bearings on one axis only one stack (the inner rings or the outer rings) carries a fixed length that touches both rings. The other stack leaves at least 1.0 mm of room at its rings, so its second ring has no hard stop and the spacer alone sets the distance. Two fixed lengths between one pair of rings cannot both be tight.
+  - Fix, in this order:
+    1. Name the stack that sets the distance (usually the spacer between the inner rings).
+    2. Move the second stop of the other stack back by the clamp room: the seat floor under the second outer ring 1.0 deeper, or the tube shoulder 1.0 shorter.
+    3. A part that is already printed: a longer spacer on the bench (the measured room plus the clamp room), recorded as the owner's decision.
 
 Advice. No check exists yet: apply it by hand.
 
@@ -343,10 +368,8 @@ Advice. No check exists yet: apply it by hand.
 - **One stack sets a bearing pair** (`bearings.one_stack_sets_pair`, advice). In an arrangement of two bearings exactly one stack sets the length, for example the inner rings through a spacer. The other ring pair has no second hard stop: it keeps an open gap of 0.3 mm or slides. A part has one axial datum. Where two load paths meet across a bearing, one of them is a sliding fit with an open gap sized from the measured bought part.
 - **A bearing captured in the print** (`bearings.print_in`, advice). A bearing that is laid into a paused print (print-in): layers do not stick to steel, so the layer over the bearing needs plastic beside it to land on; the pause height lies on the layer grid; two parts whose lips face each other cannot be assembled round a captured bearing. Prefer a bearing that slides on after printing.
 - **A seat prints as a cylinder that opens upward** (`bearings.seat_prints_upward`, advice). A bearing seat prints as a vertical cylinder that opens upward, with no support inside it. If the layers are then loaded badly, keep the seat orientation and add material.
-- **A printed seat is tapered, and shrinks beside a thick base** (`bearings.seat_taper`, advice). A printed bearing seat is tapered with a lead-in: nominal where the ring ends up, 0.25 mm wider on the diameter at the entry (a post: smaller at its free end), with a 0.3 mm x 45 degree chamfer at the mouth. The part of a seat right beside a thick base shrinks more as it cools: compensate it by 0.5 mm on the diameter until the first print is measured, then use the measured value. Zones another ring must pass stay clear of the taper. A compensation above 0.3 mm needs that tolerance raised in the project with a measured or owner value.
-- **A bought shaft through a bearing carries a printed sleeve** (`bearings.shaft_sleeve`, advice). A bought shaft or pin through a bearing is 2.0 mm smaller than the bore and carries a printed sleeve with 0.2 mm of axial play. A shaft of the nominal bore size is bought only after its tolerance class is read: an m6 pin does not enter a bore of the same nominal size. Its length is checked against the pocket measured on the exported part, and only ready lengths are bought. The sleeve is a one-line wall: its two diameters come from a fit ladder (walls.one_line).
+- **A printed seat is tapered, and shrinks beside a thick base** (`bearings.seat_taper`, advice). A printed bearing seat is a tapered press fit with a lead-in. A post (inner ring) is nominal at the end the ring enters and 0.25 mm wider on the diameter at the shoulder that stops it (0.5 mm beside a thick base); a bore (outer ring) is nominal at its stop and 0.25 mm wider at its mouth. Where the ring enters, the seat ends in a 0.3 mm x 45 degree chamfer: at the free end of a post, at the mouth of a bore. The part of a seat right beside a thick base shrinks more as it cools: compensate it by 0.5 mm until the first print is measured, then use the measured value. Zones another ring must pass stay clear of the taper. A compensation above 0.3 mm needs that tolerance raised in the project with a measured or owner value.
 - **A shoulder touches one ring** (`bearings.shoulder_one_ring`, advice). A shoulder or hub beside a bearing touches exactly one ring. Its band lies on that ring's face, past the ring chamfer (the bearing table gives the least shoulder diameters), and it stands back from the other ring and the seal by 0.5 mm along the axis. A lip that holds a ring is at least 2.0 mm thick and follows the minimum wall; where that does not fit, pick a narrower bearing. A flat ledge that faces down in the print is not a shoulder: it cannot be printed.
-- **A sleeve end takes no clamp load** (`bearings.sleeve_end_and_preload`, advice). The end of a printed sleeve or thin spacer never takes the clamp load of a bearing: the clamp closes on steel. Preload screws are tightened evenly and only until the play is gone. A ring is pressed home only through the ring that is being fitted, never through the balls.
 
 The incident behind each rule, the evidence a question takes and the numbers of a project: `gate.py rules --md --category bearings`, or `gate/RULES.md` in a gated project.
 
@@ -372,6 +395,10 @@ Checked by the gate. A finding stops the stamp of the part.
     2. Keep it as one line: thin-wall generator on that object, checked in the sliced path.
     3. Take both diameters from a printed fit ladder (walls.one_line_ladder).
     4. Owner waiver that names the ladder and the sizes that fitted.
+- **Walls are measured on the mesh each object prints from** (`walls.placed_stl`, block at project). Every object of a registered project is measured as the project holds it: closed, one shell, walls of at least 1.5 mm (and 1.5 mm effective), no slit under 0.3 mm, no one-line wall where two lines of 0.42 mm belong. A part printed before the gate, or whose STL nobody exported again, is judged like a new export; the rows hold until the part is exported again.
+  - Fix, in this order:
+    1. Fix the part in the model and export it again: the new STL is judged at its export.
+    2. A part that is printed and stays: the owner decides its rows once in the triage list.
 - **No air gap the slicer will close** (`walls.slit`, block at export). No air gap between two walls of the STL is narrower than 0.3 mm: the slicer closes or bridges it. A slit that has to open or close in use (a clamp slit) is far wider, never under one line of the target project, and is looked at in the sliced path.
   - Fix, in this order:
     1. Widen the gap to a width the slicer keeps open.
@@ -415,6 +442,11 @@ Checked by the gate. A finding stops the stamp of the part.
     3. Another part that is there first: cut it back, move it, or move the opening together with what mates with it.
     4. A mesh in the path: make it a solid body. When it is no part of the build, ask the owner to name it in the overlay pattern.
     5. An opening that lost its function: remove it. A reserve insert under another part is removed or named unusable.
+- **The key can turn at every screw** (`access.key_swing`, block at design). A screw is reachable only if the key can also turn. Over each head 27.0 mm is free for a key with a 20.0 mm short arm, or a straight line for a long key exists. The long arm (60.0 mm) sweeps at least 180.0° free of every part fitted before it, with 5.0 mm beside the arm.
+  - Fix, in this order:
+    1. Move the gusset, rib or wall out of the swing of the key.
+    2. Move the screw to where the key can turn.
+    3. Open a straight line for a long key through the part that stands in the way.
 - **No mouth is sealed** (`access.mouth_sealed`, block at design). No pocket or hole is closed over its whole section, at every end it has, by a body nearer than 0.2 mm, unless that body is the fastener or the mating hole that belongs there. A blind pocket has one end. A through hole that lies against a plate at one end still takes its pin or insert from the other; holes on one axis within 2.0 mm of each other are one bore. A plain screw clearance hole needs both ends, one for the key and one for the thread behind it: one sealed end closes it. A sealed hole takes no screw, insert, pin or cable, whatever the assembly order. A body the owner named an overlay (access.overlay_pattern) seals nothing.
   - Fix, in this order:
     1. Open the mouth: cut the covering body over the full section.
@@ -440,12 +472,6 @@ Asked by the gate. Each is answered with evidence, never with a typed number.
     1. Turn the part so the hole axis is the print axis.
     2. Give the hole a roof that prints without support.
     3. Put a support blocker over the hole in every project that holds the part, and check it again after the hole moves.
-- **The key can turn at every screw** (`access.key_swing`, attest at design, once per changed part). A screw is reachable only if the key can also turn. Over each head 27.0 mm is free for a key with a 20.0 mm short arm, or a straight line for a long key exists. The long arm (60.0 mm) sweeps at least 180.0° free of every part fitted before it, with 5.0 mm beside the arm.
-  - Question: "For every screw of this part: can the key turn, or is there a straight line for a long key?"
-  - Fix, in this order:
-    1. Move the gusset, rib or wall out of the swing of the key.
-    2. Move the screw to where the key can turn.
-    3. Open a straight line for a long key through the part that stands in the way.
 - **Every hole has a known purpose** (`census.unknown_hole`, attest at design, once per finding). A hole the census cannot classify against the tables is named once: a blind one, or one with a bought body on its axis, through the question what goes in it (fits.pocket_content), every other one here. A short cylinder that is a piece of the same surface as another hole is not asked about. Named here too is a straight hole that is both a clearance hole and the old straight pocket of an insert, a blind hole of clearance size, and a pocket-sized cylinder whose wall is broken open, unless a screw ref lies on its axis. The answer is kept for that hole until the hole changes.
   - Question: "Hole {feature}: what is this hole for?"
 
@@ -496,17 +522,22 @@ The incident behind each rule, the evidence a question takes and the numbers of 
 
 Checked by the gate. A finding stops the stamp of the part.
 
-- **A pocket for a bought part takes its size from a printed fit** (`fits.bought_part_pocket`, block at design). A pocket, seat or bore that receives a bought part (a magnet, a pin, a nut, a board) takes its size from a named fit parameter, never from a number typed in a script. While that parameter is D (decided, never printed) for the nozzle, material, hole compensation and layer height of the project, the part is not exported: a coupon print makes it M, or the owner makes it U. A pocket whose size matches no declared fit parameter is asked once: what goes in.
+- **A pocket for a bought part takes its size from a printed fit** (`fits.bought_part_pocket`, block at design). A pocket, seat or bore that receives a bought part (a magnet, a pin, a dowel, a rod, a nut, a board, a switch, a plug) takes its size from a named fit parameter, never from a number typed in a script. While that parameter is D (decided, never printed) for the nozzle, material, hole compensation and layer height of the project, the part is not exported: a coupon print makes it M, or the owner makes it U. A hole with a steel pin, dowel or rod on its axis is a press, slip or running fit of that pin (its diameter plus 0.0 mm, 0.05 mm (PA6-CF 0.1) or 0.3 mm), the pin is a stock length of the pins table, and a pin in a blind pocket is longer than the pocket. A slot or window of the size of a box kind of the pockets table (a board, a switch, a nut slot, a plug channel) is that pocket. A pocket whose size matches no declared fit parameter is asked once: what goes in.
   - Fix, in this order:
-    1. Print a coupon first: a small block with the pocket in three sizes, in the real material, from the real .3mf project. Try the bought part in each.
+    1. Print a coupon first: `python3 gate/tools/gate.py coupons --for KEY` writes the coupon plate of every fit this project has not printed (a pocket in three sizes, in the real material, from the real .3mf project). Try the bought part in each.
     2. Record the size that fits as the parameter: python3 gate/tools/gate.py owner param NAME VALUE --tag M --source "coupon, date". It is stored with what it was printed under.
     3. Or the owner sets the size without a print: the same command with --tag U.
     4. Cut the pocket from the parameter, not from a typed number.
+    5. A pin: buy a stock length of the pins table (the project lists its stock in gate/owner/tables.json) and name the ref with its size, "pin D5 x 20".
 
 Asked by the gate. Each is answered with evidence, never with a typed number.
 
-- **Fits that were never printed in this material are named** (`fits.decided_not_printed`, attest at export, once per changed part). Every fit size of this part that was never printed in the target material and on the target nozzle is listed for the owner. A size measured in another material or on another nozzle counts as decided (D) here.
-  - Question: "Which fit sizes of this part were decided and never printed in the target material and on the target nozzle?"
+- **Fits that were never printed in this material are named** (`fits.decided_not_printed`, attest at design, once per finding). Every fit size of this part that was never printed under the declared target (its nozzle, material, hole compensation and layer height) is listed for the owner: the fit parameters and table rows the judges of this part read for its pockets, seats and pins, while they are D (decided) or S here. A size measured under other settings counts as D here.
+  - Question: "This part relies on fits that were never printed under its declared target: {by}. Print the coupon plate (gate.py coupons --for KEY) or list them for the owner."
+  - Fix, in this order:
+    1. Print the coupon plate of the target: python3 gate/tools/gate.py coupons --for KEY.
+    2. Record each fit that fits as measured: gate.py owner param NAME VALUE --tag M (a table row: gate/owner/tables.json).
+    3. Until then the part waits, or the owner sets the values (tag U).
 - **What goes in this pocket** (`fits.pocket_content`, attest at design, once per finding). A blind hole that fits no row of the tables and no declared pocket parameter is named once: what goes in. A bought part goes in only with a fit parameter that is measured (M) or owner-set (U) for this project, and the pocket has that parameter's size.
   - Question: "What goes in the pocket {feature}? If a bought part goes in, name the fit parameter its size comes from."
 

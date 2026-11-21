@@ -1,0 +1,347 @@
+{
+ "judge": "access_key_swing",
+ "case": "another printed part stands beside two heads in the swing and over them in the straight path: whether it is in the way depends on the assembly order, so ONE assembly.order question for the part, not a FAIL per head",
+ "incident": "a key swing check gave one FAIL per head for a cover that the screw path rule rightly asked about once",
+ "facts": {
+  "openings": [
+   {
+    "feature": "s1",
+    "of": "screw_head",
+    "ref": "ref HW / screw s1",
+    "anchor": {
+     "kind": "screw",
+     "axis": [
+      0,
+      0,
+      1
+     ],
+     "point": [
+      10.0,
+      0,
+      5
+     ]
+    },
+    "end": "mouth",
+    "paths": {
+     "own": {
+      "r": 2.75,
+      "reach": 60.0,
+      "free": 9.5,
+      "hits": [
+       {
+        "name": "Cover",
+        "kind": "printed",
+        "at": 9.5,
+        "share": 1.0,
+        "approx": false,
+        "expected": false,
+        "part": null
+       }
+      ]
+     },
+     "tool": {
+      "r": 3.25,
+      "reach": 60.0,
+      "free": 9.5,
+      "hits": [
+       {
+        "name": "Cover",
+        "kind": "printed",
+        "at": 9.5,
+        "share": 1.0,
+        "approx": false,
+        "expected": false,
+        "part": null
+       }
+      ]
+     }
+    },
+    "swing": {
+     "h": 20.0,
+     "r": 2.5,
+     "reach": 60.0,
+     "n": 12,
+     "from": [
+      1,
+      0,
+      0
+     ],
+     "free": [
+      60.0,
+      60.0,
+      60.0,
+      9.5,
+      9.5,
+      9.5,
+      60.0,
+      60.0,
+      9.5,
+      9.5,
+      9.5,
+      60.0
+     ],
+     "first": [
+      null,
+      null,
+      null,
+      "Cover",
+      "Cover",
+      "Cover",
+      null,
+      null,
+      "Cover",
+      "Cover",
+      "Cover",
+      null
+     ],
+     "blocks": [
+      [],
+      [],
+      [],
+      [
+       {
+        "name": "Cover",
+        "kind": "printed",
+        "at": 9.5,
+        "share": 1.0,
+        "approx": false,
+        "part": null
+       }
+      ],
+      [
+       {
+        "name": "Cover",
+        "kind": "printed",
+        "at": 9.5,
+        "share": 1.0,
+        "approx": false,
+        "part": null
+       }
+      ],
+      [
+       {
+        "name": "Cover",
+        "kind": "printed",
+        "at": 9.5,
+        "share": 1.0,
+        "approx": false,
+        "part": null
+       }
+      ],
+      [],
+      [],
+      [
+       {
+        "name": "Cover",
+        "kind": "printed",
+        "at": 9.5,
+        "share": 1.0,
+        "approx": false,
+        "part": null
+       }
+      ],
+      [
+       {
+        "name": "Cover",
+        "kind": "printed",
+        "at": 9.5,
+        "share": 1.0,
+        "approx": false,
+        "part": null
+       }
+      ],
+      [
+       {
+        "name": "Cover",
+        "kind": "printed",
+        "at": 9.5,
+        "share": 1.0,
+        "approx": false,
+        "part": null
+       }
+      ],
+      []
+     ]
+    }
+   },
+   {
+    "feature": "s2",
+    "of": "screw_head",
+    "ref": "ref HW / screw s2",
+    "anchor": {
+     "kind": "screw",
+     "axis": [
+      0,
+      0,
+      1
+     ],
+     "point": [
+      20.0,
+      0,
+      5
+     ]
+    },
+    "end": "mouth",
+    "paths": {
+     "own": {
+      "r": 2.75,
+      "reach": 60.0,
+      "free": 8.0,
+      "hits": [
+       {
+        "name": "Cover",
+        "kind": "printed",
+        "at": 8.0,
+        "share": 1.0,
+        "approx": false,
+        "expected": false,
+        "part": null
+       }
+      ]
+     },
+     "tool": {
+      "r": 3.25,
+      "reach": 60.0,
+      "free": 8.0,
+      "hits": [
+       {
+        "name": "Cover",
+        "kind": "printed",
+        "at": 8.0,
+        "share": 1.0,
+        "approx": false,
+        "expected": false,
+        "part": null
+       }
+      ]
+     }
+    },
+    "swing": {
+     "h": 20.0,
+     "r": 2.5,
+     "reach": 60.0,
+     "n": 12,
+     "from": [
+      1,
+      0,
+      0
+     ],
+     "free": [
+      60.0,
+      60.0,
+      60.0,
+      8.0,
+      8.0,
+      8.0,
+      60.0,
+      60.0,
+      8.0,
+      8.0,
+      8.0,
+      60.0
+     ],
+     "first": [
+      null,
+      null,
+      null,
+      "Cover",
+      "Cover",
+      "Cover",
+      null,
+      null,
+      "Cover",
+      "Cover",
+      "Cover",
+      null
+     ],
+     "blocks": [
+      [],
+      [],
+      [],
+      [
+       {
+        "name": "Cover",
+        "kind": "printed",
+        "at": 8.0,
+        "share": 1.0,
+        "approx": false,
+        "part": null
+       }
+      ],
+      [
+       {
+        "name": "Cover",
+        "kind": "printed",
+        "at": 8.0,
+        "share": 1.0,
+        "approx": false,
+        "part": null
+       }
+      ],
+      [
+       {
+        "name": "Cover",
+        "kind": "printed",
+        "at": 8.0,
+        "share": 1.0,
+        "approx": false,
+        "part": null
+       }
+      ],
+      [],
+      [],
+      [
+       {
+        "name": "Cover",
+        "kind": "printed",
+        "at": 8.0,
+        "share": 1.0,
+        "approx": false,
+        "part": null
+       }
+      ],
+      [
+       {
+        "name": "Cover",
+        "kind": "printed",
+        "at": 8.0,
+        "share": 1.0,
+        "approx": false,
+        "part": null
+       }
+      ],
+      [
+       {
+        "name": "Cover",
+        "kind": "printed",
+        "at": 8.0,
+        "share": 1.0,
+        "approx": false,
+        "part": null
+       }
+      ],
+      []
+     ]
+    }
+   }
+  ]
+ },
+ "params": {
+  "access.key_swing_deg": 180.0,
+  "access.key_long_arm": 60.0,
+  "access.free_height_over_head": 27.0,
+  "access.key_short_arm": 20.0,
+  "access.key_side_clearance": 5.0,
+  "access.min_blocked_share": 0.02,
+  "access.seal_gap": 0.2
+ },
+ "expect": [
+  {
+   "verdict": "FAIL",
+   "ask": "assembly.order",
+   "by": [
+    "Cover"
+   ]
+  }
+ ]
+}

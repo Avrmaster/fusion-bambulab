@@ -285,6 +285,21 @@ class Seats(unittest.TestCase):
         self.assertAlmostEqual(s['entry_other'], 31.0, delta=0.03)                   # the shoulder, 3 mm wider than the bore
         self.assertIsNone(R.seat_scan(tube(0, 0, -5, 12, 10.0), (0, 0, 6), Z, 12.5, 12.0, outer=False))
 
+    def test_the_lead_in_where_a_post_and_a_bore_end(self):
+        sharp = lambda p: tube(0, 0, -5, 12, 12.5)(p) or tube(0, 0, -5, 0, 16.0)(p)
+        cham = lambda p: (tube(0, 0, -5, 11.7, 12.5)(p) or (11.7 <= p[2] < 12 and math.hypot(p[0], p[1]) < 12.5 - (p[2] - 11.7))
+                          or tube(0, 0, -5, 0, 16.0)(p))
+        a, b = R.seat_scan(sharp, (0, 0, 6), Z, 12.5, 12.0, outer=False), R.seat_scan(cham, (0, 0, 6), Z, 12.5, 12.0, outer=False)
+        self.assertEqual(a['lead_in'], 0.0); self.assertAlmostEqual(a['entry_end'], 0.0, delta=0.03)   # a sharp post that ends at the ring's face
+        self.assertAlmostEqual(b['lead_in'], 0.3, delta=0.03); self.assertAlmostEqual(b['entry_end'], 0.0, delta=0.03)
+        longer = lambda p: (tube(0, 0, -5, 15.7, 12.5)(p) or (15.7 <= p[2] < 16 and math.hypot(p[0], p[1]) < 12.5 - (p[2] - 15.7)) or tube(0, 0, -5, 0, 16.0)(p))
+        c = R.seat_scan(longer, (0, 0, 6), Z, 12.5, 12.0, outer=False)
+        self.assertAlmostEqual(c['lead_in'], 0.3, delta=0.03); self.assertAlmostEqual(c['entry_end'], 4.0, delta=0.03)   # the chamfer at the post's free end, 4 mm out
+        bore = lambda p: (box((-40, -40, -5), (40, 40, 12))(p) and not tube(0, 0, -6, 13, 23.5)(p)
+                          and not (p[2] > 11.7 and math.hypot(p[0], p[1]) < 23.5 + (p[2] - 11.7)) and not tube(0, 0, -6, 0.001, 20)(p))
+        d = R.seat_scan(bore, (0, 0, 6), Z, 23.5, 12.0, outer=True)
+        self.assertAlmostEqual(d['lead_in'], 0.3, delta=0.03); self.assertEqual(d['entry_side'], '+')
+
     def test_a_census_seat_with_and_without_its_bearing(self):
         self.assertTrue(R.seat_has_bearing((0, 0, 12), Z, 12.0, [((0, 0, 6), (0, 0, -1))]))
         self.assertFalse(R.seat_has_bearing((0, 0, 12), Z, 12.0, [((30, 0, 6), Z)]))
@@ -461,6 +476,16 @@ class Rod:
         mid = (self.cx + (self.ri + self.r) / 2.0, self.cy)
         return [((mid[0], mid[1], z), (0.0, 0.0, sgn), ((self.cx - self.r, self.cy - self.r, z), (self.cx + self.r, self.cy + self.r, z)))
                 for z, sgn in ((self.z0, -1.0), (self.z1, 1.0))]
+
+
+class YRod:
+    """A cylinder along y, mm: a shaft lying across a mouth that faces up."""
+    def __init__(self, cx, cz, y0, y1, r): self.cx, self.cz, self.y0, self.y1, self.r = cx, cz, y0, y1, r
+    def has(self, p): return self.y0 < p[1] < self.y1 and math.hypot(p[0] - self.cx, p[2] - self.cz) < self.r
+    def box(self): return (self.cx - self.r, self.y0, self.cz - self.r), (self.cx + self.r, self.y1, self.cz + self.r)
+    def circles(self): return []
+    def cyls(self): return []
+    def planes(self): return []
 
 
 class Add:
@@ -1007,6 +1032,48 @@ class Probes(unittest.TestCase):
         self.assertEqual((head['paths']['own']['r'], head['paths']['tool']['r']), (2.75, 3.25))
         self.assertEqual([h['name'] for h in head['paths']['tool']['hits']], ['Cover']); self.assertAlmostEqual(head['paths']['tool']['free'], 9.5, delta=0.15)
         self.assertEqual(self.opening(facts, heads[1])['paths']['tool']['free'], 60.0)                 # nothing over the second screw
+
+    def test_openings_the_profile_in_front_of_a_mouth_tells_a_seal_from_a_clip(self):
+        part = Sub(Blk((0, 0, 0), (40, 40, 10)), Rod(10, 10, -1, 11, 1.7))
+        feats = {'holes': [{'id': 'h1', 'anchor': {'kind': 'hole', 'axis': [0, 0, 1], 'point': [10, 10, 10]}, 'segments': [{'d': 3.4, 'len': 10.0}], 'depth': 10.0,
+                            'through': False, 'floor': None, 'exit': None, 'class': None, 'coaxial': []}], 'openings': []}
+        covers = {'flat': Blk((0, 0, 10.0), (20, 20, 12)),
+                  'clip': Add(Blk((11.4, 0, 10), (20, 20, 12)), Blk((0, 0, 12), (20, 20, 13))),     # a sliver at the rim, the whole section only 2 mm out
+                  'shaft': YRod(10, 14.0, 0, 20, 4.0)}                                            # a D8 shaft lying across the D3.4 mouth
+        got = {}
+        for name, cover in covers.items():
+            env = self.unit('fusion_openings', [Comp('Bracket', [Body('Body1', part)]), Comp('Cover', [Body('Body1', cover)])], features=feats)
+            hit = [h for h in self.opening(env['facts'], 'h1')['paths']['own']['hits'] if h['name'] == 'Cover'][0]
+            got[name] = hit
+            self.assertGreaterEqual(hit['full_window'], 1.7 + 0.2)
+        flat, clip, shaft = got['flat']['profile'], got['clip']['profile'], got['shaft']['profile']
+        self.assertGreaterEqual(flat[0][1], 0.95); self.assertLessEqual(flat[0][0], 0.1)
+        self.assertLess(max(p[1] for p in clip if p[0] <= 0.45), 0.3); self.assertGreaterEqual(clip[-1][0], 2.0)
+        self.assertGreaterEqual(max(p[1] for p in shaft if p[0] <= 0.45), 0.3); self.assertLessEqual(shaft[-1][0], 1.0); self.assertGreaterEqual(shaft[-1][1], 0.95)
+        import gate_judges
+        self.assertEqual([gate_judges._seals_mouth(got[k], 0.2, 1.7) for k in ('flat', 'clip', 'shaft')], [True, False, True])
+
+    def test_openings_the_swing_keeps_what_blocks_each_direction(self):
+        sc = self.bracket_scene()
+        rib = Add(Sub(Blk((0, 0, 0), (40, 40, 10)), Rod(10, 10, -1, 11, 1.7), Rod(30, 10, -1, 11, 1.7), Rod(30, 30, 4.0, 11, 1.7), Rod(30, 30, -1, 3.16, 1.7)),
+                  Blk((33, -40, 10), (45, 60, 45)), Blk((24, 4, 40), (36, 16, 41)))           # a tall wall of the part beside head 2 and a roof over it
+        sc[0] = Comp('Bracket', [Body('Body1', rib)])
+        sc.append(Comp('ref wrist stl', [], [MeshBody('wall', [(-30, 2, 25), (50, 2, 25), (50, 2, 45), (-30, 2, 45)], [(0, 1, 2), (0, 2, 3)])]))
+        env = self.unit('fusion_openings', sc, features=self.FEATURES)
+        heads = {o['ref']: o for o in env['facts']['openings'] if o['of'] == 'screw_head'}
+        sw = heads['ref hardware / screw M3x12 cap (2)']['swing']
+        self.assertEqual(len(sw['blocks']), sw['n'])
+        kinds = [sorted({b['kind'] for b in d}) for d in sw['blocks']]
+        self.assertIn(['self'], [k for k in kinds if 'self' in k and len(k) == 1] or [['missing']])
+        self.assertTrue(any('mesh' in k for k in kinds))
+        self.assertTrue(all(b['approx'] for d in sw['blocks'] for b in d if b['kind'] == 'mesh'))    # a mesh in a swing is met by its box only
+        import gate_judges, gate_params, gate_registry
+        reg = gate_registry.load_default(); rule = reg['rules']['access.key_swing']
+        vals = gate_params.values(gate_params.resolve(reg, {}, None), rule['params'])
+        ctx = {'part': 'demo/bracket', 'rule': rule['id'], 'tables': reg.get('tables') or {}, 'census': None, 'target': None, 'prev': None, 'intent': None}
+        out = gate_judges.run_judge(rule, env['facts'], vals, ctx)
+        self.assertNotIn('FAIL', [f['verdict'] for f in out if f.get('ask') is None and 'wrist' in ' '.join(f.get('by') or [])])   # the mesh is never a FAIL
+        self.assertIn('NOT_RUN', [f['verdict'] for f in out if 'ref wrist stl' in (f.get('by') or [])])
 
     def test_openings_cut_by_the_clock_body_by_body_give_the_facts_of_one_call(self):
         one = self.unit('fusion_openings', self.bracket_scene(), features=self.FEATURES)
@@ -1851,6 +1918,19 @@ class Probes(unittest.TestCase):
             self.assertEqual([f['verdict'] for f in out], verdicts, (setback, out))
             if verdicts: self.assertEqual((out[0]['limit'], out[0]['by']), (1.0, ['demo/column']))
 
+    def test_a_clamp_washer_that_moved_outward_laps_its_ring_too_little(self):
+        facts = self.unit('fusion_screws', self.clamp_scene(1.0), part='Column')['facts']
+        self.assertAlmostEqual(facts['washers'][0]['landing']['ring_overlap'], 2.0, delta=0.05)
+        moved = self.clamp_scene(1.0)
+        column = Sub(Blk((-40, -40, -5), (60, 40, 11.0)), Rod(0, 0, 0.0, 20.0, 23.5), Rod(0, 0, -6.0, 0.001, 20.0), Rod(28.3, 0, -1, 20, 1.7))
+        moved[0] = Comp('Column', [Body('Body1', column)])
+        moved[2] = Comp('ref hardware', [Body('screw M3x12 cap (1)', Add(Rod(28.3, 0, 3.0, 13.5, 1.5), Rod(28.3, 0, 13.5, 16.5, 2.75))),
+                                         Body('washer M3 wide', Rod(28.3, 0, 12.0, 13.5, 6.0, 1.6))])
+        facts = self.unit('fusion_screws', moved, part='Column')['facts']
+        self.assertAlmostEqual(facts['washers'][0]['landing']['ring_overlap'], 1.2, delta=0.05)
+        out = self.judge_washers(facts)
+        self.assertEqual([(f['verdict'], f['limit']) for f in out], [('FAIL', 2.0)])
+
     def test_a_washer_over_a_relieved_pocket_lies_on_its_landing(self):
         plate = Sub(Blk((0, 0, 0), (40, 40, 10)), Rod(20, 20, 9.46, 11, 3.75), Rod(20, 20, 3.0, 11, 2.2))           # D7.5 x 0.54 relief over a D4.4 pocket
         scene = [Comp('Plate', [Body('Body1', plate)]),
@@ -2105,7 +2185,9 @@ class Probes(unittest.TestCase):
         self.assertEqual(sorted((c['name'].split(' / ')[-1], c['bearing']) for c in w['landing']['covers']), [('608 (1)', True), ('Roller plate', False)])
         beside = next(c for c in w['landing']['covers'] if not c['bearing'])
         self.assertAlmostEqual(beside['gap'], 1.0, delta=0.11)
-        self.assertEqual(self.judge('washers.landing', facts, 'demo/roller_plate'), [])                 # it bears on the ring, the plastic is 1.0 below
+        got = self.judge('washers.landing', facts, 'demo/roller_plate')                                 # it bears on the ring, the plastic is 1.0 below;
+        self.assertEqual([(f['verdict'], f['limit']) for f in got], [('FAIL', 2.0)])                    # but it reaches only 1.5 over the 608's outer ring
+        self.assertAlmostEqual(got[0]['measure'], 1.5, delta=0.03)
         self.assertEqual((facts['n_screws'], facts['n_washers'], facts['not_screws']), (1, 1, []))
 
     def test_a_bearing_drawn_as_a_solid_puck_is_listed_by_its_name_and_not_run(self):

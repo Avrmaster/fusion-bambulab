@@ -1022,7 +1022,7 @@ def scan(root, doc_key=None, wall_s=20.0, transport=None, pinger=None):
 def _own_number(root, name):
     """One parameter of this project by name, or None when the registry or the parameter cannot be read."""
     try:
-        reg = gate_registry.load_default()
+        reg = gate_registry.load_default(root)
         return gate_params.values(gate_params.resolve(reg, gate_params.load_overrides(root), None), [name]).get(name)
     except Exception:                                   # a hint must never stop a scan: no number, no hint
         return None
@@ -1133,7 +1133,7 @@ SCAN_LINES = 12                 # names a scan prints per kind (new, changed, go
 def _hint_faces(root):
     """The parameter process.bought_hint_faces of this project, or None when it cannot be read (then no hint)."""
     try:
-        reg = gate_registry.load_default()
+        reg = gate_registry.load_default(root)
         return gate_params.values(gate_params.resolve(reg, gate_params.load_overrides(root), None), ['process.bought_hint_faces']).get('process.bought_hint_faces')
     except (GateError, KeyError):
         return None
@@ -1192,7 +1192,7 @@ def changed_parts(root, census=None):
     import gate_stamp
     census = census or load_census(root)
     try:
-        reg = gate_registry.load_default()
+        reg = gate_registry.load_default(root)
     except GateError:
         reg = None
     out = []
@@ -1241,15 +1241,17 @@ def print_frame(root, part, entry, layout=None):
      "bed": the height of the bed face along "up" (the lowest corner of the part's bounding box), or None,
      "source": where the orientation comes from, "why": text when "up" is None}.
 
-    The bed face is what the build table of a registered .3mf project says for the object built from the part's STL
-    (probes.project_consistency.orientations: the `orient` value bambu3mf.build() takes). That direction is in the
+    The bed face is measured on the saved .3mf: the object whose mesh is the part's STL turned as a rigid body lies on
+    the face that turn sends down (probes.project_bed). Only for a project that does not place the part yet does the
+    build table say it (probes.project_consistency.orientations: the `orient` value bambu3mf.build() takes). Either
+    way "source" names the file, the object and the plate. That direction is in the
     frame of the STL, which is the document frame; the census entry's "matrix" (part frame -> document frame, from the
     scan) turns it into the part frame, where the census holds its holes. Unknown, and said so in "why": no build table
     names the part; a table is computed, not a literal; two tables lay it on different faces; an orient value that
     cannot be read; a census entry without its matrix (scanned by an older copy of the tools: scan again)."""
     from probes import _geom, project_consistency
     layout = layout if layout is not None else load_layout(root)
-    out = {'up': None, 'bed': None, 'source': None, 'why': None}
+    out = {'up': None, 'bed': None, 'source': None, 'why': None, 'from': None}
     stl = entry.get('stl')
     if not stl:
         out['why'] = 'the census names no STL for this part'
@@ -1257,12 +1259,13 @@ def print_frame(root, part, entry, layout=None):
     rows, problems = project_consistency.orientations(root, layout, stl)
     if not rows:
         tables = [e.get('build_table') for e in layout.get('projects') or [] if isinstance(e, dict) and e.get('build_table')]
+        unplaced = 'no object of a saved .3mf project is %s turned as a rigid body' % stl       # the measured face comes first
         if not tables:
-            out['why'] = 'no registered .3mf project names a build table ("build_table" in gate/layout.json)'
+            out['why'] = 'no registered .3mf project names a build table ("build_table" in gate/layout.json), and %s' % unplaced
         elif problems:
-            out['why'] = '; '.join(problems)
+            out['why'] = '%s; %s' % ('; '.join(problems), unplaced)
         else:
-            out['why'] = 'no build table of a registered .3mf project builds an object from %s' % stl
+            out['why'] = 'no build table of a registered .3mf project builds an object from %s, and %s' % (stl, unplaced)
         return out
     bad = [r for r in rows if r['down'] is None]
     if bad:
@@ -1273,6 +1276,8 @@ def print_frame(root, part, entry, layout=None):
         out['why'] = 'the build tables lay it on different faces: %s' % '; '.join(sorted({'%s in %s: %r' % (r['object'], r['table'], r['orient']) for r in rows}))
         return out
     out['source'] = '%s: %s on plate "%s", orient %r' % (rows[0]['table'], rows[0]['object'], rows[0]['plate'], rows[0]['orient'])
+    sources = {r.get('source') or 'table' for r in rows}
+    out['from'] = 'project' if sources == {'project'} else 'table' if 'table' in sources else 'earlier geometry'      # gate_attest bed_face_measured
     m = _geom.IDENTITY if entry.get('source') == 'generated' else entry.get('matrix')     # an STL made by code is its own frame
     if not (isinstance(m, (list, tuple)) and len(m) == 16 and all(isinstance(c, (int, float)) and not isinstance(c, bool) for c in m)):
         out['why'] = 'the census holds no pose of this part (its matrix): scan the document again'
@@ -1768,7 +1773,7 @@ def cmd_run(root, args):
     too, with and without --offline: a run never reads as a pass while `gate.py status` shows an open wall or mesh row.
     A named part whose document is not open, or a run that reached no part at all, is exit 4."""
     root = os.path.abspath(root)
-    reg = gate_registry.load_default()
+    reg = gate_registry.load_default(root)
     project, layout = load_project(root), load_layout(root)
     target_key = getattr(args, 'target', None)
     target = gate_common.target_of(project, target_key)

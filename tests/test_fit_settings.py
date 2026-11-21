@@ -753,7 +753,7 @@ class Pocket(Settings):
                'sensors.magnet_depth_extra': {'value': 0.1, 'tag': 'U', 'source': 'owner, in chat', 'date': '2026-03-06'}}
         resolved = gate_params.resolve(self.reg, dict(MAGNET, **big), FULL)
         self.assertEqual((resolved['sensors.magnet_pocket_d']['value'], resolved['sensors.magnet_pocket_d']['tag']), (6.1, 'U'))
-        for d, accepted in ((6.1, True), (6.12, True), (6.2, False)):                               # the table's tolerance is 0.03
+        for d, accepted in ((6.1, True), (6.12, True), (6.25, False)):                              # the table's tolerance is 0.03 (6.2 is the pocket of the D6 magnet row)
             with self.subTest(d=d):
                 self.facts(dict(POCKET, segments=[{'d': d, 'len': 4.0}], depth=4.0))                # too deep for a magnet pocket of the table: it is asked
                 gate_plan.judge_part(self.d, self.reg, resolved, LEVER, target=FULL)
@@ -838,11 +838,12 @@ class Asked(Settings):
         self.census(LEVER, SIG1, stl='stl/lever.stl')
         design = {q['rule']: q for q in gate_attest.questions_for_part(self.d, self.reg, LEVER, SIG1, [], ('design',))}
         both = {q['rule']: q for q in gate_attest.questions_for_part(self.d, self.reg, LEVER, SIG1, [], ('design', 'export'))}
-        for rid in ('access.key_swing', 'screws.count_load_joint', 'bearings.no_plastic_in_clamp'): self.assertIn(rid, design)
+        for rid in ('screws.count_load_joint',): self.assertIn(rid, design)
         self.assertNotIn('access.hole_supports', design); self.assertIn('access.hole_supports', both)           # asked at export, when the bed face is chosen
-        for rid in ('bearings.insertion_path', 'teeth.profile', 'clearance.sweep_full_travel', 'screws.head_recess'): self.assertNotIn(rid, both)
+        for rid in ('bearings.insertion_path', 'teeth.profile', 'clearance.sweep_full_travel', 'screws.head_recess',
+                    'access.key_swing', 'bearings.no_plastic_in_clamp', 'hardware.refs_present'): self.assertNotIn(rid, both)   # judged from the facts now, or deferred
         resolved = gate_params.resolve(self.reg, None, FULL)
-        for rid in ('access.hole_supports', 'access.key_swing', 'screws.count_load_joint', 'bearings.no_plastic_in_clamp'):
+        for rid in ('access.hole_supports', 'screws.count_load_joint'):
             q = both[rid]
             with self.subTest(rule=rid):
                 self.assertTrue(q['question'].strip().endswith('?')); self.assertRegex(q['q'], '^Q-[0-9a-f]{6}$'); self.assertIsNone(q['answer'])
@@ -857,37 +858,30 @@ class Asked(Settings):
         q = {x['rule']: x for x in gate_attest.questions_for_part(self.d, self.reg, LEVER, SIG1, [], ('design', 'export'))}
         resolved = gate_params.resolve(self.reg, None, FULL)
         answer = lambda rule, label: gate_attest.validate_answer(self.d, self.reg, resolved, q[rule], 'label', label)
+        # a rule that says "none" of a list: held against the facts like the shipped rules hold "some"
+        held = {'rules': {'demo.no_screws': {'attest': {'held': {'none': {'none': ['fusion_screws.screws']}, 'some': {'some': ['fusion_screws.screws']}}}}}}
+        none_q = {'rule': 'demo.no_screws', 'part': LEVER}
 
         def facts(probe, data, error=None):
             gate_common.save_probe_facts(self.d, LEVER, SIG1, {'job': 'u-1', 'doc': 'Demo Assembly', 'doc_version': 3, 'part': LEVER, 'sig': SIG1, 'probe': probe,
                                                               'facts': data, 'done': error is None, 'cursor': None, 'elapsed_s': 0.1, 'error': error})
-        none, swing = 'this part has no screws', 'every screw: the L key swings free of the parts fitted before it'
-        self.assertIsNone(answer('access.key_swing', none))                      # nothing was measured: the label is the only word
+        self.assertIsNone(gate_attest.label_contradicted(self.d, held, none_q, 'none'))         # nothing was measured: the label is the only word
         facts('fusion_screws', {'screws': [{'ref': 'ref screw M3x12 cap'}, {'ref': 'ref screw M3x12 cap (2)'}], 'washers': [{'ref': 'ref washer M3'}]})
-        self.assertIn('the facts of this part list 2 (fusion_screws: screws)', answer('access.key_swing', none))
-        self.assertIsNone(answer('access.key_swing', swing))
-        self.assertIn('the facts of this part list 2', answer('hardware.refs_present', 'this part has no fastener features'))
-        self.assertIsNone(answer('hardware.refs_present', 'every fastener feature of this part has its ref body, rebuilt after the last hole change'))
-        facts('fusion_screws', {'screws': [], 'washers': [{'ref': 'ref washer M3'}]})
-        # a washer lies on the part and no screw is a row: the head on that washer was not recognised, so "no screws" is refused all the same
-        self.assertIn('show what this answer denies: 1 washer(s) at this part', answer('access.key_swing', none))
+        self.assertIn('the facts of this part list 2 (fusion_screws: screws)', gate_attest.label_contradicted(self.d, held, none_q, 'none'))
+        self.assertIsNone(gate_attest.label_contradicted(self.d, held, none_q, 'some'))
         facts('fusion_screws', {'screws': [], 'washers': [], 'fastener_holes': [{'hole': 'h1', 'role': 'clearance', 'screw': None, 'bodies': ['ref fasteners / stud (1)']}]})
-        self.assertIn('1 screw hole(s) or insert pocket(s) with a screw or a bought body on the axis', answer('access.key_swing', none))     # a blind screw unit is no "no screws"
         self.assertIn('show what this answer denies', gate_attest.validate_answer(self.d, self.reg, resolved, q['screws.count_load_joint'], 'na', 'no screw holds this part at all'))
-        facts('fusion_screws', {'screws': [], 'washers': [], 'fastener_holes': [{'hole': 'h1', 'role': 'clearance', 'screw': None, 'bodies': []}]})
-        self.assertIsNone(answer('access.key_swing', none))                      # an empty screw hole shows no screw: the label is the agent's word
         facts('fusion_screws', {'screws': [], 'washers': [{'ref': 'ref washer M3'}]})
-        self.assertIn('the facts list none (fusion_screws: screws)', answer('access.key_swing', swing))
-        self.assertIn('list 1 (fusion_screws: washers)', answer('hardware.refs_present', 'this part has no fastener features'))
         self.assertIn('the facts list none', answer('screws.count_load_joint', 'every load joint of this part has at least the minimum count, on the largest circle the parts allow'))
         self.assertIsNone(answer('screws.count_load_joint', 'no joint of this part carries torque or tipping'))        # nothing in the facts says what a joint carries
-        steel, no_clamp = 'steel only: head, washer, ring', 'this part has no bearing clamp'
-        facts('fusion_bearings', {'bearings': [{'ref': 'ref bearing 6203', 'clamps': []}], 'seats_without_bearing': []})
-        self.assertIn('the facts list none (fusion_bearings: bearings.clamps)', answer('bearings.no_plastic_in_clamp', steel)); self.assertIsNone(answer('bearings.no_plastic_in_clamp', no_clamp))
-        facts('fusion_bearings', {'bearings': [{'ref': 'ref bearing 6203', 'clamps': [{'ring': 'outer', 'side': '+'}]}, {'ref': 'ref bearing 6203 (2)', 'clamps': [{'ring': 'outer', 'side': '-'}]}]})
-        self.assertIn('list 2 (fusion_bearings: bearings.clamps)', answer('bearings.no_plastic_in_clamp', no_clamp)); self.assertIsNone(answer('bearings.no_plastic_in_clamp', steel))
-        facts('fusion_bearings', {}, error='boom')                               # a unit that failed proves nothing either way
-        self.assertIsNone(answer('bearings.no_plastic_in_clamp', no_clamp)); self.assertIsNone(answer('bearings.no_plastic_in_clamp', steel))
+        facts('fusion_screws', {}, error='boom')                                 # a unit that failed proves nothing either way
+        self.assertIsNone(gate_attest.label_contradicted(self.d, held, none_q, 'none')); self.assertIsNone(gate_attest.label_contradicted(self.d, held, none_q, 'some'))
+        # a question of a finding: "nothing goes in" is refused while the finding names a bought body on the axis
+        rule = self.reg['rules']['fits.pocket_content']
+        nothing = rule['attest']['labels'][0]
+        named = {'rule': 'fits.pocket_content', 'part': LEVER, 'by': ['ref pins / pin D5 x 20']}
+        self.assertIn('the finding names 1: ref pins / pin D5 x 20', gate_attest.label_contradicted(self.d, self.reg, named, nothing))
+        self.assertIsNone(gate_attest.label_contradicted(self.d, self.reg, dict(named, by=[]), nothing))
 
     def test_the_export_questions_can_be_answered_before_the_part_is_in_a_project(self):
         for rid in ('access.hole_supports', 'print.bed_face'):

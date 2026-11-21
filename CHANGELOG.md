@@ -74,6 +74,382 @@ The checks no longer depend on an agent remembering the project's instructions: 
 
 - Without Fusion: every hook event fed the JSON a host sends (`tests/test_watch.py`): marks before the call, after a failure, from script files and for sessions of another folder; the Stop block, exit 3 / 4, offline / no-scan / audit / other-session / earlier runs, the cap and the reminders after it, an old vendored gate, the owner's switches; denials and warnings per file kind, mode and shell form (multi-line commands, if / for, substitutions, comments, folder targets, git, variables, joined paths, argument paths, slicer CLI, printer upload, plugin switches), read-only commands and stdout idioms, plugin templates; quotes against human, card, assistant, sidechain, peer, task, synthetic, compaction, injected and meta lines, short pieces, the dry-run order and tickets; a hook that fails. The bundle from an agent session: no ticket, a used ticket, an edited proposal, `-m gate`, a glob, `-- --dry-run`, a comment, an abbreviation. The guard: no amnesty in enforce, an enforce journal line that proves nothing, stale stamps, welds backed by the vertex set, the target held in enforce, files outside the tree found by STL bytes, working folder and environment. Python 3.9 and 3.14.
 
+### Part B: a change is checked incrementally
+
+#### Changed
+
+- **`run --changed` measures what changed since the part was last CHECKED, not since its stamp.** Before, a part with no stamp counted as changed, so in a project where nothing was exported yet every `run --changed` measured every unit of every part again (the whole document for one edit). Now every unit stores what it read (below), and after the scan a unit is measured again only when something it read changed: its own part (signature, place, shown or hidden), a body in a region it read (changed, moved, came, left, shown or hidden), a parameter, table or job key it read, or the text of its probe. A unit whose stored facts still hold is taken over as done ("reused" in the plan) and costs no call, stamp or no stamp. The parts a run reports are the same as before (every part without a valid stamp, less the owner's settled ones), plus every part with a unit to measure again, so the exit code and the report still show every open row of those parts; only the measuring is incremental. A change of nothing measures nothing (the run is a scan and a judgement from stored verdicts).
+- **A neighbour that changes reopens the parts that read it.** A unit of an unchanged part whose region holds a body that moved or changed is stale and runs again, also for a stamped part or a part of the owner's adopted list. Before, a moved neighbour could close a hole of a stamped part unseen.
+- `gate.py status` says the parts in three states: `N changed, not checked` (with the first reason per part: `fusion_openings: Cover:1 changed, moved, or was shown or hidden`), `N checked, no stamp`, `N stamped`. The line `N changed since their stamp` is gone. `status --json` has `unchecked_why`, `checked_ids`, `stamped_ids`.
+- A stamp is also stale when the facts it rests on were measured again and came out otherwise (new key `"facts"`: a digest per Fusion probe; a stamp without it: a Fusion probe entry stored after the stamp), or when a unit it rests on would be measured again because something it read changed.
+- After the first call of a plan, a run judges only the parts whose units finished in that call; a judge whose facts, parameters and ctx are what it judged before is not run again (`"input"` beside each stored judgement); the judgements of one part are written in one file write, not one per rule.
+
+#### Fixed after review (same batch)
+
+- **`gate.py export` scans first.** It scans the part's document (one short call; `cmd_export` scans each document once per call and prints what the scan found), and refuses (exit 1) while a unit of the part would be measured again because what it read changed: "what the part was checked against changed since it was measured (fusion_openings: Cover:1 changed, moved, or was shown or hidden)". Before, an export stamped a part on the census of the last scan, so a neighbour moved after the run could close a hole of a part that got a valid stamp. The "already stamped" branch goes through the same scan and test (it still asks Fusion for the signature). A document that is not open is exit 4. The `NOTE` about a changed `stl_names` map before the next scan no longer appears in practice: the export's scan makes the map take effect.
+- **A plan measured over several calls is confirmed by one more scan.** The call that finishes such a plan exits 3 (`NEXT 0/1`, "the next call scans once more ..."); the next call scans, and its plan measures what changed while the units ran (usually nothing: no unit is sent). Before, the plan finished with exit 0 and `status` said "0 changed" on a census as old as the plan's first call. For `--fresh` the confirming plan takes the facts just measured over.
+- **A ref's state includes its shape.** The scan gives every solid ref `"shape"`: 16 hex over the area and centroid of each face (as a part's signature has it), remembered for the Fusion session; a ref with more than 3000 faces uses its revision id. A mesh ref gets a digest of its node coordinates and triangles. A hole that moves inside a bought plate or washer (same volume, area, counts and box) now re-checks the parts that read it. Hidden printed parts are refs too and are covered by the same field.
+- **Bodies cannot hide behind one key.** A mesh body is `<occurrence>|mesh:<name>`; a second body under one key is `<key>#2`, `#3`, ... in the order of the scan. Before, the later body overwrote the earlier one in the census and its changes were never seen.
+- **A unit reads the census by its record.** When the census unit of a part is measured again, a unit whose record names the job key `features` is looked at again after it, whatever its probe (not only the fixed list `NEEDS_CENSUS`).
+- **Facts that depend on the clock or on Fusion are measured again.** Facts with `screws_cut` or a `late` row (a look cut short by time) are stale. Every envelope gives `fusion_version`; the scan stores it per document, and a unit measured in another version of Fusion is stale. A Fusion update therefore costs one full measurement.
+- **Stored judgements are taken over only from the same judging code.** The key of a stored judgement now also holds a digest of `gate_judges.py`, `gate_features.py`, `gate_common.py`, `probes/_geom.py` and `probes/_geom_rings.py` (module constants, public helpers, finding ids, the classification of holes) and of the rule itself (its fix order and texts). `judgement_out_of_date()` compares the same digest. `run --fresh` judges every part again without the cache. Before, a plugin update that changed `_GRID` or `context_hash` left old findings and ids in place.
+- **The code hash of a unit ignores comments and docstrings.** `gate_deps.code()` hashes each file of a unit with its comments, docstrings and blank lines cut out (by token and node positions, so Python 3.9 and 3.14 give the same hash). A text-only edit of `_fusion.py` no longer makes every unit of every project stale. A change of code in a shared file still does: say so before releasing it (below).
+- **Short units share a call.** A unit whose last measurement is known (`work_s` now stored beside its facts, the sum over its calls; older entries: `elapsed_s`) starts in what is left of a call when 1.5 x that + 1.5 s fits, with what is left as its deadline. A packed call that comes back unfinished is no stall; one whose facts say a look was cut short is measured again in a call of its own. A unit that took most of a call, or several, still gets a call of its own.
+- **A unit given up over its budget stays given up** while nothing of the document (a digest of every body), its inputs, its probe or Fusion changed: it is no longer sent again (two waits of budget + 10 s) on every run. `--fresh` tries it again.
+- `gate.py status` prints the time of the scan its counts rest on, and how many units are to be measured again with their Fusion work by their last measurement (`status --json`: `measure_again`). `gate.py verify` prints the time of the scan the stamps are verified against. It still asks nothing of Fusion: the `.3mf` writer calls it, and the export is the step that makes a stamp.
+- Tests: the fake Fusion can answer with facts that are a function of the model (a neighbour that touches the bracket closes its window); the equality test of an incremental and a full run now changes only a neighbour, judges the full run from nothing, and fails when the neighbour comparison or the facts digest of the judge key is taken out. New tests for each fix above.
+
+#### Added
+
+- `gate_deps.py`: the record of what a unit read (`deps` beside its facts: probe text, parameters, tables and job keys it read, its regions and every census body in them with its state) and `why_stale()`.
+- The census keeps every body of a document after each scan (`docs[key]["world"]`: one line per body with its state, kind, face count and box in the document frame).
+- `gate_plan.stale_units()`: which units of which parts must run again and why.
+- `gate.py run --fresh`: measure every unit of the chosen parts again (for a deliberate full check, and to compare with an incremental one).
+- A unit planned only because the census of its part is measured again is looked at once more after the census unit (`"recheck"`): when the holes and openings came out the same it needs no call.
+
+#### Fusion side (needs a live check: probe text changed)
+
+- `probes/_fusion.py`: `gate_read(box, margin, solid_only, printed_faces_max)` notes a region a call read; `gate_world()` notes its own walk unless a probe passes `read=False`; `GateInputs` watches what a probe asks of `JOB`, `JOB["params"]` and `JOB["tables"]`; the envelope gets `"reads"` and `"inputs_read"` (beside the facts, never in them). `gate_asked()` plus a check in `run()`: a body a probe asked a question of that lies in no noted region is noted as a region of its own, with the note "the regions this unit noted did not hold ...: report it".
+- `fusion_scan`: `"shown"` (every light bulb on the path) on parts and refs, and `"copy_bodies"` (the further occurrences of a part with their pose and box). Nothing of the parts list changes.
+- `fusion_census` notes its 2 mm neighbour walk. `fusion_inserts` notes one cylinder round each pocket (levels, radius plus wall) instead of the whole part box. `fusion_openings` notes the box of each path, the look for screws (part box + 1 mm and the candidates + 0.5 mm), the slab behind a cap and the look under a screw head, instead of the 72 mm walk. `fusion_bearings` notes the candidate look (25 mm, solids, no printed body over 80 faces), per bearing the bodies beside it (2.5 mm), and per clamp the look where it can land, instead of the 120 mm walk. Facts of every probe are unchanged.
+- `fusion_screws`, `fusion_gap` and `fusion_near` note their whole walk (45, 5 and 10 mm).
+
+#### Faster
+
+- Measured on a copy of a real project (44 Fusion parts, 352 units, 752 refs) with a fake Fusion that replays its stored facts, notes the regions the new probe text notes (modelled from the stored facts), and charges every unit its cost in the last full check (1140 s of Fusion work in 386 calls; 33 min wall with the re-judging):
+  - nothing changed: 0 units, 4.3 s on the host plus the scan (about 5 s in Fusion);
+  - one part changed, over all 44 parts: median 62 units and 289 s of Fusion work (p90 636 s, max 739 s for the link that carries the gearbox; 36 to 102 s for the parts of the forearm and the drive); 33 min before for any of them;
+  - one ref moved (a quarter of the 752 refs): median 26 units, 172 s; a screw of a plate: 17 units, 15 s; a bearing: 57 units, 307 s;
+  - after an incremental run the facts and the judgements of every part equal those of a `--all --fresh` run of the same model (byte for byte on the judged findings).
+  - With the review fixes (short units share a call, one confirming scan after a plan of several calls), replayed at the default `--wall 20` with each unit's real cost split over its real calls: a median single-part change is 62 units, about 282 s of Fusion work in about 28 calls of the command (before packing about 70), p90 55 calls, max 62 (the dense gearbox link: 141 units, 750 s); about 6 to 7 min wall at the median and 15 to 17 min at the max with 2.2 to 3.9 s of overhead per call. A dense link: 22 calls, 5 to 6 min. An arm part: 8 calls, about 2 min. A screw of a plate moved: 11 calls, about 3 min. A bearing moved: 26 calls, about 7 min. Nothing changed: 1 call (the scan). The first run after the update: 352 units, 1150 s of Fusion work in 83 calls (386 before), about 22 to 25 min. The Fusion-side compile of each unit script inside a call is not modelled (70 unit scripts at the median).
+- `run --offline` on all 49 parts: 19.2 s before, 3.0 s now (judgements written once per part; the bearing designations of the attest test compiled once). `stale_units()` over the whole project: 0.56 s.
+
+#### Not done
+
+- `fusion_screws` still depends on everything within 45 mm of the part: it is the largest part of what a single edit measures again. Narrowing it (per screw: its axis line, the gap search radius, the washer neighbourhood) needs a reading of every look of the probe.
+- Plans resumed per request are as in 0.2.4.
+- `gate.py verify` does not scan (it is the `.3mf` writer's check and asks nothing of Fusion); it says which scan its answer rests on.
+- Regenerating ref occurrences at the same places (new keys) and hiding or showing a body re-check every unit whose region holds them. That is correct (the keys and the visibility changed) but costs time; the skill says so. A comparison by shape and place instead of by key was not built.
+- Every release that changes the code (not the comments) of `_geom.py`, `_geom_rings.py` or `_fusion.py` makes every unit stale once in every project: about 20 min of Fusion work for the 44-part project. Release such changes together.
+- A bearing measured for several parts is still measured by each of them.
+- The first `run --changed` after the update measures every unit once: facts measured before this version hold no record of what they read, so nothing proves that their neighbours are still what they measured.
+
+#### Changes for a project after `--update-tools`
+
+- New file `gate/tools/gate_deps.py`. The next scan writes the bodies of each document into `gate/census.json` (one line per body). The first run measures everything once (see above), in the background as one loop until the exit is not 3; from then on a run measures what changed.
+- Facts files get `deps` per probe and `input` per judgement; stamps written from now get `facts`.
+
+#### Privacy and side effects
+
+- Nothing new is sent anywhere: the regions and keys a unit read come back in its own result file on this machine.
+
+#### Changed (lead)
+
+- `templates/gate/settings.json`: agents are DENIED direct edits of `gate/owner/**` and `gate/project.json` (no permission prompt for the owner); only `python3 gate/tools/gate.py owner ...` asks. The broad `Bash(*gate.py * owner *)` ask rule is gone: it matched ordinary commands and prompted the owner. `setup_project.py` proposes the deny and ask lists that are missing.
+
+### Part C: overhangs, supports, fits, pins, pockets, bearings and screws become block rules
+
+Part C1: overhangs and supports become block rules that are decided by measurement.
+
+#### The bed face is measured on the saved project
+
+- New `tools/gate/probes/project_bed.py`. For each object of a registered `.3mf`, it takes the mesh as placed: the stored vertices, turned by the build item's own transform. It proves that this mesh is the part's STL moved as a rigid body. The fast path compares triangle centres in file order. The fallback tries the 24 quarter turns of the vertex set. Every point must land within 0.005 mm, and a mirrored or scaled copy is never accepted. The bed face is the face that this motion sends down, expressed in the STL frame.
+- `project_consistency.orientations()` now reads the saved project first. It reads a build table only for a project that does not place the part yet. Each row has `"source"`: `project`, `project, earlier geometry` or `table`. `gate_plan.print_frame()` returns `"from"` and names the file, object and plate.
+- When an STL has been exported again but not yet swapped into the project, the last measurement of the mesh that is still placed is used. It is stored in `gate/run/bed_faces.json` and keyed by pose hash, so it holds only while that exact mesh is still there.
+- This fixes the . `print.z_layers`, the bridge-layer test of `access.hole_closed` and `print.bed_face` were NOT_RUN because the build tables are computed. They now get a bed face.
+- `print.bed_face` gains a fact test, `bed_face_measured`, with a new label. A placed part is answered by the facts. A part that only a build table names is still asked.
+
+#### The slicer is the judge of supports: `print.slice_support_growth` is a block rule
+
+- New `tools/gate/probes/project_slice.py`. It copies the `.3mf` into `gate/run/slice/<key>.work/`, runs the Bambu Studio CLI on the copy (`--slice N`, no login, safe while the GUI is open) and reads every `plate_<n>.gcode`.
+  - Support is the extruding moves under `FEATURE: Support` and `FEATURE: Support interface`.
+  - Support is attributed per object through `; OBJECT_ID:`. The label order in the header is accepted only when every object height agrees with result.json within one layer plus 0.05 mm.
+  - Switched-off objects are left out.
+  - Support printed under no label on a shared plate is not guessed.
+  - The G-code is deleted after reading. The record is written to `gate/run/slice/<key>.json` and keyed by object name and pose hash.
+- New command `gate.py slice [PROJECT] [--changed | --all | --plates 1,4]`. `--changed` is the default and slices only the plates whose meshes differ from the record. The command prints each object's support. It writes `gate/proposals/support_baseline.json` with what is waiting for the owner. It never writes `gate/owner/`.
+- New owner command `gate.py owner baseline PROJECT "OBJECT" ... --quote "..."`. It copies the numbers from the last slice of the mesh the project holds now into `gate/owner/support_baseline.json` (`projects.<key>.<object name>`). It never takes a typed number. It goes through `cmd_owner`, so the same ask rules and the same `--quote` apply.
+- `print.slice_support_growth` is now block, stage project, judged at `verify`. It is no longer deferred, and the old plate-number key is gone.
+  - Never sliced, sliced from another mesh, or a failed plate: NOT_RUN.
+  - No baseline: INFO if the object got no support at all, otherwise NOT_RUN until the owner records a baseline.
+  - FAIL on support where the baseline has none.
+  - FAIL when support grows by more than `overhang.support_growth_share` OR more than `overhang.support_growth_abs`. That is the registry's wording and the stricter of the two; the old project script used "and".
+  - FAIL when support ends more than `overhang.support_top_growth` higher.
+- Before a write, `gate_guard._check` calls `gate_slice.before_write()` through `_slice_line` (one call, added after `_remember`).
+  - A save that brings new meshes is held against the record. It prints one line only when a support grew.
+  - With `"slice_before_write": true` in `gate/project.json` (the owner's switch, off by default), the changed plates of the archive are sliced inside the save. In enforce mode, a support that grew, or a changed plate that cannot be sliced, refuses the save. An object with no baseline is not refused there; `verify` holds it.
+
+#### Overhang pre-check: `print.overhang_angle` is a block rule
+
+- New `tools/gate/probes/mesh_overhang.py`, a stdlib-only check of a mesh in its bed frame. It finds three things:
+  - Regions of down-facing faces flatter than `overhang.max_angle`, with the bottom on the bed left out.
+  - Hanging ridges: an edge between two faces that are steep enough, rising into both, whose own direction is flatter than the limit. This is an incident: two 45 deg faces meeting at 11 deg.
+  - Faces that face straight down and are wider than `overhang.max_bridge`, measured as the least convex width.
+  - Faces modelled exactly at the limit pass (0.01 deg float tolerance).
+  - Positions are given above the bed and from the part's low corner, so the owner can find them in the slicer.
+- `project_consistency.measure()` adds `"overhangs"` (the pre-check of every object as it lies on its plate, plus the object's support setting) and `"slice"` (the facts above). On the real projects, every project is measured in about 1 s.
+- `print.overhang_angle` is now block, stage project, judged at `verify`.
+  - Supports on for the object: INFO, and the slice judges it.
+  - Supports off: FAIL, one row per kind, with the worst value and limit.
+  - Not known whether supports are on (for example, `enable_support` is not among the settings that differ from the preset): NOT_RUN.
+  - Facts measured with other limits than today's parameters: NOT_RUN.
+  - Only the owner waives a row.
+
+#### Not done in this part
+
+- Plan step 12(e): a bed-face lead-in check, and `print.z_layers` extended to relief, seat and clamp-room depths.
+- Plan step 12(f): the first baselines for every plate of every registered project. Only the owner records these, with `gate.py owner baseline`. `gate.py slice` writes the proposal. The old `support_baseline.json` of the project is plate-keyed and was not migrated.
+- The project side was not touched: a project's own slice-and-compare script should become a wrapper of `gate.py slice <key> --plates ...`.
+- The Stop hook that runs `gate.py slice --changed` in the background belongs to batch A's hooks. The command is ready for it.
+- The other plugin false classes in `plugin_false_classes.json` (inserts, walls, washers, bearings, access, regression) are not part of C1.
+
+---
+
+Part C2: fits measured where they print, pins, pockets that are not round, bearings, screws, and walls on the meshes a project prints from. Plan steps 13 to 18, and the false classes of the gate found in a full check of a real project.
+
+#### Fits count only where they were printed (step 13)
+
+- Every row of `rules/tables/inserts.json` carries `measured_under` (nozzle, material, X-Y hole compensation, layer height; `null` while never printed; a list for several prints). `rules/tables/bearings.json` has a `seat_fit` row that does the same for the seat fits. Pocket kinds take their size from fit parameters, and those already carry `measured_under`.
+- `inserts.pocket_shape`: exact pockets of a row whose prints do not include the declared target FAIL with "profile measured under other settings". There is one row per kind and part. Without a declared target the row is NOT_RUN. As shipped, the M3x4x5 row records no nozzle, so it matches no target until the owner records a print.
+- `bearings.seat`: when the seat fit records prints and none matches the target, every printed seat FAILs "measured under other settings".
+- `fits.bought_part_pocket` keeps failing pockets whose parameters are D here, including an M parameter measured elsewhere, as before.
+- `project.build_table_differs` reads the fit settings a build script writes as plain literals (with `ast`; the script is never run) and FAILs each one the saved project holds otherwise. Settings that come from an unpacked dict or a name get one INFO row.
+- `fits.decided_not_printed` is answered from the facts. It now has a judge (`fits_decided_not_printed`, design stage, asked per finding). It lists the fits the part relies on that are D or S here: pocket parameters, pin fits, insert rows and the seat fit. "None" is refused while that list names anything (`attest.held` `{"by": "none"}`). With nothing on the list, nothing is asked.
+- New command `gate.py coupons --for KEY`. It writes the coupon plate of exactly those fits to `gate/proposals/coupons/KEY/`:
+  - One closed STL per coupon: an insert block with the row's profile, a magnet or pin pocket in `fits.coupon_steps` sizes 0.05 apart, a tapered bearing bore and post with their lead-in, and a box pocket.
+  - `coupons.json`, which says what each hole is and how the owner records the result.
+  - It is stdlib only and needs no Fusion and no `.3mf` write. On a copy of a real project it took 0.3 s for 7 coupons.
+- New owner file `gate/owner/tables.json`, laid over the shipped tables by `gate_registry.load_default()`. `gate.py` hands the project root over with `gate_registry.use_root()`, and a vendored copy finds its own project. It holds:
+  - stock pins and screw lengths;
+  - the measured bearings of the batch in hand (d, D, B, source, date);
+  - prints of an insert row or of the seat fit (every setting, source, date).
+
+  A row that cannot be read stops the gate (exit 4). The registry hash covers the file.
+
+#### Pins, dowels and rods (step 14)
+
+- New table `rules/tables/pins.json`: DIN 6325 / ISO 8734 / ISO 2338 diameters and length series, written from reference knowledge, with `passage_over` 1.0. A project lists its own stock in `tables.json`.
+- `rules/tables/pockets.json` gains a `pins` section. A hole with a pin, dowel or rod on its axis is that pin's pocket: its own name matches the new `fits.pin_ref_pattern`, and no insert or screw stands there. `fits.bought_part_pocket` judges it, with one row per pocket that names every problem:
+  - the diameter must be the press, slip or running fit of the pin (new `fits.pin_press_extra`, D, 0.0; slip and running as before, per material);
+  - that fit's parameter must be M or U here;
+  - the length the name gives must be a stock length, and longer than a blind pocket.
+
+  The pin's diameter comes from its name (D5, 5 x 20, 4m6x32), else from the one table row the hole fits. Pins named without a length are one NOT_RUN row per component. A hole 1.0 or more over the pin is a passage, and it is asked.
+- Insert rules leave pin pockets alone, so the ring-pin seats of a lid are no M3 pockets. This closes .
+- `fits.pocket_content`: "no bought part goes in" is refused while the finding names a bought body on the axis. Questions now carry the finding's `by`.
+- `bearings.shaft_sleeve` is a block rule. FAIL when an inner ring is seated directly on a bought shaft that is closer than `bearings.shaft_under_bore` to the bore. A printed sleeve drawn as a ref (named by `bearings.sleeve_pattern`) is no shaft.
+
+#### Pockets that are not round (step 15)
+
+- `pockets.json` takes several rows per bought part (new `magnet_d6`, with `sensors.magnet_d6_*`) and a `boxes` section: board, switch, plug channel and M3 nut slot. Each takes its two sizes from fit parameters (new `sensors.board_*`, `switches.body_*` / `pocket_*`, `motors.channel_height`, `fits.nut_*`; `motors.channel_width` is now of class fit).
+- A census slot or window of a box's size is that pocket, and FAILs while its parameters are D. The placeholder sizes are the registry's; a project sets its own.
+
+#### Bearings (step 16)
+
+- `bearings.seat_form` (any | tapered) and `bearings.seat_taper_tol`. With "tapered", a straight seat FAILs, and so does a taper that is neither `seat_taper` nor `seat_taper_thick_base`. The default "any" keeps today's behaviour. The owner's rule is "tapered", and he sets it.
+- `bearings.clamp_room_washer` is split from `bearings.clamp_room`. It is used for clamp rows with "by": "washer" and read by `washers.landing`. The default is 1.0, the old value, not loosened. A project's proposal of 0.3 is its owner's decision.
+- The measured bearing of the batch in hand (from `tables.json`) replaces d, D and B in `bearings.seat`, `bearings.clamp_room` and `bearings.shaft_sleeve`.
+- `bearings.insertion_path` is a block rule, judged from the seat facts (`entry_d`, `entry_open`). A wall beyond the ring face that is not the seat itself and clears the ring by less than `bearings.pass_clearance` FAILs.
+- `bearings.no_plastic_in_clamp` is a block rule. A printed clamping body over a ring FAILs, and only the owner waives it.
+- `bearings.sleeve_end_and_preload` is a block rule. A printed sleeve or spacer, as the clamp or as the stop of a clamp, FAILs. On a copy of a real project this names a printed inner-ring spacer between two bearings; its waiver belongs to the owner (batch A's owner bundle).
+
+#### Screws (step 17)
+
+- `screws.family_lengths` is a block rule. It FAILs a family that `screws.family` does not name: set screws and wood screws are families of their own. It also FAILs a length outside the stock list (`stock_lengths`, `stock_lengths_set`), and a name whose length differs from the model.
+- `screws.head_recess` is a block rule. A counterbore head outside 0.5 to 2 under the face FAILs. Only heads that bear on this part are judged.
+- `screws.head_seat_full_ring` is a block rule. A head without a washer that bears on part of its ring only FAILs.
+- `hardware.refs_present` is a block rule. These FAIL:
+  - an insert pocket with no insert ref on its axis;
+  - a screw hole with nothing on its axis (a hole on the line of another hole that has its screw is a piece of that channel);
+  - a screw ref in no hole and no opening of the part.
+
+  The label "clearance hole for a screw that is not modelled yet" is gone from `census.unknown_hole`.
+- `access.key_swing` is a block rule. `fusion_openings` now sweeps the long arm of an L key over every seated head: 12 directions, `access.key_short_arm` above the head top, a path of radius `access.key_side_clearance / 2` and length `access.key_long_arm`. The paths use the probe's own resumable path machinery and cursor.
+  - At least `access.key_swing_deg` free in one run passes.
+  - Less, but with a free straight path, is INFO.
+  - Neither is a FAIL.
+  - Facts of the older unit are one NOT_RUN row per part.
+- `screws.count_load_joint` takes an owner waiver as evidence.
+
+#### Walls on the meshes a project prints from (step 18)
+
+- New `tools/gate/probes/placed_walls.py` and the new project-stage block rule `walls.placed_stl`. At `verify`, `stl_mesh` and `stl_walls` measure the stored mesh of every object of every registered project. The results are cached in `gate/run/placed_walls/` by pose hash and report width.
+- One process spends at most 20 s on meshes not measured yet. The rest are one NOT_RUN row, and the next verify goes on.
+- The rows of the export rules are carried, with one row per object and inner rule, and they hold until the part is exported again.
+- On a copy of the real project: 2 calls measured every object (24 s, then 16 s); after that, verify takes 4.7 s.
+
+#### False classes of the gate closed (plugin_false_classes.json)
+
+| Fix |
+| --- |
+| Ring-pin seats are pin pockets. |
+| A straight through channel longer than the deepest pocket of its diameter is no insert pocket. |
+| A hole with only a wood or self-tapping screw on its axis (new `screws.wood_pattern`) holds no insert. |
+| Floors of blind holes the census knows are no slivers (one INFO row). |
+| Bridge steps of counterbores whose census holes are held by their inner ends are paired (both ends of a through hole are tried). |
+| A washer that lies on another printed part is judged there. |
+| The far mouth of a through slot counts. |
+| A stacked roller that the probe did not take for a bearing is a twin, by its designation and its contact on both rings. |
+| A through hole of a bearing outer diameter in a part thinner than the bearing is asked, not called an empty seat. |
+| A ring face touched by nothing while a hidden part stands near is NOT_RUN ("show it"), not FAIL. |
+| The washer's own heel landing is no proud neighbour. |
+| A washer with no screw has no head stack. |
+| A head that bears on another part gets no under-head row here. |
+| The bridge skin of the part that carries the head is not judged again on the thread part. |
+| A blind pilot shallower than the least thread engagement is no screw hole. It needs no key path and is closed on purpose. |
+| An empty blind recess needs no key (one INFO row). |
+| A through opening named by its other mouth, or with a moved mouth, is not lost. |
+
+Still open: a toothed profile whose chamfer joins all teeth into one region (one row the owner waives), a window whose outline moved beyond the match tolerance, and five classes that need probe changes in `fusion_openings` (what lies behind a floor, slot axes on slanted faces, channel segments, seal sampling).
+
+#### Behaviour that changes for a project
+
+- Exact M3x4x5 pockets FAIL "measured under other settings" until the owner records the print of the coupon under each target in `gate/owner/tables.json`. Without a declared target they are NOT_RUN.
+- `verify` gets `walls.placed_stl` rows. The first one or two calls measure, and later calls are about 4.7 s on a real project.
+- New FAIL rows on a real project, all of them true by the rules as written:
+
+  | Rule | Rows |
+  | --- | --- |
+  | `screws.head_recess` | 36 |
+  | `hardware.refs_present` | 27 |
+  | `screws.family_lengths` | 27 (wood and set screws, M3x18/30 outside the shipped stock) |
+  | `screws.head_seat_full_ring` | 13 |
+  | `bearings.shaft_sleeve` | 9 |
+  | `bearings.no_plastic_in_clamp` | 8 |
+  | `bearings.sleeve_end_and_preload` | 4 |
+
+  The owner's own stock lists and family text (`tables.json`, `screws.family`) remove the rows that are only about his stock.
+- The owner should set or record:
+  - `bearings.seat_form` "tapered";
+  - `bearings.clamp_room_washer` 0.3 (his proposal);
+  - his screw and pin stock;
+  - his coupon prints;
+  - `screws.family` with set and wood screws, if he keeps them.
+
+#### Not done
+
+- 12(e) from C1: lead-in checks.
+- 14(d) is partial: the pin length against the stack in OTHER parts is not measured (only stock length, and longer than a blind pocket).
+- 16(a): "thick base" is not measured. A taper of either `seat_taper` or `seat_taper_thick_base` is accepted. Telling them apart needs a probe measurement of the material behind the stop.
+- 17(e) and 18 on the project side: a project's own screw recess, hardware presence and insert wall scripts should become wrappers of the gate (no project was touched).
+- There is no owner command that writes `gate/owner/tables.json`: the owner edits it, or an `owner table` action is added to batch A's owner bundle.
+- Box pockets are matched by size. A missing pocket (a plug channel never cut) is not seen.
+- The coupons command takes every part of the census, not only the parts of one project.
+
+---
+
+Part C3: the 44 false-finding groups of the full check, sorted into general classes. Each class is recognised from facts (never by a part name), has a fixture built from the real case with neutral names, and has a twin fixture that proves the true finding of the same rule still FAILs. Where the facts cannot tell the false case from the true one, the row now ASKS; it is never passed.
+
+#### The classes and what decides them
+
+| Class | Recognised by | Verdict now | Fixtures (real case / twin) |
+| --- | --- | --- | --- |
+| A key or tool channel read as an insert pocket | a straight through hole longer than the deepest pocket of its diameter (`_long_channel`) | ASK: one `inserts.pocket_shape` INFO row with `census.unknown_hole` (an insert ref on its axis may lie inside it: the facts hold no position); no wall, relief or floor row | `inserts_pocket_shape__ask_long_channel_with_the_insert_measured_beyond_its_end`, `inserts_pocket_shape__ask_long_through_channel_with_nothing_on_its_axis` (C4: an insert of unknown place is NOT_RUN, one measured inside is a pocket) / `inserts_pocket_shape__fail_short_straight_hole_with_an_insert_is_a_pocket`; `inserts_relief_missing__pass_long_channel_with_the_insert_measured_beyond_its_end` (C4) / `inserts_relief_missing__fail_same_pocket_in_a_short_hole` |
+| Wood-screw holes and countersinks read as insert pockets | only a wood or self-tapping screw ref on the axis, no insert ref (C2) | no row | `inserts_pocket_shape__pass_wood_screw_hole_is_no_pocket` / `inserts_pocket_shape__fail_hole_with_a_wood_screw_and_an_insert_ref` |
+| Steel pin seats read as insert pockets, their webs as insert walls | a pin, dowel or rod ref on the axis (C2) | judged by `fits.bought_part_pocket` (NOT_RUN while the pin names no length) | C2's pin fixtures |
+| Floors of known blind holes read as slivers | the face is the floor of a census hole at its depth (C2) | INFO | C2's `walls_thin_faces__info_floor_of_a_known_blind_hole` / `..._fail_disc_that_is_no_hole_floor` |
+| Bridge steps the census did not pair | the far end of a through hole is tried as the mouth (C2) | INFO | C2's fixtures |
+| Bridge steps with leftover faces touching them | `_thin_bridge_split`: the faces of one zone that are treads or risers are counted as steps | INFO for the steps; the other faces (a step cut 0.01 below the floor) stay ONE FAIL place | `walls_thin_faces__fail_leftover_faces_touching_bridge_steps_stay_one_place` / C2's square-void and no-census fixtures |
+| A toothed profile whose chamfer joins every tooth | `_thin_ring`: the one region maps onto itself, cluster by cluster, when turned by one tooth (N >= 12, the largest N) | ONE profile FAIL row, which a waiver of the profile can hold | `walls_thin_faces__fail_teeth_joined_by_a_chamfer_are_one_profile_row` / `walls_thin_faces__fail_ring_with_one_tooth_that_differs_stays_one_region_row` |
+| A clamp washer whose landing is another part, a missed slot mouth, a heel landing, a headless spacer | the washer's landing and screw facts (C2) | judged where it lands, or no row | C2's washers fixtures |
+| Rollers stacked ring on ring read as touching both rings | a hardware cover with this bearing's designation, d and D, on both ring faces (C2) | no row | C2's fixtures |
+| A bore of a bearing outer diameter in a part thinner than the bearing | through, and thinner than the bearing width (C2) | ASK (`census.unknown_hole`) | C2's fixture |
+| A hidden part at a ring face | the unit lists a hidden body near (C2) | NOT_RUN "show it" | C2's fixture |
+| A head that bears on another part, the bridge skin of the head part judged on the thread part | seat shares and the head part's own INFO row (C2) | no row here | C2's fixtures |
+| Blind markers and spigot sockets read as tap pilots | a blind pilot shallower than the least thread engagement (C2) | no access row; the hole is still ASKED once by `inserts.no_tapped_plastic` ("not a thread: a pin, dowel, magnet or alignment hole of that size" is its answer), so the skip is no silent pass | C2's `access_hole_covered__pass_marker_too_shallow_for_a_thread` / `..._ask_tap_hole_deep_enough_for_a_thread_under_a_disc` |
+| Empty lightening pockets read as openings that need a key | the unit looked inside a blind opening and found nothing (C2) | INFO | C2's fixtures |
+| The floor of an insert pocket read as a cap a screw must pass | `_floor_of_pocket`: the census hole is an insert pocket, its screw is not seated on this part and its head bears on the very body the probe put "behind" the cap, and the own path out of the mouth meets that body on the axis within `access.cap_max` | INFO, one row per part | `access_hole_closed__info_floor_of_pockets_whose_screws_come_from_the_mouth_side` / `access_hole_closed__fail_pocket_floor_with_the_head_on_this_part_and_a_base_behind`, `..._fail_pocket_floor_with_no_body_measured_at_the_mouth` |
+| A breakout of a hole read as a slot covered by the part | `_breakout_of`: an empty opening whose mouth lies inside a broken-open census hole (arc under 1), between its ends and within its radius there, with the size of its breakout (smaller side 0.5 d to d, larger side at most 2 d) | INFO; the hole's own path is judged | `access_hole_covered__info_slot_where_a_head_channel_breaks_out_of_a_face` / `..._fail_slot_over_a_whole_hole_is_an_opening_of_its_own`, `..._fail_slot_much_narrower_than_the_bore_it_opens_into` |
+| One channel across a gap, its pieces read as sealed holes | `_acc_facing`: a sealed end faces another hole end of this part on its axis, ahead and looking back, and every sealing body is another solid body before it | ASK: one `assembly.order` row per part (a clevis with a tongue without a hole looks the same, so it is never passed) | `access_mouth_sealed__ask_key_channel_across_a_bore_with_a_tube_in_it` / `access_mouth_sealed__fail_the_same_hole_with_no_mouth_across_the_gap` |
+| A body that only clips the edge of a mouth read as a seal | NEW probe measurement `profile` (C4; it replaced C3's `mouth_share`): how the section fills in front of the mouth | no row when the body covers a sliver at the rim and fills the section only farther out; a plate flat on it or a shaft lying across it seals; facts of the older unit keep the old FAIL | `access_mouth_sealed__pass_body_that_clips_the_edge_of_the_mouth_seals_nothing` / `..._fail_body_flat_on_the_mouth_covers_it_all`, `..._fail_older_facts_without_the_share_at_the_mouth` |
+| "Window is gone" after a deliberate change | the same through opening by its other mouth (C2) | no row | C2's fixture |
+| A through window that moved or changed size a little | `_moved_opening`: same shape, parallel axis, the old centre inside the new one | still ASKED (`regression.intended`), but as "changed: it is ... now, 0.55 off", not "gone" | `regression_feature_lost__ask_through_window_that_moved_a_little_is_changed_not_gone` (a window that is really gone stays "gone"); C2's `..._fail_through_window_that_is_blind_now` |
+| The bed face unknown | measured on the saved project (C1) | judged | C1's fixtures |
+
+#### Code
+
+- `gate_judges.py`:
+  - `_long_channel`, `_channel_row`; `_no_insert_in` and `_not_a_pocket` ("channel") use it, so `inserts.relief_missing`, `inserts.wall`, `inserts.wall_at_relief` and `inserts.floor` leave the channel to the one asked row of `inserts.pocket_shape`.
+  - `_sym_axis`, `_thin_ring`, `_thin_place_of`, `_thin_bridge_split` for `walls.thin_faces`.
+  - `_floor_of_pocket` for `access.hole_closed`.
+  - `_breakout_of` for `access.hole_covered`.
+  - `_acc_facing`, `_seal_share` (C4: `_seals_mouth`) for `access.mouth_sealed`, which now ends with `_acc_grouped` (the assembly-order row of the channel mouths).
+  - `_moved_opening` for `regression.feature_lost`.
+- `probes/fusion_openings.py`: every measured hit that begins within 0.5 mm of the mouth gets `mouth_share` (C4: replaced by `profile` and `full_window`). A failure leaves it out and the judge keeps `share`.
+- No registry or threshold change.
+- `skills/gate/SKILL.md`: one line per class.
+- `tests/test_walls_calibration.py`: a face that does not belong to the bridge steps is still the FAIL row of its place; the steps beside it may now be counted as steps.
+
+#### Not done, and why
+
+- The seal of a body that only clips a mouth is fixed in the probe, not in stored facts: it needs a live scan of the part (Fusion, read only) with the new `fusion_openings`, and a check that the `profile` stays near 0 at the clamp pockets and is full at once for a plate flat on a mouth (C4).
+- The empty-blind-recess INFO and the stacked-roller recognition by designation pass on what the unit measured and a hardware designation; I left them as C2 built them.
+
+---
+
+Part C4: the review of batches C1 to C3. Each finding was checked against the code; the real ones are fixed with tests, the rest say why below.
+
+#### Supports and overhangs (C1)
+
+- **A slice is an object's slice only under its slice key** (`probes/project_slice.slice_keys`): the pose of the stored vertices, the turn of the build item (a hand turn in the slicer lives there, not in the vertices), the object's whole block of `model_settings.config` and the process settings that move support (`SUPPORT_SETTING`). `changed_plates` and `facts_for` compare the key: an object turned on its plate or a changed support setting is NOT_RUN "turned on its plate, or a support setting changed" and its plate is sliced again. A record without keys (an older gate) is NOT_RUN "slice it again".
+- **Where the slicer put support is kept**: `parse_gcode` follows X and Y and keeps the support per object as 1 mm cells with their top z, counted from the low corner of the object's walls (`origin`, `cells`, `cells_cut` per object of the record).
+- **`print.overhang_angle` decides supported objects by the slice, never by the setting**: every region of the pre-check (`all`: [x0, y0, x1, y1, lowest z, width], now for every region, not only the 12 largest) is held against the cells of the slice with the same key. Support under it: INFO. None under it (the slicer's threshold angle, "on the build plate only", a manual type, small regions it drops): FAIL "the slice leaves N of M regions with no support under them", or "the slicer puts no support under it at all". No slice of this key: NOT_RUN. A face region narrower than one line (2 x area / perimeter under `target.line_width`) prints from the layer below; a region under the middle of the first layer prints from the bed. `_support_of` names the support type and "on the build plate only" in its text.
+- **The overhang pre-check runs before a .3mf write** (`gate_slice.overhangs_before_write`, called by `gate_guard._overhang_line` for the objects a save brings): loud in observe, refused in enforce, for what hangs with supports off or what a slice of that very mesh leaves bare.
+- **The save path of `slice_before_write`**: a slicer that is missing or cannot start, a locked record or a timeout makes the changed plates "NOT SLICED" (refused in enforce, loud in observe), never a silent write. Each plate gets `"slice_timeout_s"` of `gate/project.json`, 240 s by default (`SAVE_TIMEOUT`), not 1800. `gate_guard._check` runs the slice and overhang lines before it remembers the fit settings, so a refused save leaves the memory of the file on disk.
+- **Concurrent slices**: each run works in `gate/run/slice/<key>.<pid>.work` and merges its plates into the record under `<key>.lock` (`_locked_update`; a lock older than 10 minutes is taken over). The pending archive of a save is `<key>.<pid>.pending.3mf`.
+- `run_cli` decodes the CLI's output as UTF-8 with replacement: a log in another encoding is no traceback.
+- **The remembered bed face follows a later turn** (`probes/project_bed`): the memory keeps the motion R (STL frame to stored frame) and the item's turn; the face is computed again from R and today's turn. A memory without R (an older gate) is not used.
+- **`print.bed_face` is not answered by the facts for an "earlier geometry"**: the new geometry was never placed, pre-checked or sliced. The question fixture became `questions_bed_face_measured__asked_the_project_still_places_the_geometry_before_the_export`.
+
+#### Access (C2, C3)
+
+- **`access.key_swing` sorts what blocks each direction** as `access.screw_path` sorts a path. The probe keeps `blocks` per direction ({name, kind, at, share, approx, part}); a graze under `access.min_blocked_share` and an owner-named overlay block nothing; the part itself is a FAIL (only when it also blocks the straight key); another solid body goes into ONE `assembly.order` question for the part; a mesh, box or hidden body is NOT_RUN per body. Facts without `blocks` are NOT_RUN for a head that is not free all round. A swing measured with another short arm or a thinner side clearance than today's is NOT_RUN.
+- Swing paths meet a mesh body by its box only (`mesh_by_box`): a mesh hit is never a measurement, and an STL ref beside twelve paths per head is no longer walked node by node.
+- **`access.mouth_sealed` judges a seal by the `profile` in front of the mouth** ([mm from the mouth, share] up to the first full section or one path radius plus 1 mm, `full_window`): full within the seal gap plus 0.25 (a plate flat on it), or full within the seal gap plus the hole radius while it covers 0.3 of the section at the mouth (a shaft or rod lying across it): sealed. A body that covers a sliver at the rim and the whole section only farther out seals nothing. The window follows `access.seal_gap`, so a raised gap is judged over its own width. `mouth_share` is gone (it was never measured live).
+
+#### Inserts (C2, C3)
+
+- **A wood or self-tapping screw takes only a THROUGH hole out of the insert rules**: a blind hole with such a screw forms its thread in this plastic and is judged as the insert pocket it looks like.
+- **A long straight channel with an insert ref on its axis**: the census now measures where each coaxial body lies along the axis (`coaxial[].span`, `_geom.coaxial_cylinders`). An insert ref beyond the far end keeps the channel asked; one inside it makes the hole the straight pocket it is (`inserts.pocket_shape` FAIL and every insert rule); one of unknown place (an older census) is NOT_RUN in `inserts.pocket_shape` and the wall, relief and floor rules judge the hole.
+
+#### Bearings and washers (C2)
+
+- **New block rule `bearings.spacer_room`** (judge `bearings_spacer_room`, probe `fusion_bearings`, no probe change): between two coaxial bearings, a body that covers the facing faces of both inner (or both outer) rings within the contact gap is a fixed length. Both stacks fixed: FAIL. One fixed and the other stack stopping at both rings with less than `bearings.clamp_room` of room: FAIL with the room. Nothing seen in the other stack while a mesh or hidden body is near (not named by `access.overlay_pattern`): NOT_RUN.
+- **Lead-in of a tapered seat**: `seat_scan` (and so `fusion_bearings`) measures where the seat wall ends on the entry side and the chamfer there (`lead_in`, `entry_end`; `seat_lead_in` of `_geom_rings`). With `bearings.seat_form` "tapered" a seat without a `bearings.seat_lead_in` x 45 lead-in FAILs; facts without it are NOT_RUN. With "any", a straight seat more than `bearings.seat_taper_tol` off its bearing (inside the tolerance) is an INFO row.
+- The `bearings.seat_taper` advice text now says what the judge checks: a post nominal at the end the ring enters and wider at its stop; a bore nominal at its stop and wider at its mouth.
+- **A stacked bearing by name**: a cover counts as the twin of a bearing by the designation in its name only when the name matches none of `bearings.sleeve_pattern`, `washers.ref_pattern` or ring, plate, disc. "686 spacer ring" or "shim washer 686" locks the rings and FAILs.
+- **A clamp washer's lap over its ring**: `fusion_screws` measures `ring_overlap` (the longest radial run of the washer's face on the ring, 16 directions, ends found to 0.02); `washers.landing` FAILs a lap under `washers.ring_overlap_min` (2.0, not changed; the judge allows the probe's 0.02 step). Facts without it are ONE NOT_RUN per part.
+- `fits.decided_not_printed` also names the seat fit for a bore the census classes "band" near a bearing size.
+
+#### Print orientation and layers (new block rules)
+
+- **`print.fit_axis`** (judge `print_fit_axis`, probe `fusion_census`): insert pockets, pockets and pin pockets of bought parts and bearing seats lie within `print.fit_axis_deg` (1.0, new) of the print axis, and a blind one opens away from the bed. A part no project places yet: ONE INFO row (`print.bed_face` is asked at its export).
+- **`print.relief_layers`** (judge `print_relief_layers`): the melt relief of an insert pocket along the print axis prints `inserts.relief_depth_min` to `max` deep in the target's layers, counted as the slicer cuts (a layer is open where its middle lies in the relief). A step wider or deeper than a relief of the inserts table is a spot face, not a relief.
+- `clearance.min_gap_moving` names the sliding clearance (`fits.sliding_per_side`, per material) in the text of a gap between two printed parts, so a slide is waived on a measured number.
+
+#### Walls of placed meshes (C2)
+
+- A mesh whose walls were measured over a share of its surface is measured again by a call with more time (no more "+5 s" that no call could reach); `GATE_WALLS_BUDGET=120 gate.py verify` gives the walls of placed meshes 120 s, and one mesh may take up to 600 s.
+
+#### Fixtures and tests
+
+- New fixtures: `access_key_swing__*` (8, rewritten in the new form), `access_mouth_sealed__fail_shaft_lying_across_the_mouth`, `..._fail_a_raised_seal_gap_is_judged_over_its_own_width`, `bearings_spacer_room__*` (5), `bearings_seat__fail_tapered_form_post_without_a_lead_in`, `..._not_run_tapered_form_lead_in_not_measured`, `..._info_straight_seat_off_nominal_inside_the_tolerance`, `bearings_holding__fail_spacer_named_after_the_bearing_is_no_stacked_bearing`, `clearance_min_gap_moving__fail_printed_slide_under_its_sliding_clearance`, `fits_decided_not_printed__asked_a_bore_near_the_seat_size`, `inserts_pocket_shape__not_run_long_channel_with_an_insert_of_unknown_place`, `..._ask_long_channel_with_the_insert_measured_beyond_its_end`, `..._fail_long_straight_hole_with_an_insert_measured_inside`, `..._fail_blind_hole_with_a_self_tapping_screw_stays_a_pocket`, `inserts_relief_missing__fail_long_channel_with_an_insert_of_unknown_place`, `..._pass_long_channel_with_the_insert_measured_beyond_its_end`, `print_fit_axis__*` (5), `print_relief_layers__*` (4), `print_overhang_angle__fail_supports_on_but_the_slice_leaves_the_roof_bare`, `..._fail_supports_on_and_the_slicer_puts_none_at_all`, `..._fail_support_under_the_roof_that_stops_far_below_it`, `..._not_run_supports_on_and_no_slice_of_this_mesh`, `..._info_regions_narrower_than_a_line_print_from_the_layer_below`, `..._fail_a_region_wider_than_a_line_with_no_support`, `washers_landing__fail_clamp_washer_laps_its_ring_by_0_6`, `..._not_run_clamp_washer_lap_not_measured`.
+- `tests/test_supports.py`: slice keys (a turn, a setting), plate errors and timeouts, two slices and the lock, the cells of the G-code, the slice deciding the shelf (INFO, bare, too low, build plate only, none at all), no slicer refusing the save in enforce, the overhang pre-check before a write, the remembered face after a turn, the re-measure of partial walls.
+- `tests/test_geom_rings.py`: the fake-Fusion units measure the `profile` of a plate, a clip and a shaft over a mouth, the `blocks` of a swing (the part, a mesh by its box) and a clamp washer's `ring_overlap` (2.0 and 1.2); `seat_scan` measures the lead-in of a sharp post, a chamfered post, a post that ends 4 mm out and a chamfered bore.
+- `tests/fake_slicer.py` writes walls round each object's footprint and support lines where FAKE_SUPPORT boxes say.
+
+#### Not fixed, and why
+
+- Support inside holes, channels and pockets (finding 15): the slice now keeps where support stands, but holding it against the holes needs the census holes of each placed part at the project stage (`verify` holds only the project's facts); that plumbing belongs with the plan of batch B. Until then a support inside a channel shows only through `print.slice_support_growth` and the owner's look.
+- Thick base beside a seat (finding 13, part): the probe does not measure the material behind the stop, so either taper is accepted, as before. `bearings.seat_form` "tapered" is the owner's switch, and no project file was written.
+- Two facing channel mouths (finding 9): no fact tells a key channel from a clevis whose tongue has no hole (the sealing body has no opening on the channel's axis in either case); the row stays one `assembly.order` question.
+- A sleeve against its fit ladder (finding 21): needs a ladder table with `measured_under`, an owner decision; `walls.one_line` still FAILs every one-line sleeve until the owner waives it with the ladder.
+
+### Fixed while merging A, B and C
+
+- Every command loads the rules with the project it works on (`gate_registry.load_default(root)`), so the owner's own table rows (`gate/owner/tables.json`) are laid over the tables the same way at `run`, `export`, `verify` and in the stamp check. Before, a stamp could be called stale at once ("the tables changed") when a command ran in another folder than the project.
+- `gate.py owner bundle` takes `baseline` entries (support baseline from the last slice), so a support baseline can ride in the same owner decision as the rest.
+
 ## 0.2.4
 
 ### Fixed

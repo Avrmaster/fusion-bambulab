@@ -1,0 +1,248 @@
+{
+ "judge": "access_mouth_sealed",
+ "case": "the same pocket in facts of the older unit, which wrote no \"profile\": the share along the whole hit is what they hold, and the end is sealed by it as before (run the part again for the share at the mouth)",
+ "facts": {
+  "openings": [
+   {
+    "anchor": {
+     "axis": [
+      0.0,
+      1.0,
+      0.0
+     ],
+     "kind": "insert_pocket",
+     "point": [
+      -15.0,
+      42.7,
+      460.0
+     ]
+    },
+    "end": "mouth",
+    "feature": "h5",
+    "of": "insert_pocket",
+    "paths": {
+     "iron": {
+      "free": 2.0,
+      "hits": [
+       {
+        "approx": false,
+        "at": 2.0,
+        "expected": false,
+        "kind": "printed",
+        "name": "Link (cheek, tube)",
+        "part": "demo/link",
+        "share": 1.0
+       },
+       {
+        "approx": true,
+        "at": 4.0,
+        "by_box": false,
+        "expected": false,
+        "kind": "mesh",
+        "name": "old printed parts (mesh) / link half",
+        "part": null,
+        "share": 0.125
+       },
+       {
+        "approx": false,
+        "at": 10.5,
+        "expected": false,
+        "kind": "printed",
+        "name": "Pulley (bolted to link on R30)",
+        "part": "demo/pulley",
+        "share": 1.0
+       }
+      ],
+      "r": 4.0,
+      "reach": 30.0
+     },
+     "own": {
+      "free": 0.05,
+      "hits": [
+       {
+        "approx": false,
+        "at": 0.05,
+        "expected": false,
+        "kind": "printed",
+        "name": "Link (cheek, tube)",
+        "part": "demo/link",
+        "share": 1.0
+       },
+       {
+        "approx": true,
+        "at": 4.0,
+        "by_box": false,
+        "expected": false,
+        "kind": "mesh",
+        "name": "old printed parts (mesh) / link half",
+        "part": null,
+        "share": 0.188
+       },
+       {
+        "approx": false,
+        "at": 5.5,
+        "expected": false,
+        "kind": "hardware",
+        "name": "Pulley HW 120T / M3x10 DIN 912 shank (pulley 120T to link) #14",
+        "part": null,
+        "share": 0.001
+       },
+       {
+        "approx": false,
+        "at": 6.5,
+        "expected": false,
+        "kind": "hardware",
+        "name": "Pulley HW 120T / insert M3x4x5 (link, pulley 120T screw) #7",
+        "part": null,
+        "share": 0.059
+       },
+       {
+        "approx": false,
+        "at": 10.5,
+        "expected": false,
+        "kind": "printed",
+        "name": "Pulley (bolted to link on R30)",
+        "part": "demo/pulley",
+        "share": 1.0
+       },
+       {
+        "approx": false,
+        "at": 15.5,
+        "expected": false,
+        "kind": "hardware",
+        "name": "Pulley HW 120T / M3x10 DIN 912 head (pulley 120T to link) #13",
+        "part": null,
+        "share": 0.059
+       }
+      ],
+      "r": 6.6,
+      "reach": 60.0
+     }
+    }
+   }
+  ],
+  "closed": [],
+  "reach": 60.0,
+  "iron_reach": 30.0,
+  "cap_max": 2.0,
+  "n_features": 1,
+  "screws": [],
+  "screws_cut": false,
+  "not_screws": []
+ },
+ "params": {
+  "access.cap_max": 2.0,
+  "access.overlay_pattern": "(?i)\\bold printed\\b",
+  "access.seal_gap": 0.2,
+  "fits.pin_ref_pattern": "(?i)(?<![a-z])(?:pins?|dowels?|rods?|shafts?|axles?)(?![a-z])",
+  "inserts.ref_pattern": "(?i)insert",
+  "screws.min_engagement": 3.2,
+  "screws.min_engagement[M2]": 2.0,
+  "screws.min_engagement[M2.5]": 2.5,
+  "screws.min_engagement[M3]": 3.2,
+  "screws.min_engagement[M4]": 4.0,
+  "screws.min_engagement[M5]": 5.0,
+  "screws.min_engagement[M6]": 6.0,
+  "screws.ref_pattern": "(?i:screw|bolt)|\\bM\\d+(?:\\.\\d+)?\\s*x\\s*\\d+(?:\\.\\d+)?(?![\\d.]*\\s*x)",
+  "sensors.magnet_d6_pocket_d": 6.2,
+  "sensors.magnet_d6_pocket_depth": 2.6,
+  "sensors.magnet_pocket_d": 4.2,
+  "sensors.magnet_pocket_depth": 2.1
+ },
+ "ctx": {
+  "census": {
+   "holes": [
+    {
+     "anchor": {
+      "axis": [
+       0.0,
+       1.0,
+       0.0
+      ],
+      "kind": "insert_pocket",
+      "point": [
+       -15.0,
+       42.7,
+       460.0
+      ]
+     },
+     "arc": 0.75,
+     "at": {
+      "axis": [
+       0.0,
+       1.0,
+       0.0
+      ],
+      "point": [
+       -15.0,
+       42.7,
+       460.0192
+      ]
+     },
+     "behind": {
+      "cap": 61.4,
+      "d": 3.6,
+      "hole": "h4"
+     },
+     "class": {
+      "kind": "M3x4x5",
+      "match": "exact",
+      "role": "insert_pocket",
+      "table": "inserts"
+     },
+     "coaxial": [
+      {
+       "kind": "hardware",
+       "name": "Clamp HW / 6808 outer rings / M3x8 ISO 7380 head (+Y 6808 outer ring clamp) #1",
+       "part": null
+      },
+      {
+       "kind": "hardware",
+       "name": "Clamp HW / 6808 outer rings / M3x8 ISO 7380 shank (+Y 6808 outer ring clamp) #2",
+       "part": null
+      },
+      {
+       "kind": "hardware",
+       "name": "Clamp HW / 6808 outer rings / insert M3x4x5 (+Y 6808 outer ring clamp) #1",
+       "part": null
+      },
+      {
+       "kind": "hardware",
+       "name": "Clamp HW / 6808 outer rings / washer M3x12x1.5 (+Y 6808 outer ring clamp) #1",
+       "part": null
+      }
+     ],
+     "depth": 11.0,
+     "exit": null,
+     "floor": 15.3,
+     "floor_capped": false,
+     "id": "h5",
+     "segments": [
+      {
+       "d": 13.2,
+       "len": 4.5
+      },
+      {
+       "d": 4.4,
+       "len": 1.5
+      },
+      {
+       "d": 3.6,
+       "len": 5.0
+      }
+     ],
+     "through": false
+    }
+   ],
+   "openings": [],
+   "counts": {}
+  }
+ },
+ "expect": [
+  {
+   "verdict": "FAIL",
+   "measure": 0.05,
+   "limit": 0.2
+  }
+ ]
+}

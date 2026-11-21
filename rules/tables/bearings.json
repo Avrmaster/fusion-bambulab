@@ -4,6 +4,12 @@
   "tol": {
     "d": 0.05
   },
+  "seat_fit": {
+    "tag": "D",
+    "measured_under": null,
+    "about": "What the seat fit of this table was printed with: the nominal seat (bearings.seat_d_tol) and the tapered seat of bearings.seat_form, bearings.seat_taper and bearings.seat_taper_thick_base. Null while no seat was printed and measured under a declared target: the seat fit is then decided (D), and fits.decided_not_printed names it for every part with a bearing seat. When it records prints, bearings.seat fails every seat of a part whose declared target is none of them (\"measured under other settings\"). The owner adds a print in gate/owner/tables.json (\"bearings\": {\"seat_fit\": {\"measured_under\": [{\"nozzle\": ..., \"material\": ..., \"xy_hole_compensation\": ..., \"layer_height\": ..., \"source\": ..., \"date\": ...}]}})."
+  },
+  "measured_about": "A project may replace d, D and B of a designation by the bearings of the batch in hand, measured: gate/owner/tables.json \"bearings\": {\"measured\": {\"6816\": {\"d\": 79.98, \"D\": 100.01, \"B\": 10.0, \"source\": \"calliper on the batch in hand\", \"date\": \"YYYY-MM-DD\"}}}. Every judge then holds seats, clamp rooms and shafts against the measured row; the row says so (\"measured\").",
   "ring_land_share": 0.25,
   "ring_land_about": "Radial width of the flat face of one ring as a share of (D - d) / 2, used when a probe needs the band of a ring face. 0.25 is a cautious starting value (a real ring face is a little wider); it was not checked against every row.",
   "sizes": {

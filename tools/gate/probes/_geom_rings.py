@@ -705,7 +705,9 @@ def seat_scan(inside, centre, axis, r_nom, width, outer=True, window=1.0, look_i
      the edge of the window, not a measured wall), "entry_other": the same diameter on the other side,
      "rows": the seat diameter (median of the directions) at each of the nine heights, from -0.4 B to +0.4 B along the
      axis, None where fewer than half of the directions show a wall: the profile of a tapered seat. The same points
-     as "d": no point test more}."""
+     as "d": no point test more,
+     "lead_in", "entry_end": seat_lead_in() on the entry side: the chamfer where the seat wall ends (mm, as a 45 degree
+     chamfer; 0 = a sharp edge) and how far from the ring's face it ends; None when it does not end within reach}."""
     window, dirs, r_air, r_mat = _rings_seat_frame(axis, r_nom, outer, window, n_ang)
     mid = [radial_edge(inside, centre, axis, 0.0, d, r_air, r_mat) for d in dirs]
     if sum(1 for r in mid if r is not None) < 0.75 * n_ang:
@@ -744,9 +746,55 @@ def seat_scan(inside, centre, axis, r_nom, width, outer=True, window=1.0, look_i
     val = lambda side: edge if sides[side] is None else sides[side]
     best = max(('+', '-'), key=lambda sd: (val(sd) if outer else -val(sd), sd == '+'))
     other = '-' if best == '+' else '+'
-    return {'d': round(2 * radii[len(radii) // 2], 2), 'len': round(width * held / 9.0, 2),
+    seat_r = radii[len(radii) // 2]
+    lead = seat_lead_in(inside, centre, axis, seat_r, width, outer, best, dirs[::2], max(L, width) + 10.0)
+    return {'d': round(2 * seat_r, 2), 'len': round(width * held / 9.0, 2),
             'entry_d': round(2 * val(best), 2), 'entry_side': best, 'entry_open': sides[best] is None,
-            'entry_other': round(2 * val(other), 2), 'rows': rows}
+            'entry_other': round(2 * val(other), 2), 'rows': rows, 'lead_in': lead[0], 'entry_end': lead[1]}
+
+
+def seat_lead_in(inside, centre, axis, seat_r, width, outer, side, dirs, reach, step=0.5):
+    """(lead-in, end) of a seat at its entry end: where the seat wall ends on the side the ring enters from (a bore at
+    its mouth, a post at its free end), in mm from the ring's face ("end"), and how big the chamfer there is ("lead-in",
+    mm as a 45 degree chamfer: the wall's radius 0.1 mm inside the end, off the seat radius, plus 0.1). The wall is
+    followed 0.6 mm into the material, in `dirs`, every `step` mm up to `reach`; the end of each direction is found to
+    0.02 mm, the median counts. (None, None) when the wall does not end within the reach in most directions."""
+    sgn = 1.0 if side == '+' else -1.0
+    r_in = seat_r + 0.6 if outer else seat_r - 0.6                   # in the material just behind the wall
+    if r_in <= 0.05:
+        return None, None
+    ends, leads = [], []
+    for d in dirs:
+        at = lambda s: inside(v_add(v_add(centre, v_scale(axis, sgn * s)), v_scale(d, r_in)))
+        s, last = width / 2.0 - min(1.0, width / 4.0), None      # from inside the ring's width: a wall that ends at its face is found too
+        while s <= width / 2.0 + reach:
+            if at(s):
+                last = s
+            elif last is not None:
+                break
+            s += step
+        else:
+            continue
+        if last is None:
+            continue
+        a, b = last, s
+        while b - a > 0.02:
+            m = (a + b) / 2.0
+            if at(m):
+                a = m
+            else:
+                b = m
+        end = (a + b) / 2.0
+        ends.append(end)
+        r_air, r_mat = (seat_r - 0.5, seat_r + 1.5) if outer else (seat_r + 0.5, seat_r - 1.5)
+        r_e = radial_edge(inside, centre, axis, sgn * (end - 0.1), d, r_air, r_mat)
+        if r_e is not None:
+            off = (r_e - seat_r) if outer else (seat_r - r_e)
+            leads.append(round(max(0.0, off) + 0.1, 3) if off > 0.02 else 0.0)
+    if len(ends) * 2 <= len(dirs) or not leads:
+        return None, None
+    ends.sort(); leads.sort()
+    return leads[len(leads) // 2], round(ends[len(ends) // 2] - width / 2.0, 2)
 
 
 def seat_has_bearing(point, axis, depth, bearings, tol=0.5):

@@ -1,6 +1,6 @@
 {
  "judge": "fits_bought_pocket",
- "case": "a blind D6.1 x 3 hole: no row of any table and no declared pocket parameter has that size, so it is asked what goes in; a through hole of no table with a bought pin on its axis is asked too",
+ "case": "a blind D6.1 x 3 hole: no row of any table and no declared pocket parameter has that size, so it is asked what goes in; a D8.3 through hole with a steel pin D8 on its axis is its running fit, and the running fit was never printed here",
  "facts": {
   "holes": [
    {
@@ -75,7 +75,10 @@
   "sensors.magnet_pocket_d": 4.2,
   "sensors.magnet_pocket_depth": 1.7,
   "sensors.magnet_pocket_d#tag": "M",
-  "sensors.magnet_pocket_depth#tag": "M"
+  "sensors.magnet_pocket_depth#tag": "M",
+  "fits.pin_press_extra": 0.0,
+  "fits.pin_slip_extra": 0.05,
+  "fits.pin_running_extra": 0.3
  },
  "ctx": {
   "part": "demo/lever"
@@ -86,10 +89,10 @@
    "ask": "fits.pocket_content"
   },
   {
-   "verdict": "INFO",
-   "ask": "fits.pocket_content",
+   "verdict": "FAIL",
    "by": [
-    "ref pin D8 x 20"
+    "ref pin D8 x 20",
+    "fits.pin_running_extra"
    ]
   }
  ]

@@ -444,7 +444,10 @@ def coaxial_cylinders(point, axis, depth, cylinders, tol=0.25, reach=10.0):
     tol                 mm the other axis may be off the hole's axis, at both ends of the hole
     reach               mm in front of the mouth and behind the bottom that still count
 
-    Returns [{"name", "kind", "part"}], one per name, sorted by name."""
+    Returns [{"name", "kind", "part", "span"}], one per name, sorted by name. "span" [from, to] is where the body's
+    cylinders lie along the hole's axis, in mm from the mouth: positive in front of it, negative inside, -depth at the
+    bottom (the far mouth of a through hole). It tells an insert pressed into the hole from an insert of another part
+    beyond its far end."""
     bottom = v_sub(point, v_scale(axis, depth))
     seen = {}
     for c in cylinders or []:
@@ -457,7 +460,8 @@ def coaxial_cylinders(point, axis, depth, cylinders, tol=0.25, reach=10.0):
         e1 = along(v_add(c['origin'], v_scale(ca, c['s1'])), point, axis)
         if max(e0, e1) < -depth - reach or min(e0, e1) > reach:
             continue
-        seen.setdefault(c['name'], {'name': c['name'], 'kind': c.get('kind'), 'part': c.get('part')})
+        row = seen.setdefault(c['name'], {'name': c['name'], 'kind': c.get('kind'), 'part': c.get('part'), 'span': [round(min(e0, e1), 2), round(max(e0, e1), 2)]})
+        row['span'] = [min(row['span'][0], round(min(e0, e1), 2)), max(row['span'][1], round(max(e0, e1), 2))]
     return [seen[k] for k in sorted(seen)]
 
 

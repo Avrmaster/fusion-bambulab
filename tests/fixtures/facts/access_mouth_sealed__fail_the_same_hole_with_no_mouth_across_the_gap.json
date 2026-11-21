@@ -1,0 +1,250 @@
+{
+ "judge": "access_mouth_sealed",
+ "case": "the twin: the same hole with no mouth of this part facing it across the gap: the tube lies flat on a clearance hole that leads nowhere, FAIL as before",
+ "facts": {
+  "openings": [
+   {
+    "anchor": {
+     "axis": [
+      0.866,
+      0.0,
+      0.5
+     ],
+     "kind": "hole",
+     "point": [
+      -9.95,
+      -8.4,
+      466.85
+     ]
+    },
+    "end": "mouth",
+    "feature": "h46",
+    "of": "hole",
+    "paths": {
+     "own": {
+      "free": 0.05,
+      "hits": [
+       {
+        "approx": false,
+        "at": 0.05,
+        "expected": false,
+        "kind": "printed",
+        "name": "Link (tube)",
+        "part": "demo/link",
+        "share": 1.0
+       },
+       {
+        "approx": true,
+        "at": 42.36,
+        "by_box": false,
+        "expected": false,
+        "kind": "mesh",
+        "name": "old printed parts (mesh) / link half",
+        "part": null,
+        "share": 1.0
+       }
+      ],
+      "r": 3.25,
+      "reach": 60.0
+     }
+    }
+   },
+   {
+    "anchor": {
+     "axis": [
+      -0.866,
+      0.0,
+      -0.5
+     ],
+     "kind": "hole",
+     "point": [
+      -18.2,
+      -8.4,
+      462.05
+     ]
+    },
+    "end": "exit",
+    "feature": "h46",
+    "of": "hole",
+    "paths": {
+     "own": {
+      "free": 18.09,
+      "hits": [
+       {
+        "approx": false,
+        "at": 15.48,
+        "expected": true,
+        "kind": "hardware",
+        "name": "Lobe HW / M3x12 DIN 912 head (lobe to arm) #21",
+        "part": null,
+        "share": 0.529
+       },
+       {
+        "approx": false,
+        "at": 18.09,
+        "expected": false,
+        "kind": "self",
+        "name": "Lobe",
+        "part": "demo/lobe",
+        "share": 0.471
+       },
+       {
+        "approx": false,
+        "at": 19.56,
+        "expected": true,
+        "kind": "hardware",
+        "name": "Lobe HW / M3x12 DIN 912 shank (lobe to arm) #22",
+        "part": null,
+        "share": 0.181
+       },
+       {
+        "approx": false,
+        "at": 26.7,
+        "expected": true,
+        "kind": "hardware",
+        "name": "Lobe HW / insert M3x4x5 (arm, lobe screw) #11",
+        "part": null,
+        "share": 0.529
+       },
+       {
+        "approx": true,
+        "at": 29.4,
+        "by_box": false,
+        "expected": false,
+        "kind": "mesh",
+        "name": "Arm (raised 22)",
+        "part": null,
+        "share": 0.5
+       },
+       {
+        "approx": true,
+        "at": 41.99,
+        "by_box": false,
+        "expected": false,
+        "kind": "mesh",
+        "name": "old printed parts (mesh) / base",
+        "part": null,
+        "share": 1.0
+       },
+       {
+        "approx": true,
+        "at": 46.36,
+        "by_box": false,
+        "expected": false,
+        "kind": "mesh",
+        "name": "old printed parts (mesh) / arm link",
+        "part": null,
+        "share": 0.75
+       }
+      ],
+      "r": 3.25,
+      "reach": 60.0
+     }
+    }
+   }
+  ],
+  "closed": [],
+  "reach": 60.0,
+  "iron_reach": 30.0,
+  "cap_max": 2.0,
+  "n_features": 2,
+  "screws": [],
+  "screws_cut": false,
+  "not_screws": []
+ },
+ "params": {
+  "access.cap_max": 2.0,
+  "access.overlay_pattern": "(?i)\\bold printed\\b",
+  "access.seal_gap": 0.2,
+  "fits.pin_ref_pattern": "(?i)(?<![a-z])(?:pins?|dowels?|rods?|shafts?|axles?)(?![a-z])",
+  "inserts.ref_pattern": "(?i)insert",
+  "screws.min_engagement": 3.2,
+  "screws.min_engagement[M2]": 2.0,
+  "screws.min_engagement[M2.5]": 2.5,
+  "screws.min_engagement[M3]": 3.2,
+  "screws.min_engagement[M4]": 4.0,
+  "screws.min_engagement[M5]": 5.0,
+  "screws.min_engagement[M6]": 6.0,
+  "screws.ref_pattern": "(?i:screw|bolt)|\\bM\\d+(?:\\.\\d+)?\\s*x\\s*\\d+(?:\\.\\d+)?(?![\\d.]*\\s*x)",
+  "sensors.magnet_d6_pocket_d": 6.2,
+  "sensors.magnet_d6_pocket_depth": 2.6,
+  "sensors.magnet_pocket_d": 4.2,
+  "sensors.magnet_pocket_depth": 2.1
+ },
+ "ctx": {
+  "census": {
+   "holes": [
+    {
+     "anchor": {
+      "axis": [
+       0.866,
+       0.0,
+       0.5
+      ],
+      "kind": "hole",
+      "point": [
+       -9.95,
+       -8.4,
+       466.85
+      ]
+     },
+     "arc": 0.812,
+     "at": {
+      "axis": [
+       0.866025,
+       0.0,
+       0.5
+      ],
+      "point": [
+       -9.9251,
+       -8.4,
+       466.8291
+      ]
+     },
+     "behind": null,
+     "class": {
+      "kind": "M6",
+      "match": "exact",
+      "role": "clearance",
+      "table": "screws"
+     },
+     "coaxial": [],
+     "depth": 9.579,
+     "exit": {
+      "axis": [
+       -0.866,
+       0.0,
+       -0.5
+      ],
+      "kind": "hole",
+      "point": [
+       -18.2,
+       -8.4,
+       462.05
+      ]
+     },
+     "floor": null,
+     "floor_capped": false,
+     "id": "h46",
+     "segments": [
+      {
+       "d": 6.5,
+       "len": 9.579
+      }
+     ],
+     "through": true
+    }
+   ],
+   "openings": [],
+   "counts": {}
+  }
+ },
+ "expect": [
+  {
+   "verdict": "FAIL",
+   "ask": null,
+   "measure": 0.05,
+   "limit": 0.2
+  }
+ ]
+}

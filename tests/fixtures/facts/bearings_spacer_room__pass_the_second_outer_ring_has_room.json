@@ -1,0 +1,232 @@
+{
+ "judge": "bearings_spacer_room",
+ "case": "the fix: the tube's upper seat floor is 1.05 under the upper outer ring, the spacer alone sets the distance: a pass",
+ "facts": {
+  "bearings": [
+   {
+    "B": 10.0,
+    "D": 100.0,
+    "d": 80.0,
+    "designation": "61816",
+    "by": "geometry",
+    "ref": "ref 61816 lower",
+    "anchor": {
+     "axis": [
+      0.0,
+      0.0,
+      1.0
+     ],
+     "kind": "bearing",
+     "point": [
+      0.0,
+      0.0,
+      -20.0
+     ]
+    },
+    "clamps": [],
+    "hidden_near": [],
+    "mesh_near": [],
+    "rings": {
+     "inner": {
+      "faces": [
+       {
+        "side": "+",
+        "covered": [
+         {
+          "bearing": false,
+          "gap": 0.0,
+          "kind": "printed",
+          "name": "Inner-ring spacer",
+          "near": 1.0,
+          "other_ring_share": 0.0,
+          "part": "demo/spacer",
+          "points": 1,
+          "share": 1.0,
+          "touches_other_ring": false,
+          "twin": false
+         }
+        ]
+       },
+       {
+        "side": "-",
+        "covered": [
+         {
+          "bearing": false,
+          "gap": 0.0,
+          "kind": "printed",
+          "name": "Base",
+          "near": 1.0,
+          "other_ring_share": 0.0,
+          "part": "demo/base",
+          "points": 1,
+          "share": 1.0,
+          "touches_other_ring": false,
+          "twin": false
+         }
+        ]
+       }
+      ]
+     },
+     "outer": {
+      "faces": [
+       {
+        "side": "+",
+        "covered": [
+         {
+          "bearing": false,
+          "gap": 0.0,
+          "kind": "printed",
+          "name": "Riser tube",
+          "near": 1.0,
+          "other_ring_share": 0.0,
+          "part": "demo/tube",
+          "points": 1,
+          "share": 1.0,
+          "touches_other_ring": false,
+          "twin": false
+         }
+        ]
+       },
+       {
+        "side": "-",
+        "covered": [
+         {
+          "bearing": false,
+          "gap": 0.0,
+          "kind": "printed",
+          "name": "Pulley",
+          "near": 1.0,
+          "other_ring_share": 0.0,
+          "part": "demo/pulley",
+          "points": 1,
+          "share": 1.0,
+          "touches_other_ring": false,
+          "twin": false
+         }
+        ]
+       }
+      ]
+     }
+    }
+   },
+   {
+    "B": 10.0,
+    "D": 100.0,
+    "d": 80.0,
+    "designation": "61816",
+    "by": "geometry",
+    "ref": "ref 61816 upper",
+    "anchor": {
+     "axis": [
+      0.0,
+      0.0,
+      1.0
+     ],
+     "kind": "bearing",
+     "point": [
+      0.0,
+      0.0,
+      35.0
+     ]
+    },
+    "clamps": [],
+    "hidden_near": [],
+    "mesh_near": [],
+    "rings": {
+     "inner": {
+      "faces": [
+       {
+        "side": "+",
+        "covered": [
+         {
+          "bearing": false,
+          "gap": 0.0,
+          "kind": "hardware",
+          "name": "Clamp washer",
+          "near": 1.0,
+          "other_ring_share": 0.0,
+          "part": null,
+          "points": 1,
+          "share": 1.0,
+          "touches_other_ring": false,
+          "twin": false
+         }
+        ]
+       },
+       {
+        "side": "-",
+        "covered": [
+         {
+          "bearing": false,
+          "gap": 0.0,
+          "kind": "printed",
+          "name": "Inner-ring spacer",
+          "near": 1.0,
+          "other_ring_share": 0.0,
+          "part": "demo/spacer",
+          "points": 1,
+          "share": 1.0,
+          "touches_other_ring": false,
+          "twin": false
+         }
+        ]
+       }
+      ]
+     },
+     "outer": {
+      "faces": [
+       {
+        "side": "+",
+        "covered": [
+         {
+          "bearing": false,
+          "gap": 0.0,
+          "kind": "printed",
+          "name": "Top cap",
+          "near": 1.0,
+          "other_ring_share": 0.0,
+          "part": "demo/top",
+          "points": 1,
+          "share": 1.0,
+          "touches_other_ring": false,
+          "twin": false
+         }
+        ]
+       },
+       {
+        "side": "-",
+        "covered": [
+         {
+          "bearing": false,
+          "gap": 1.05,
+          "kind": "printed",
+          "name": "Riser tube",
+          "near": 1.0,
+          "other_ring_share": 0.0,
+          "part": "demo/tube",
+          "points": 0,
+          "share": 0.0,
+          "touches_other_ring": false,
+          "twin": false
+         }
+        ]
+       }
+      ]
+     }
+    }
+   }
+  ],
+  "near_bearings": [],
+  "not_bearings": [],
+  "rejected": [],
+  "seats_without_bearing": []
+ },
+ "params": {
+  "bearings.clamp_room": 1.0,
+  "bearings.contact_gap_max": 0.05
+ },
+ "ctx": {
+  "part": "demo/tube"
+ },
+ "expect": []
+}

@@ -1018,7 +1018,7 @@ def status(root, reg=None, hash_budget_s=None):
     them (they have no stamp); the text of the status counts and names them apart. hash_budget_s limits the time spent hashing STLs that
     are not in the cache yet; the ones left over are "unknown" and are not counted as unstamped."""
     import gate_plan
-    reg = reg or gate_registry.load_default()
+    reg = reg or gate_registry.load_default(root)
     project, layout, census = gate_common.load_project(root), gate_common.load_layout(root), gate_common.load_census(root)
     live = [p for p in sorted(census['parts']) if not census['parts'][p].get('gone')]
     changed = gate_plan.changed_parts(root, census)

@@ -1,0 +1,128 @@
+{
+ "judge": "print_overhang_angle",
+ "case": "support stands under the roof but its top is at z 3, five mm under the roof at z 8: the roof itself is bare: FAIL",
+ "facts": {
+  "project": "main",
+  "file": "bambulab/demo.3mf",
+  "exists": true,
+  "overhangs": {
+   "max_angle": 45.0,
+   "max_bridge": 6.0,
+   "objects": [
+    {
+     "name": "housing",
+     "part": "demo/housing",
+     "plate": "plate 1",
+     "plate_index": 1,
+     "printable": true,
+     "pose": "3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a",
+     "support": true,
+     "support_how": "enable_support = 1 for the whole project (tree(auto))",
+     "faces": [
+      {
+       "area": 3.1,
+       "flattest": 80.0,
+       "z": [
+        8.0,
+        9.0
+       ],
+       "at": [
+        20.0,
+        0.0,
+        8.0
+       ],
+       "triangles": 6,
+       "steepest": 50.0,
+       "box": [
+        18.0,
+        0.0,
+        22.0,
+        2.0
+       ]
+      }
+     ],
+     "ridges": [],
+     "bridges": [],
+     "totals": {
+      "faces": 1,
+      "face_area": 3.1,
+      "ridges": 0,
+      "ridge_length": 0,
+      "bridges": 0
+     },
+     "all": {
+      "faces": [
+       [
+        18.0,
+        0.0,
+        22.0,
+        2.0,
+        8.0
+       ]
+      ],
+      "ridges": [],
+      "bridges": []
+     }
+    }
+   ]
+  },
+  "slice": {
+   "record": "gate/run/slice/main.json",
+   "objects": [
+    {
+     "name": "housing",
+     "part": "demo/housing",
+     "plate": "plate 1",
+     "plate_index": 1,
+     "printable": true,
+     "pose": "3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a",
+     "skey": "abcdabcdabcdabcd",
+     "baseline": null,
+     "why": null,
+     "sliced": {
+      "support_e": 12.0,
+      "interface_e": 0.0,
+      "low_z": 0.2,
+      "top_z": 7.8,
+      "plate_index": 1,
+      "time": "2026-01-01T10:00:00",
+      "pose": "3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a",
+      "skey": "abcdabcdabcdabcd",
+      "origin": [
+       40.0,
+       40.0
+      ],
+      "cells": [
+       [
+        19.5,
+        0.5,
+        3.0
+       ],
+       [
+        20.5,
+        0.5,
+        3.0
+       ]
+      ],
+      "cells_cut": false
+     }
+    }
+   ]
+  }
+ },
+ "params": {
+  "overhang.max_angle": 45.0,
+  "overhang.max_bridge": 6.0,
+  "target.line_width": 0.42,
+  "target.initial_layer_print_height": 0.2
+ },
+ "ctx": {
+  "part": "main:"
+ },
+ "expect": [
+  {
+   "verdict": "FAIL",
+   "part": "demo/housing"
+  }
+ ]
+}

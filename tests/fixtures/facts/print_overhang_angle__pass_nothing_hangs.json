@@ -1,0 +1,81 @@
+{
+ "judge": "print_overhang_angle",
+ "case": "every face steep enough, no bridge over the limit; a switched-off object with a shelf is left to project.object_not_printable",
+ "facts": {
+  "project": "main",
+  "file": "bambulab/demo.3mf",
+  "exists": true,
+  "overhangs": {
+   "max_angle": 45.0,
+   "max_bridge": 6.0,
+   "objects": [
+    {
+     "name": "spacer",
+     "part": "demo/spacer",
+     "plate": "plate 1",
+     "plate_index": 1,
+     "printable": true,
+     "pose": "3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a",
+     "support": false,
+     "support_how": "the object overrides enable_support = 0",
+     "faces": [],
+     "ridges": [],
+     "bridges": [],
+     "totals": {
+      "faces": 0,
+      "face_area": 0,
+      "ridges": 0,
+      "ridge_length": 0,
+      "bridges": 0
+     }
+    },
+    {
+     "name": "old bracket",
+     "part": null,
+     "plate": "plate 1",
+     "plate_index": 1,
+     "printable": false,
+     "pose": "3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a",
+     "support": false,
+     "support_how": "the object overrides enable_support = 0",
+     "faces": [
+      {
+       "area": 38.0,
+       "flattest": 90.0,
+       "z": [
+        12.0,
+        13.0
+       ],
+       "at": [
+        4.0,
+        6.0,
+        12.0
+       ],
+       "triangles": 6,
+       "steepest": 50.0
+      }
+     ],
+     "ridges": [],
+     "bridges": [],
+     "totals": {
+      "faces": 1,
+      "face_area": 38.0,
+      "ridges": 0,
+      "ridge_length": 0,
+      "bridges": 0
+     }
+    }
+   ]
+  }
+ },
+ "params": {
+  "overhang.max_angle": 45.0,
+  "overhang.max_bridge": 6.0,
+  "target.line_width": 0.42,
+  "target.initial_layer_print_height": 0.2
+ },
+ "ctx": {
+  "part": "main:"
+ },
+ "expect": []
+}

@@ -111,7 +111,8 @@ class Build(Gated):
         rules = gate_stamp.applicable_rules(self.reg, {'source': 'generated'})
         self.assertIn('walls.min_material', rules); self.assertNotIn('inserts.wall', rules)
         self.assertEqual(gate_stamp.applicable_rules(self.reg, {}), gate_stamp.applicable_rules(self.reg, {'source': 'fusion'}))
-        self.assertEqual([r for r in gate_stamp.applicable_rules(self.reg, {}, stages=('project',)) if not r.startswith('project.')], [])
+        self.assertEqual([r for r in gate_stamp.applicable_rules(self.reg, {}, stages=('project',)) if not r.startswith('project.')],
+                         ['print.overhang_angle', 'print.slice_support_growth', 'walls.placed_stl'])      # judged on the .3mf as it lies on its plates
         path = self.stl('shim'); sig = meshid.stl_ids(path)['geom_hash']
         s = gate_stamp.build(self.d, self.reg, self.resolved, 'demo/shim', sig, self.judged('generated'), path, TARGET)      # not in the census: the layout names it
         self.assertEqual(sorted(s['checks']), rules)

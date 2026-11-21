@@ -1,0 +1,168 @@
+{
+ "judge": "walls_placed_stl",
+ "case": "a part printed before the gate holds a 0.86 neck under a hook in the mesh the project prints from: the row of walls.min_material, on that object, until it is exported again; a second object is fine",
+ "incident": "the STL wall rules ran only at export, never on an STL a project already held",
+ "facts": {
+  "project": "main",
+  "placed_walls": {
+   "report_under": 3.0,
+   "objects": [
+    {
+     "name": "Hook",
+     "part": "demo/hook",
+     "plate": "plate 1",
+     "plate_index": 1,
+     "pose": "7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c",
+     "state": "measured",
+     "mesh": {
+      "stl": "gate/run/quarantine/demo_knob.stl",
+      "sha256": "5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e",
+      "triangles": 8424,
+      "degenerate": 0,
+      "open_edges": 0,
+      "non_manifold_edges": 0,
+      "shells": 1,
+      "volume": 15320.4,
+      "bbox": [
+       [
+        -20.0,
+        -20.0,
+        0.0
+       ],
+       [
+        20.0,
+        20.0,
+        24.0
+       ]
+      ],
+      "geom_hash": "abababababababababababababababababababab"
+     },
+     "walls": {
+      "stl": "stl/demo.stl",
+      "triangles": 48210,
+      "bbox": [
+       [
+        -20.0,
+        -20.0,
+        0.0
+       ],
+       [
+        20.0,
+        20.0,
+        126.0
+       ]
+      ],
+      "area": 31250.0,
+      "samples": 20000,
+      "spacing": 1.25,
+      "coverage": 0.97,
+      "report_under": 3.0,
+      "budget_s": 60.0,
+      "elapsed_s": 21.4,
+      "regions": [
+       {
+        "kind": "wall",
+        "min": 0.86,
+        "p50": 1.1,
+        "area": 14.2,
+        "point": [
+         11.5,
+         0.0,
+         118.0
+        ],
+        "normal": [
+         1,
+         0,
+         0
+        ],
+        "samples": 12,
+        "bbox": [
+         [
+          9.5,
+          -2.0,
+          116.0
+         ],
+         [
+          13.5,
+          2.0,
+          120.0
+         ]
+        ]
+       }
+      ]
+     }
+    },
+    {
+     "name": "Plate",
+     "part": "demo/plate",
+     "plate": "plate 1",
+     "plate_index": 1,
+     "pose": "7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c",
+     "state": "measured",
+     "mesh": {
+      "stl": "gate/run/quarantine/demo_knob.stl",
+      "sha256": "5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e",
+      "triangles": 8424,
+      "degenerate": 0,
+      "open_edges": 0,
+      "non_manifold_edges": 0,
+      "shells": 1,
+      "volume": 15320.4,
+      "bbox": [
+       [
+        -20.0,
+        -20.0,
+        0.0
+       ],
+       [
+        20.0,
+        20.0,
+        24.0
+       ]
+      ],
+      "geom_hash": "abababababababababababababababababababab"
+     },
+     "walls": {
+      "stl": "stl/demo.stl",
+      "triangles": 48210,
+      "bbox": [
+       [
+        -20.0,
+        -20.0,
+        0.0
+       ],
+       [
+        20.0,
+        20.0,
+        126.0
+       ]
+      ],
+      "area": 31250.0,
+      "samples": 20000,
+      "spacing": 1.25,
+      "coverage": 0.97,
+      "report_under": 3.0,
+      "budget_s": 60.0,
+      "elapsed_s": 21.4,
+      "regions": []
+     }
+    }
+   ]
+  }
+ },
+ "params": {
+  "walls.min_wall_effective": 1.5,
+  "walls.coverage_min": 0.9,
+  "target.line_width": 0.42,
+  "walls.slit_min": 0.3,
+  "walls.min_wall": 1.5
+ },
+ "expect": [
+  {
+   "verdict": "FAIL",
+   "measure": 0.86,
+   "limit": 1.5,
+   "part": "demo/hook"
+  }
+ ]
+}

@@ -1,0 +1,92 @@
+{
+ "judge": "washers_landing",
+ "case": "the same washer judged on the cap, which lists no slot under it: 54 % is a FAIL there (nothing is dropped, the row moves to the part the washer lies on)",
+ "facts": {
+  "screws": [],
+  "washers": [
+   {
+    "id": "w1",
+    "ref": "ref clamp / washer M3 (w1)",
+    "od": 7.0,
+    "id_d": 3.2,
+    "t": 0.5,
+    "anchor": {
+     "kind": "face",
+     "axis": [
+      0,
+      0,
+      1
+     ],
+     "point": [
+      0,
+      6,
+      22
+     ]
+    },
+    "landing": {
+     "share": 0.54,
+     "share_all": 0.54,
+     "gap": 0.0,
+     "open_d": 4.2,
+     "ring_shares": [
+      0.333,
+      0.5,
+      0.5,
+      0.583,
+      0.583,
+      0.542
+     ],
+     "on_bearing": null,
+     "look": 2.0,
+     "on": "demo/cap",
+     "spot_face_d": null,
+     "wall_angles": 0,
+     "covers": [
+      {
+       "name": "Cap",
+       "kind": "printed",
+       "part": "demo/cap",
+       "share": 0.507,
+       "gap": 0.0,
+       "bearing": false
+      },
+      {
+       "name": "Cam",
+       "kind": "printed",
+       "part": "demo/cam",
+       "share": 0.0,
+       "gap": 1.05,
+       "bearing": false
+      }
+     ]
+    },
+    "proud": {
+     "height": 3.5,
+     "nearest": null
+    },
+    "screw": "ref clamp / screw M3x16 (1)"
+   }
+  ]
+ },
+ "params": {
+  "washers.landing_share_min": 0.95,
+  "washers.landing_gap_max": 0.05,
+  "washers.spot_face_clearance": 1.2,
+  "bearings.clamp_room_washer": 1.0,
+  "washers.slot_land_min": 1.0
+ },
+ "ctx": {
+  "part": "demo/cap",
+  "census": {
+   "holes": [],
+   "openings": []
+  }
+ },
+ "expect": [
+  {
+   "verdict": "FAIL",
+   "measure": 0.54,
+   "limit": 0.95
+  }
+ ]
+}

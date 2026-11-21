@@ -874,7 +874,7 @@ def cmd_export(root, args):
     parts, generated = list(dict.fromkeys(args.parts or [])), args.generated
     if bool(parts) == bool(generated):
         raise GateError('export needs part ids, or --generated STL (one of the two)')
-    reg = gate_registry.load_default()
+    reg = gate_registry.load_default(root)
     project = gate_common.load_project(root)
     target = gate_common.target_of(project, args.target)
     if target is None and project.get('targets'):
