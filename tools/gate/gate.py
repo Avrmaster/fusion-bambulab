@@ -89,7 +89,7 @@ def parser():
     scan      doc (document key or None = every registered document)
     run       changed (bool), all (bool), part (list of part ids, [] when none), intent (list of part ids from --parts,
               None when not given), wall (seconds, float), audit (bool), offline (bool), no_scan (bool),
-              target (--for KEY or None)
+              target (--for KEY or None), fresh (bool: no stored facts are taken over)
     status    json (bool), digest (bool)
     attest    action ("list" | "answer"), question (Q id or None), label, na, param, shot (each text or None),
               target (--for KEY or None), part (list: the questions of one part, waiting ones too), waiting (bool)
@@ -116,6 +116,7 @@ def parser():
     s.add_argument('--part', action='append', default=[]); s.add_argument('--parts', dest='intent', type=lambda t: [x for x in t.split(',') if x])
     s.add_argument('--wall', type=float, default=20.0); s.add_argument('--audit', action='store_true'); s.add_argument('--offline', action='store_true')
     s.add_argument('--no-scan', dest='no_scan', action='store_true'); s.add_argument('--for', dest='target')
+    s.add_argument('--fresh', action='store_true', help='measure every unit of the chosen parts again, also when its stored facts still hold')
     s = sub.add_parser('status'); s.add_argument('--json', action='store_true'); s.add_argument('--digest', action='store_true')
     s = sub.add_parser('attest'); s.add_argument('action', choices=('list', 'answer')); s.add_argument('question', nargs='?')
     g = s.add_mutually_exclusive_group()

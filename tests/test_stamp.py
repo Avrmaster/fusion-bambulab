@@ -330,7 +330,9 @@ class Export(Gated):
         super().setUp(); self.f = Fakes(self)
         for target, name, fn in ((gate_plan, 'part_verdict', self.f.part_verdict), (gate_plan, 'judge_part', self.f.judge_part), (gate_plan, 'acquire_lock', lambda root: None),
                                  (gate_plan, 'release_lock', lambda root: None), (gate_report, 'inherited_block', lambda root, part: []),
-                                 (gate_fusion_rpc, 'run_unit', self.f.run_unit), (stl_mesh, 'measure', self.f.stl_mesh), (stl_walls, 'measure', self.f.stl_walls)):
+                                 (gate_fusion_rpc, 'run_unit', self.f.run_unit), (stl_mesh, 'measure', self.f.stl_mesh), (stl_walls, 'measure', self.f.stl_walls),
+                                 # the scan before an export and the test of what the part was checked against have tests of their own (test_deps)
+                                 (gate_stamp, 'scan_for_export', lambda *a, **k: None), (gate_stamp, '_checked_against', lambda *a, **k: None)):
             p = mock.patch.object(target, name, fn); p.start(); self.addCleanup(p.stop)
         self.census('demo/bracket', SIG1, stl='stl/bracket.stl', name='Bracket')
         for rid, j in self.judged().items():                                # the design run stored its judgements

@@ -147,7 +147,7 @@ class Digest(Tmp):
         lines = text.splitlines()
         self.assertTrue(lines[0].startswith('Print gate of %s' % root))
         self.assertIn('gate [observe]: 7 parts', text)
-        self.assertIn('2 changed since their stamp', text)
+        self.assertIn('1 changed, not checked | 1 checked, no stamp | 5 stamped', text)
         self.assertIn('2 open findings', text)
         self.assertIn('1 questions', text)
         self.assertIn('1 STLs without a valid stamp', text)

@@ -1001,7 +1001,11 @@ def status(root, reg=None, hash_budget_s=None):
     "unstamped_stls": [paths in STL folders with no valid stamp], "triage_open": n, "last_run": run id or None,
     "last_scan": time or None}. Runs nothing in Fusion, judges nothing.
 
-    Also: "unchecked" (changed parts whose present geometry no run has judged), "inherited" (n findings that are triage
+    "measure_again": {"units", "work_s", "unknown"}: the units stale_units() names and their Fusion work by their last
+    measurement ("unknown": units with no cost stored). Also: "unchecked" (parts changed since they were last CHECKED: their present geometry was never judged, or a unit
+    of theirs must run again because its own record no longer holds, gate_plan.stale_units: also a stamped part whose
+    neighbour moved), "unchecked_why" ({part: "<probe>: why"} of the latter), "checked_ids" (checked at the present
+    model, no valid stamp), "stamped_ids" (a valid stamp and nothing to measure again), "inherited" (n findings that are triage
     items), "stale" (parts judged by an older judge), "stl_states" ({path: valid | stale | none | unknown}),
     "unfinished" ({"run", "done", "total"} of a run that needs more calls, or None), "unreachable" (document keys the
     last scan found closed), "registered" (documents and generators of gate/layout.json), "waiting" (standing questions
@@ -1039,6 +1043,31 @@ def status(root, reg=None, hash_budget_s=None):
             stale.append(pid)
         if (v['not_run'] or v['verdict'] == 'unreachable') and v['verdict'] in ('incomplete', 'unreachable') and pid in changed:
             unchecked.append(pid)                # a rule with nothing stored. A row that could not decide (NOT_RUN) is listed as an open row instead
+    # changed since it was last CHECKED: a unit whose stored facts no longer hold (its geometry, its place, a neighbour it
+    # read, a parameter or the probe changed). Stamped or not: a moved neighbour can close a hole of a stamped part
+    try:
+        stale_units = gate_plan.stale_units(root, reg, census=census, layout=layout, project=project)
+    except GateError:
+        stale_units = {}
+    why, again = {}, {'units': 0, 'work_s': 0.0, 'unknown': 0}
+    for pid, units in sorted(stale_units.items()):
+        first = next(('%s: %s' % (probe, w) for probe, w in sorted(units.items()) if w), None)
+        if first:
+            why[pid] = first
+            if pid not in unchecked:
+                unchecked.append(pid)
+            stored = gate_plan._stored_units(root, pid, census['parts'].get(pid) or {})
+            for probe, w in units.items():                  # what measuring them again costs, from their last measurement
+                if w:
+                    cost = gate_plan._expected_cost(stored.get(probe))
+                    again['units'] += 1
+                    if cost is None:
+                        again['unknown'] += 1
+                    else:
+                        again['work_s'] += cost
+    unchecked.sort()
+    stamped = [p for p in live if p not in changed and p not in unchecked]
+    checked = [p for p in live if p in changed and p not in unchecked]
     states = _stl_states(root, layout, census, hash_budget_s)
     plan = gate_plan.load_plan(root)
     unfinished = None
@@ -1054,7 +1083,8 @@ def status(root, reg=None, hash_budget_s=None):
             'stl_states': states, 'unfinished': unfinished, 'unreachable': sorted(k for k, d in census['docs'].items() if d.get('open') is False),
             'registered': len(layout.get('documents') or []) + len(layout.get('generators') or []), 'waiting': waiting,
             'inherited_parts': len(inherited_parts), 'inherited_ids': inherited_parts, 'over_budget': over,
-            'waiting_call': gate_plan.waiting_line(root),
+            'waiting_call': gate_plan.waiting_line(root), 'unchecked_why': why, 'checked_ids': checked, 'stamped_ids': stamped,
+            'measure_again': dict(again, work_s=round(again['work_s'], 1)),
             'stale_references': [line for k in sorted(census['docs']) for line in gate_plan.stale_references(census, k)]}
 
 
@@ -1063,10 +1093,18 @@ def _some(names, n=4):
     return ', '.join(names[:n]) + (' (+%d more)' % (len(names) - n) if len(names) > n else '')
 
 
+def _minutes(seconds):
+    return '%d s' % round(seconds) if seconds < 90 else '%d min' % round(seconds / 60.0)
+
+
 def _status_lines(st, rows=None):
     """The status as text. rows None = everything; a number = at most that many open rows (the digest)."""
     settled = set(st.get('inherited_ids') or []) - set(st['unchecked'])       # judged by the audit, not changed since: not "changed"
-    head = ['gate [%s]: %d parts' % (st['mode'], st['parts']), '%d changed since their stamp' % len([p for p in st['changed'] if p not in settled]),
+    unchecked = set(st['unchecked'])
+    checked = st['checked_ids'] if 'checked_ids' in st else [p for p in st['changed'] if p not in unchecked]
+    stamped = len(st['stamped_ids']) if 'stamped_ids' in st else max(0, st['parts'] - len(set(st['changed']) | unchecked))
+    head = ['gate [%s]: %d parts' % (st['mode'], st['parts']), '%d changed, not checked' % len(unchecked),
+            '%d checked, no stamp' % len(checked), '%d stamped' % stamped,
             '%d open findings' % len(st['open']), '%d questions' % len(st['questions']),
             '%d STLs without a valid stamp' % len(st['unstamped_stls'])]
     if st['triage_open'] or st['inherited']:
@@ -1103,8 +1141,20 @@ def _status_lines(st, rows=None):
                    % (len(st['questions']) - len(qs)))
     if st.get('waiting'):
         out.append('  %d questions wait at %d inherited parts: asked when a part changes, and at its export' % (st['waiting'], st.get('inherited_parts', 0)))
+    if st['last_scan'] is not None:                 # the counts are those of the last scan: an edit since is not in them
+        out.append('  as of the scan at %s: what changed in Fusion after it is seen by the next `gate.py scan` or `run`' % st['last_scan'])
+    again = st.get('measure_again') or {}
+    if again.get('units'):
+        out.append('  to measure again: %d unit(s), about %s of Fusion work by their last measurement%s (`gate.py run --changed`)'
+                   % (again['units'], _minutes(again.get('work_s') or 0.0),
+                      ', %d of them of unknown cost (up to the budget of a call each)' % again['unknown'] if again.get('unknown') else ''))
     if st['unchecked']:
         out.append('  changed and not checked: %s' % (', '.join(st['unchecked']) if rows is None else _some(st['unchecked'])))
+        whys = st.get('unchecked_why') or {}
+        for pid in (sorted(whys) if rows is None else sorted(whys)[:2]):
+            out.append('    %s: %s' % (pid, whys[pid]))
+        if rows is not None and len(whys) > 2:
+            out.append('    ... and %d more (`gate.py status`)' % (len(whys) - 2))
     if settled:
         out.append('  %d inherited parts: judged by the audit, not changed since, no stamp (%s)' % (len(settled), _some(sorted(settled))))
     passed = [p for p in st['changed'] if p not in st['unchecked'] and p not in settled]

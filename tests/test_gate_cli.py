@@ -55,22 +55,26 @@ class Resumable(Cli):
         self.demo.facts('fusion_inserts', BRACKET, thin(), elapsed_s=12.0)
         self.demo.facts('fusion_thin', COVER, {'faces': [{'anchor': SLIVER, 'width': 0.3}]}, elapsed_s=12.0)
         self.demo.model({'Bracket': 'v1', 'Cover': 'v1'}, elapsed_s=12.0)                 # every call into Fusion takes 12 s; --wall is 20
-        seen, opens = [], []
+        seen, opens, confirm = [], [], 0
         for _ in range(20):
             code, out, err = self.gate('run')
             self.assertEqual(err, '')
             if code != 3:
                 break
             last = out.strip().splitlines()[-1]
+            if last == 'NEXT 0/1':                                                        # the units are done over several calls: one more scan
+                confirm += 1; self.assertIn('the next call scans once more', out)
+                continue
             self.assertRegex(last, r'^NEXT \d+/8$')                                       # the last line printed
             seen.append(int(last.split()[1].split('/')[0])); opens.append(self.latest()['totals']['block_open'])
             self.assertEqual(self.latest()['exit'], 3)
         self.assertEqual(seen, [0, 1, 2, 3, 4, 5, 6, 7])                                  # the scan, then one unit per call
+        self.assertEqual(confirm, 1)                                                      # ... then the call that scans again and sends no unit
         self.assertEqual(opens, [0, 0, 0, 0, 1, 1, 1, 1])                                 # the bracket's row is there as soon as its units are done
         self.assertEqual(code, 1)
         self.assertIn('2 parts, 2 open (1 FAIL, 1 GROW), 0 questions, 0 not run -> exit 1', out)
         self.assertIn('GROW    demo/bracket  inserts.wall  pocket wall 2.5 under 4.0', out); self.assertIn('FAIL    demo/cover  walls.thin_faces', out)
-        self.assertEqual((self.scans(), len(self.fusion.calls)), (1, 9))                  # nothing ran twice
+        self.assertEqual((self.scans(), len(self.fusion.calls)), (2, 10))                 # nothing ran twice; the second scan found nothing new
         report = self.latest()
         self.assertEqual((report['exit'], [p['units'] for p in report['parts']]), (1, [{'done': 4, 'total': 4}] * 2))
         self.assertTrue(os.path.isfile(self.demo.path('gate', 'reports', report['run'] + '.md')))
@@ -83,11 +87,15 @@ class Resumable(Cli):
         self.assertEqual((self.scans(), gate_plan.progress(gate_plan.load_plan(self.root))), (1, (1, 4)))
         code, out, err = self.gate('run', '--all')                                        # another request: a new plan, a new scan
         self.assertEqual(code, 3); self.assertNotEqual(gate_plan.load_plan(self.root)['run'], first); self.assertEqual(self.scans(), 2)
-        self.assertEqual(self.run_all('--all')[0], 0)
+        going = gate_plan.load_plan(self.root)['run']
+        self.assertEqual(self.run_all('--all')[0], 3)                                     # the same request went on with its plan ...
+        self.assertEqual((self.scans(), gate_plan.load_plan(self.root)['run']), (2, going))
+        n = len(self.fusion.calls)
+        self.assertEqual(self.run_all('--all')[0], 0)                                     # ... measured over several calls: one more scan, no unit
+        self.assertEqual((self.scans(), len(self.fusion.calls)), (3, n + 1))
         done = gate_plan.load_plan(self.root)['run']
-        self.assertEqual(self.scans(), 2)                                                 # the same request went on with its plan
         self.assertEqual(self.run_all('--all')[0], 0)
-        self.assertNotEqual(gate_plan.load_plan(self.root)['run'], done); self.assertEqual(self.scans(), 3)
+        self.assertNotEqual(gate_plan.load_plan(self.root)['run'], done); self.assertEqual(self.scans(), 4)
 
     def test_a_wall_too_short_for_one_unit_is_said(self):
         self.demo.model({'Bracket': 'v1'})
@@ -263,8 +271,9 @@ class Trouble(Cli):
         self.assertEqual([u['state'] for u in plan['units']][:3], ['done', 'todo', 'todo'])     # saved: the next call goes on from here
         self.assertFalse(os.path.exists(self.demo.path('gate', 'run', 'lock')))
         self.fusion.clear('fusion_inserts', BRACKET); self.fusion.alive_after_timeout = True; self.demo.facts('fusion_inserts', BRACKET, {'pockets': []})
-        code, out, err = self.run_all()                                                   # Fusion is back
-        self.assertEqual((code, self.scans(), gate_plan.load_plan(self.root)['run']), (0, 1, plan['run']))
+        code, out, err = self.run_all()                                                   # Fusion is back: the plan goes on ...
+        self.assertEqual((code, self.scans(), gate_plan.load_plan(self.root)['run']), (3, 1, plan['run']))
+        self.assertEqual((self.run_all()[0], self.scans()), (0, 2))                       # ... and one scan more says nothing moved meanwhile
 
     def test_a_unit_that_fails_leaves_its_rule_not_run_and_the_part_not_passed(self):
         self.demo.model({'Bracket': 'v1'})
@@ -566,7 +575,7 @@ class Export(Cli):
             self.assertIn(self.gate('attest', 'answer', qid, '--label', label)[0], (0, 2))
 
     def test_a_stamp_is_written_only_on_a_pass(self):
-        self.assertEqual(self.export()[0], 4)                                             # never scanned: not a part the gate knows
+        self.assertEqual(self.export()[0], 1); self.assertEqual(self.stamps(), [])       # the export scans first: a known part then, never checked
         self.assertEqual(self.gate('scan')[0], 0)
         self.assertEqual(self.export()[0], 1); self.assertEqual(self.stamps(), [])       # scanned, never checked: nothing to stamp
         self.demo.facts('fusion_inserts', BRACKET, thin())

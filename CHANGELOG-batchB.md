@@ -1,0 +1,68 @@
+## 0.3.0 (batch B)
+
+### Changed
+
+- **`run --changed` measures what changed since the part was last CHECKED, not since its stamp.** Before, a part with no stamp counted as changed, so in a project where nothing was exported yet every `run --changed` measured every unit of every part again (the whole document for one edit). Now every unit stores what it read (below), and after the scan a unit is measured again only when something it read changed: its own part (signature, place, shown or hidden), a body in a region it read (changed, moved, came, left, shown or hidden), a parameter, table or job key it read, or the text of its probe. A unit whose stored facts still hold is taken over as done ("reused" in the plan) and costs no call, stamp or no stamp. The parts a run reports are the same as before (every part without a valid stamp, less the owner's settled ones), plus every part with a unit to measure again, so the exit code and the report still show every open row of those parts; only the measuring is incremental. A change of nothing measures nothing (the run is a scan and a judgement from stored verdicts).
+- **A neighbour that changes reopens the parts that read it.** A unit of an unchanged part whose region holds a body that moved or changed is stale and runs again, also for a stamped part or a part of the owner's adopted list. Before, a moved neighbour could close a hole of a stamped part unseen.
+- `gate.py status` says the parts in three states: `N changed, not checked` (with the first reason per part: `fusion_openings: Cover:1 changed, moved, or was shown or hidden`), `N checked, no stamp`, `N stamped`. The line `N changed since their stamp` is gone. `status --json` has `unchecked_why`, `checked_ids`, `stamped_ids`.
+- A stamp is also stale when the facts it rests on were measured again and came out otherwise (new key `"facts"`: a digest per Fusion probe; a stamp without it: a Fusion probe entry stored after the stamp), or when a unit it rests on would be measured again because something it read changed.
+- After the first call of a plan, a run judges only the parts whose units finished in that call; a judge whose facts, parameters and ctx are what it judged before is not run again (`"input"` beside each stored judgement); the judgements of one part are written in one file write, not one per rule.
+
+### Fixed after review (same batch)
+
+- **`gate.py export` scans first.** It scans the part's document (one short call; `cmd_export` scans each document once per call and prints what the scan found), and refuses (exit 1) while a unit of the part would be measured again because what it read changed: "what the part was checked against changed since it was measured (fusion_openings: Cover:1 changed, moved, or was shown or hidden)". Before, an export stamped a part on the census of the last scan, so a neighbour moved after the run could close a hole of a part that got a valid stamp. The "already stamped" branch goes through the same scan and test (it still asks Fusion for the signature). A document that is not open is exit 4. The `NOTE` about a changed `stl_names` map before the next scan no longer appears in practice: the export's scan makes the map take effect.
+- **A plan measured over several calls is confirmed by one more scan.** The call that finishes such a plan exits 3 (`NEXT 0/1`, "the next call scans once more ..."); the next call scans, and its plan measures what changed while the units ran (usually nothing: no unit is sent). Before, the plan finished with exit 0 and `status` said "0 changed" on a census as old as the plan's first call. For `--fresh` the confirming plan takes the facts just measured over.
+- **A ref's state includes its shape.** The scan gives every solid ref `"shape"`: 16 hex over the area and centroid of each face (as a part's signature has it), remembered for the Fusion session; a ref with more than 3000 faces uses its revision id. A mesh ref gets a digest of its node coordinates and triangles. A hole that moves inside a bought plate or washer (same volume, area, counts and box) now re-checks the parts that read it. Hidden printed parts are refs too and are covered by the same field.
+- **Bodies cannot hide behind one key.** A mesh body is `<occurrence>|mesh:<name>`; a second body under one key is `<key>#2`, `#3`, ... in the order of the scan. Before, the later body overwrote the earlier one in the census and its changes were never seen.
+- **A unit reads the census by its record.** When the census unit of a part is measured again, a unit whose record names the job key `features` is looked at again after it, whatever its probe (not only the fixed list `NEEDS_CENSUS`).
+- **Facts that depend on the clock or on Fusion are measured again.** Facts with `screws_cut` or a `late` row (a look cut short by time) are stale. Every envelope gives `fusion_version`; the scan stores it per document, and a unit measured in another version of Fusion is stale. A Fusion update therefore costs one full measurement.
+- **Stored judgements are taken over only from the same judging code.** The key of a stored judgement now also holds a digest of `gate_judges.py`, `gate_features.py`, `gate_common.py`, `probes/_geom.py` and `probes/_geom_rings.py` (module constants, public helpers, finding ids, the classification of holes) and of the rule itself (its fix order and texts). `judgement_out_of_date()` compares the same digest. `run --fresh` judges every part again without the cache. Before, a plugin update that changed `_GRID` or `context_hash` left old findings and ids in place.
+- **The code hash of a unit ignores comments and docstrings.** `gate_deps.code()` hashes each file of a unit with its comments, docstrings and blank lines cut out (by token and node positions, so Python 3.9 and 3.14 give the same hash). A text-only edit of `_fusion.py` no longer makes every unit of every project stale. A change of code in a shared file still does: say so before releasing it (below).
+- **Short units share a call.** A unit whose last measurement is known (`work_s` now stored beside its facts, the sum over its calls; older entries: `elapsed_s`) starts in what is left of a call when 1.5 x that + 1.5 s fits, with what is left as its deadline. A packed call that comes back unfinished is no stall; one whose facts say a look was cut short is measured again in a call of its own. A unit that took most of a call, or several, still gets a call of its own.
+- **A unit given up over its budget stays given up** while nothing of the document (a digest of every body), its inputs, its probe or Fusion changed: it is no longer sent again (two waits of budget + 10 s) on every run. `--fresh` tries it again.
+- `gate.py status` prints the time of the scan its counts rest on, and how many units are to be measured again with their Fusion work by their last measurement (`status --json`: `measure_again`). `gate.py verify` prints the time of the scan the stamps are verified against. It still asks nothing of Fusion: the `.3mf` writer calls it, and the export is the step that makes a stamp.
+- Tests: the fake Fusion can answer with facts that are a function of the model (a neighbour that touches the bracket closes its window); the equality test of an incremental and a full run now changes only a neighbour, judges the full run from nothing, and fails when the neighbour comparison or the facts digest of the judge key is taken out. New tests for each fix above.
+
+### Added
+
+- `gate_deps.py`: the record of what a unit read (`deps` beside its facts: probe text, parameters, tables and job keys it read, its regions and every census body in them with its state) and `why_stale()`.
+- The census keeps every body of a document after each scan (`docs[key]["world"]`: one line per body with its state, kind, face count and box in the document frame).
+- `gate_plan.stale_units()`: which units of which parts must run again and why.
+- `gate.py run --fresh`: measure every unit of the chosen parts again (for a deliberate full check, and to compare with an incremental one).
+- A unit planned only because the census of its part is measured again is looked at once more after the census unit (`"recheck"`): when the holes and openings came out the same it needs no call.
+
+### Fusion side (needs a live check: probe text changed)
+
+- `probes/_fusion.py`: `gate_read(box, margin, solid_only, printed_faces_max)` notes a region a call read; `gate_world()` notes its own walk unless a probe passes `read=False`; `GateInputs` watches what a probe asks of `JOB`, `JOB["params"]` and `JOB["tables"]`; the envelope gets `"reads"` and `"inputs_read"` (beside the facts, never in them). `gate_asked()` plus a check in `run()`: a body a probe asked a question of that lies in no noted region is noted as a region of its own, with the note "the regions this unit noted did not hold ...: report it".
+- `fusion_scan`: `"shown"` (every light bulb on the path) on parts and refs, and `"copy_bodies"` (the further occurrences of a part with their pose and box). Nothing of the parts list changes.
+- `fusion_census` notes its 2 mm neighbour walk. `fusion_inserts` notes one cylinder round each pocket (levels, radius plus wall) instead of the whole part box. `fusion_openings` notes the box of each path, the look for screws (part box + 1 mm and the candidates + 0.5 mm), the slab behind a cap and the look under a screw head, instead of the 72 mm walk. `fusion_bearings` notes the candidate look (25 mm, solids, no printed body over 80 faces), per bearing the bodies beside it (2.5 mm), and per clamp the look where it can land, instead of the 120 mm walk. Facts of every probe are unchanged.
+- `fusion_screws`, `fusion_gap` and `fusion_near` note their whole walk (45, 5 and 10 mm).
+
+### Faster
+
+- Measured on a copy of a real project (44 Fusion parts, 352 units, 752 refs) with a fake Fusion that replays its stored facts, notes the regions the new probe text notes (modelled from the stored facts), and charges every unit its cost in the last full check (1140 s of Fusion work in 386 calls; 33 min wall with the re-judging):
+  - nothing changed: 0 units, 4.3 s on the host plus the scan (about 5 s in Fusion);
+  - one part changed, over all 44 parts: median 62 units and 289 s of Fusion work (p90 636 s, max 739 s for the link that carries the gearbox; 36 to 102 s for the parts of the forearm and the drive); 33 min before for any of them;
+  - one ref moved (a quarter of the 752 refs): median 26 units, 172 s; a screw of the drive plate: 17 units, 15 s; the J2 bearing: 57 units, 307 s;
+  - after an incremental run the facts and the judgements of every part equal those of a `--all --fresh` run of the same model (byte for byte on the judged findings).
+  - With the review fixes (short units share a call, one confirming scan after a plan of several calls), replayed at the default `--wall 20` with each unit's real cost split over its real calls: a median single-part change is 62 units, about 282 s of Fusion work in about 28 calls of the command (before packing about 70), p90 55 calls, max 62 (the dense gearbox link: 141 units, 750 s); about 6 to 7 min wall at the median and 15 to 17 min at the max with 2.2 to 3.9 s of overhead per call. J2 link 2B: 22 calls, 5 to 6 min. A J3 arm part: 8 calls, about 2 min. A screw of the drive plate moved: 11 calls, about 3 min. The J2 bearing moved: 26 calls, about 7 min. Nothing changed: 1 call (the scan). The first run after the update: 352 units, 1150 s of Fusion work in 83 calls (386 before), about 22 to 25 min. The Fusion-side compile of each unit script inside a call is not modelled (70 unit scripts at the median).
+- `run --offline` on all 49 parts: 19.2 s before, 3.0 s now (judgements written once per part; the bearing designations of the attest test compiled once). `stale_units()` over the whole project: 0.56 s.
+
+### Not done
+
+- `fusion_screws` still depends on everything within 45 mm of the part: it is the largest part of what a single edit measures again. Narrowing it (per screw: its axis line, the gap search radius, the washer neighbourhood) needs a reading of every look of the probe.
+- Plans resumed per request are as in 0.2.4.
+- `gate.py verify` does not scan (it is the `.3mf` writer's check and asks nothing of Fusion); it says which scan its answer rests on.
+- Regenerating ref occurrences at the same places (new keys) and hiding or showing a body re-check every unit whose region holds them. That is correct (the keys and the visibility changed) but costs time; the skill says so. A comparison by shape and place instead of by key was not built.
+- Every release that changes the code (not the comments) of `_geom.py`, `_geom_rings.py` or `_fusion.py` makes every unit stale once in every project: about 20 min of Fusion work for the 44-part project. Release such changes together.
+- A bearing measured for several parts is still measured by each of them.
+- The first `run --changed` after the update measures every unit once: facts measured before this version hold no record of what they read, so nothing proves that their neighbours are still what they measured.
+
+### Changes for a project after `--update-tools`
+
+- New file `gate/tools/gate_deps.py`. The next scan writes the bodies of each document into `gate/census.json` (one line per body). The first run measures everything once (see above), in the background as one loop until the exit is not 3; from then on a run measures what changed.
+- Facts files get `deps` per probe and `input` per judgement; stamps written from now get `facts`.
+
+### Privacy and side effects
+
+- Nothing new is sent anywhere: the regions and keys a unit read come back in its own result file on this machine.

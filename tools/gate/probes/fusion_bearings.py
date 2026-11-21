@@ -62,6 +62,8 @@ measured (it would be thrown away: such a bearing is only named in "near_bearing
 
 _BRG_LOOK = 2.0                 # mm beyond a ring face in which a cover is still listed (with its gap)
 _BRG_FAR = 120.0                # mm round the part in which bodies are read at all
+_BRG_PICK = 25.0                # mm round the part in which a body can be a candidate bearing (_brg_pick)
+_BRG_MANY = 80                  # a printed body with more faces is no candidate (_brg_many_faces)
 _BRG_RESERVE = 3.0              # s of a call that are kept for writing its answer
 _BRG_WALK_FACES = 500           # a clamp body with more faces: the walk over them does not start late in a call
 
@@ -126,9 +128,9 @@ def _brg_pick(world, pattern, sizes, pats, part_box):
     bodies only those with at most 80 faces (_brg_many_faces)."""
     out = []
     for r in world:
-        if r['mesh'] or r['own'] or box_gap(r['box'][0], r['box'][1], part_box[0], part_box[1]) > 25.0:
+        if r['mesh'] or r['own'] or box_gap(r['box'][0], r['box'][1], part_box[0], part_box[1]) > _BRG_PICK:
             continue
-        if r['printed'] and _brg_many_faces(r):
+        if r['printed'] and _brg_many_faces(r, _BRG_MANY):
             continue                                    # a printed part with a designation in its name ("Housing 608"): no ring, and its edges are not read
         other = any(gate_search(pats[k], r['body_name']) for k in _BRG_OTHER)
         if other and not gate_search(pattern, r['body_name']):
@@ -345,6 +347,7 @@ def _brg_travel(clamp_recs, press, g, A, world, look, pick=None, pick_key='', ta
     hits = []
     pick = pick if pick is not None else {}
     for n_rec, rec in enumerate(clamp_recs[:12]):
+        gate_read(rec['box'], look + 0.5, solid_only=True)              # the stops this clamp can land on (shown solids beside it)
         in_c = rec['_inside']
         stops = [r for r in world if id(r) not in own and not r['mesh'] and r['visible']
                  and box_gap(r['box'][0], r['box'][1], rec['box'][0], rec['box'][1]) <= look + 0.5]
@@ -576,6 +579,18 @@ def _brg_one(g, job, world, m, inv, table, touch, look, brg_ids, part, tape, aga
             'mesh_near': sorted(set(world[k]['name'] for k in near if world[k]['mesh']))}
 
 
+def _brg_reads(world, found, part_box, look):
+    """Note what the facts of this unit can depend on (gate_read of _fusion.py), smaller than the walk of _BRG_FAR:
+    the candidates of _brg_pick (solid bodies within _BRG_PICK mm of the part, no printed body of more than
+    _BRG_MANY faces), and for every bearing found the bodies beside it (_BRG_LOOK + 0.5, every kind: covers, seats,
+    the hidden and mesh bodies it names). Where a clamp can land is noted by _brg_travel() for the clamp it follows.
+    The same regions in every call: the bearings found are the same list (the cursor's "key"). Only boxes are
+    compared, nothing is asked of Fusion."""
+    gate_read(part_box, _BRG_PICK, solid_only=True, printed_faces_max=_BRG_MANY)
+    for g in found:
+        gate_read(g['box'], _BRG_LOOK + 0.5)
+
+
 def _brg_key(found):
     """16 hex characters that name the list of the bearings found: the index of a cursor counts in this list."""
     return state_digest([g['key'] for g in found])
@@ -685,8 +700,9 @@ def probe(job):
     pattern = params.get('bearings.ref_pattern') or '(?i)bearing'
     touch = float(params.get('bearings.contact_gap_max', 0.05))
     look = max(3.0, 3.0 * float(params.get('bearings.clamp_room', 1.0)))
-    world = gate_world(design, job, part_box, _BRG_FAR, '' if occ is None else occ.fullPathName, body.name)
+    world = gate_world(design, job, part_box, _BRG_FAR, '' if occ is None else occ.fullPathName, body.name, read=False)
     found, skipped, rejected = _brg_find(world, pattern, part_box, table, gate_ref_patterns(job))
+    _brg_reads(world, found, part_box, look)
     brg_ids = {id(r): ((g['size']['d'], g['size']['D']) if g['size'] else None) for g in found for r in g['recs']}
     cur = job.get('cursor')
     first_call = cur is None                                            # lists are joined over the calls of one unit: some are written once
@@ -746,6 +762,9 @@ def probe(job):
             facts['bearings'].append(row)
         part = {}
         i += 1
+    for k in tape.bodies:                                               # every body asked: in a noted region (_fusion.py checks)
+        if isinstance(k, int) and not isinstance(k, bool) and 0 <= k < len(world):
+            gate_asked(world[k]['name'], world[k]['box'])
     if late and part:                                                   # what this bearing was measured against so far (see the top)
         t_state = time.time()
         own = [k for k, r in enumerate(world) if i < len(found) and any(r is x for x in found[i]['recs'])]     # the bearing itself: its size is read again by every call

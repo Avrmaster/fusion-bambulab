@@ -831,6 +831,23 @@ class Scan(Units):
         self.assertNotEqual(here['Bracket']['sig'], other['Bracket']['sig']); self.assertEqual(here['Bracket']['volume'], other['Bracket']['volume'])
         self.assertEqual(here['Cover']['sig'], other['Cover']['sig'])
 
+    def test_a_ref_whose_hole_moves_inside_its_outline_has_another_shape(self):
+        # a bought plate: same volume, area, counts and box when its hole moves 5 mm. The cheap "sig" cannot tell, the
+        # "shape" (its faces) must: the units of the printed parts next to it depend on it
+        def plate(x):
+            body = Solid((0.0, 0.0, 0.0), (40.0, 30.0, 12.0), holes=[{'o': (x, 15.0, 12.0), 'a': UP, 'segs': [(3.4, 12.0)]}])
+            occs = [Occ(Comp('c-plate', 'ref plate', [Body('Body1', body)]), 'ref plate:1', placement(0.0, 0.0, 0.0)),
+                    Occ(Comp('c-chain', 'ref chain', meshes=[MeshBody('MeshBody1', (-3.0, 14.0, 0.0), (-0.4 + x / 100.0, 26.0, 12.0))]), 'ref chain:1',
+                        placement(0.0, 0.0, 0.0))]
+            return {r['name']: r for r in self.whole(application(occs), 'fusion_scan')[0]['refs']}
+        a, b, again = plate(10.0), plate(15.0), plate(10.0)
+        self.assertEqual(a['ref plate']['sig'], b['ref plate']['sig'])                     # the cheap signature does not see it
+        self.assertEqual(a['ref plate']['bbox_doc'], b['ref plate']['bbox_doc'])
+        self.assertEqual(len(a['ref plate']['shape']), 16)
+        self.assertNotEqual(a['ref plate']['shape'], b['ref plate']['shape'])
+        self.assertEqual(a['ref plate']['shape'], again['ref plate']['shape'])               # and it is the same for the same shape
+        self.assertEqual(len(a['ref chain']['shape']), 16); self.assertNotEqual(a['ref chain']['shape'], b['ref chain']['shape'])
+
     def test_cursor_limit_and_ping(self):
         app = demo()
         ping = self.unit(app, 'fusion_scan', args={'limit': 0})

@@ -39,10 +39,12 @@ scan`, `gate.py status` and `gate.py doctor` print one line each, and the facts 
 Files of a run besides plan.json: units/<id>.json (the envelope of the unit's last call) and units/<id>.partial.json
 (the merged facts of a unit that needs more calls). gate/run/scan.json names the plan `scan` continues.
 
-A new `run` scans first (signatures are read from Fusion, not from an old census), so "changed" always means: the body in
-the open document differs from the newest stamp. `--no-scan` uses the census as it is."""
-import json, os, time
-import gate_common, gate_fusion_rpc, gate_params, gate_registry
+A new `run` scans first (signatures, poses and every body of the document are read from Fusion, not from an old census).
+A unit is measured only when its stored facts no longer hold for the model the scan found (stale_units, gate_deps.py:
+its part, a body in a region it read, a parameter, table or job key it read, or its probe changed); the others are
+taken over as done. `--no-scan` uses the census as it is, `--fresh` measures every unit of the chosen parts."""
+import hashlib, json, os, time
+import gate_common, gate_deps, gate_fusion_rpc, gate_params, gate_registry
 from gate_common import (GateError, EXIT_PASS, EXIT_BLOCK, EXIT_ATTEST, EXIT_MORE, EXIT_INFRA, gate_path, load_census, load_facts,
                          load_layout, load_project, read_json, write_json)
 
@@ -50,10 +52,12 @@ PROBE_ORDER = ('fusion_census', 'fusion_inserts', 'fusion_openings', 'fusion_scr
 STATES = ('todo', 'partial', 'done', 'error', 'skipped')
 MAX_ATTEMPTS = 2
 MAX_TIMEOUTS = 2                # calls in a row with no answer in time and no result: the unit is given up, the run goes on
-OVER_BUDGET = 'over budget, not run'            # how the error of such a unit begins (the judges say it in their NOT_RUN row)
+OVER_BUDGET = gate_deps.GIVEN_UP                 # 'over budget, not run': how the error of such a unit begins (the judges say it in their NOT_RUN row)
 NEVER_RAN = 'the host has stopped waiting'      # in the error of a unit that started too late to measure (probes/_fusion.py run())
 NEEDS_CENSUS = ('fusion_inserts', 'fusion_openings', 'fusion_screws', 'fusion_bearings')    # probes that read JOB["features"]
 WALL_GRACE_S = 0.5              # a unit still starts when this little of its budget is missing from the wall time
+PACK_FACTOR, PACK_MARGIN_S = 1.5, 1.5   # a unit whose last measurement took t s starts in what is left of a call when 1.5 t + 1.5 s fit
+PACK_MIN_S = 2.0                # ... and never with less than this left: its deadline is what is left, less the margin
 LOCK_MAX_AGE_S = 600
 NOT_OPEN = 'document not open'
 
@@ -218,6 +222,96 @@ def units_for_part(reg, part, entry):
     return _units(reg, part, entry, gate_common.LAYOUT_DEFAULTS['fusion']['budget_s'])
 
 
+def stale_units(root, reg, resolved=None, census=None, parts=None, target_key=None, layout=None, project=None):
+    """Which units of which parts must be measured again: {part id: {probe: why (text) or None (its stored facts
+    hold)}} for every live Fusion part of the census (or of `parts`), one entry per unit units_for_part() gives it.
+    A unit is stale when gate_deps.why_stale() says so for the job the host would send now: the facts at the part's
+    signature are missing or an error, nothing was recorded of what it read, the probe text, a job key, a parameter or
+    a table it read changed, the part moved, or a body in a region it read changed, moved, came or went.
+
+    resolved   the parameters of the run (gate_params.resolve for its target); None = for each unit the parameters of
+               the target it was measured for (its deps "for"), as `gate.py status` sees it
+    A unit that reads the census (its record names the job key "features", or its probe is one of NEEDS_CENSUS) whose
+    own record holds is still reported as holding when the census unit of its part is stale: the plan runs the census
+    first and looks again (new_plan: "recheck")."""
+    census = census if census is not None else load_census(root)
+    layout = layout if layout is not None else load_layout(root)
+    project = project if project is not None else load_project(root)
+    by_target = {}
+
+    def vals_for(key):
+        if resolved is not None:
+            return gate_params.values(resolved), gate_common.target_of(project, target_key)
+        if key not in by_target:
+            import gate_stamp
+            try:
+                tgt = gate_common.target_of(project, key)
+                by_target[key] = (gate_params.values(gate_stamp._resolved_for(root, reg, tgt)), tgt)     # read once per process
+            except (GateError, KeyError):
+                by_target[key] = None
+        return by_target[key]
+    worlds, out = {}, {}
+    for pid in sorted(parts if parts is not None else census['parts']):
+        e = census['parts'].get(pid)
+        if not e or e.get('gone') or e.get('source', 'fusion') != 'fusion' or not e.get('sig'):
+            continue
+        units = units_for_part(reg, pid, e)
+        data = load_facts(root, pid, e['sig'])
+        probes = data.get('probes') or {}
+        cf = _probe_facts(data, 'fusion_census')
+        features = {'holes': cf.get('holes') or [], 'openings': cf.get('openings') or []} if cf is not None else None
+        res = {}
+        for u in units:
+            stored = probes.get(u['probe'])
+            key = ((stored or {}).get('deps') or {}).get('for') if isinstance(stored, dict) else None
+            got = vals_for(key)
+            if got is None:
+                res[u['probe']] = 'the parameters of its target cannot be read'
+                continue
+            vals, tgt = got
+            try:
+                job = _job(root, reg, vals, tgt, layout, project, census, 'check', dict(u, id='u-0000', out='gate/run/check/u-0000.json'), features=features)
+            except GateError as err:
+                res[u['probe']] = str(err)
+                continue
+            doc = census['docs'].get(e.get('doc')) or {}
+            res[u['probe']] = gate_deps.why_stale(stored, e, job, doc.get('world'), u['probe'], worlds, fusion=doc.get('fusion'))
+        out[pid] = res
+    return out
+
+
+def _stored_units(root, part, entry):
+    """{probe: stored entry} of the part at its present signature, else at the newest earlier signature whose facts
+    are on disk (only for the expected cost of a unit: its facts are never taken from another geometry)."""
+    sig = entry.get('sig')
+    probes = (load_facts(root, part, sig).get('probes') or {}) if sig else {}
+    if probes:
+        return probes
+    for old in reversed([h for h in entry.get('history') or [] if isinstance(h, str)] + ([entry['prev_sig']] if isinstance(entry.get('prev_sig'), str) else [])):
+        got = load_facts(root, part, old).get('probes') or {}
+        if got:
+            return got
+    return {}
+
+
+def _expected_cost(stored):
+    """Seconds of Fusion work the last measurement of a unit took ("work_s", the sum over its calls; an entry stored
+    before work_s was kept: its last call's "elapsed_s"), or None when unknown."""
+    if not isinstance(stored, dict):
+        return None
+    for k in ('work_s', 'elapsed_s'):
+        v = stored.get(k)
+        if isinstance(v, (int, float)) and not isinstance(v, bool) and v >= 0:
+            return float(v)
+    return None
+
+
+def _reads_census(probe, stored):
+    """Does a unit read the census of its part (JOB["features"])? By its own record when it has one, else by its probe."""
+    job = ((stored or {}).get('deps') or {}).get('job') if isinstance(stored, dict) else None
+    return probe in NEEDS_CENSUS or (isinstance(job, dict) and 'features' in job)
+
+
 def _number(root, plan):
     for i, u in enumerate(plan['units']):
         u['id'] = 'u-%04d' % (i + 1)
@@ -225,8 +319,14 @@ def _number(root, plan):
     return plan
 
 
-def new_plan(root, reg, parts, command='run', intent=None, audit=False):
-    """Make and save a plan for these parts (units_for_part each), name it in gate/run/current.json and return it."""
+def new_plan(root, reg, parts, command='run', intent=None, audit=False, stale=None):
+    """Make and save a plan for these parts (units_for_part each), name it in gate/run/current.json and return it.
+
+    stale  stale_units() for these parts, or None (every unit is measured). A unit whose stored facts hold (None) is
+           "done" with "reused": true and costs no call; a stale one is "todo" with "why". When the census unit of a
+           part is stale, its units that read the census and hold otherwise are "todo" with "recheck": true: once the
+           census is measured again they are looked at once more and need no call when its holes and openings came out
+           the same (run_units)."""
     census, budget = load_census(root), gate_fusion_rpc.budget(load_layout(root))
     unknown = [p for p in parts if p not in census['parts']]
     if unknown:
@@ -235,7 +335,24 @@ def new_plan(root, reg, parts, command='run', intent=None, audit=False):
             'intent': list(intent) if intent is not None else None, 'parts': list(parts), 'units': [],
             'unreachable': [], 'changed_under_run': []}
     for p in parts:
-        plan['units'] += _units(reg, p, census['parts'][p], budget)
+        units = _units(reg, p, census['parts'][p], budget)
+        stored = _stored_units(root, p, census['parts'][p])
+        for u in units:
+            cost = _expected_cost(stored.get(u['probe']))
+            if cost is not None:
+                u['expect_s'] = cost                    # what its last measurement took: a short unit may start in what is left of a call
+        if stale is not None:
+            mine = stale.get(p) or {}
+            census_again = any(u['probe'] == 'fusion_census' and mine.get('fusion_census', 'not looked at') is not None for u in units)
+            for u in units:
+                why = mine.get(u['probe'], 'not looked at')
+                if why is not None:
+                    u['why'] = why
+                elif census_again and _reads_census(u['probe'], stored.get(u['probe'])):
+                    u['recheck'] = True
+                else:
+                    u['state'], u['reused'] = 'done', True
+        plan['units'] += units
     _number(root, plan)
     save_plan(root, plan)
     write_json(gate_path(root, 'run', 'current.json'), {'run': plan['run']})
@@ -372,8 +489,9 @@ def _with_notes(u, env):
     return dict(env, notes=notes + [over_note(o) for o in u.get('over') or [] if isinstance(o, dict)])
 
 
-def _loop(root, plan, wall_s, transport, pinger, job_for, on_done, on_fail):
-    """Run the unfinished units of a plan in order. See run_units() for the rules. Returns True when units are left."""
+def _loop(root, plan, wall_s, transport, pinger, job_for, on_done, on_fail, settle=None):
+    """Run the unfinished units of a plan in order. See run_units() for the rules. Returns True when units are left.
+    settle(u): called before a unit that is not finished is sent; True = it needs no call (its stored facts hold)."""
     url = gate_fusion_rpc.endpoint(load_layout(root))
     t0 = _clock()
     acquire_lock(root)
@@ -383,13 +501,24 @@ def _loop(root, plan, wall_s, transport, pinger, job_for, on_done, on_fail):
                 u['flight'] = {'sent': job['sent'], 'cursor': gate_fusion_rpc.cursor_key(job['cursor'])}
                 save_plan(root, plan)
             while not _finished(u):
+                if settle is not None and u['state'] == 'todo' and not u.get('flight') and settle(u):
+                    save_plan(root, plan)
+                    break
                 if u['doc'] in plan.get('unreachable', []):
                     _skip_doc(plan, u['doc'])
                     break
-                if wall_s - (_clock() - t0) + WALL_GRACE_S < u['budget_s']:
-                    save_plan(root, plan)
-                    return True                                     # less than its budget is left: do not start it
+                left = wall_s - (_clock() - t0)
+                packed = None
+                if left + WALL_GRACE_S < u['budget_s']:
+                    packed = _pack_deadline(u, left)
+                    if packed is None:
+                        save_plan(root, plan)
+                        return True                                 # less than its budget is left, and it is not known to be short: do not start it
                 job = job_for(u)
+                if packed is not None:
+                    # a short unit in the rest of the call: it gets what is left as its deadline. A probe stops by its
+                    # deadline and goes on in the next call (cursor) like any unit; a look it cut short is measured again
+                    job['deadline_s'] = packed
                 read_late = False                                   # the answer of this turn was read from a result file, nothing was sent
                 try:
                     # a call that was sent earlier and never answered: its result file is the answer (nothing is sent),
@@ -442,6 +571,8 @@ def _loop(root, plan, wall_s, transport, pinger, job_for, on_done, on_fail):
                     raise
                 _beat(root)
                 _note_over(u, env)
+                if isinstance(env.get('elapsed_s'), (int, float)) and not isinstance(env.get('elapsed_s'), bool):
+                    u['work_s'] = round((u.get('work_s') or 0.0) + float(env['elapsed_s']), 3)     # the Fusion work of the unit over its calls
                 if env.get('timeout'):                              # no answer in time, Fusion answers again, and no result file
                     u['timeouts'] = u.get('timeouts', 0) + 1
                     u['error'] = 'timeout'
@@ -471,6 +602,8 @@ def _loop(root, plan, wall_s, transport, pinger, job_for, on_done, on_fail):
                     save_plan(root, plan)
                     continue
                 partial = read_json(_partial_path(root, u), None) if u['state'] == 'partial' else None
+                if u.get('part'):
+                    u['read'] = gate_deps.join_reads(u.get('read'), env)    # what the calls of the unit read: its dependencies
                 got = dict(env.get('facts') or {})
                 signing = got.pop('signing', None)                  # "the body is still being signed": progress, never a fact of the part
                 merged = gate_fusion_rpc.merge_facts(partial, got)
@@ -482,16 +615,23 @@ def _loop(root, plan, wall_s, transport, pinger, job_for, on_done, on_fail):
                         u['signed'] = max(n, u.get('signed') or 0)
                     else:
                         stalled = env.get('cursor') == u['cursor'] and not got
-                    u['failures'] = u.get('failures', 0) + 1 if stalled else 0
+                    u['failures'] = u.get('failures', 0) + 1 if stalled and packed is None else 0     # a call with less than its budget is no stall
                     u['state'], u['cursor'] = 'partial', env.get('cursor')
                     write_json(_partial_path(root, u), merged)
                     if u['failures'] >= MAX_ATTEMPTS:
                         u['state'], u['error'] = 'error', ('no progress: the signature of the body did not move on (%s of %s faces)' % (signing.get('faces_done'), signing.get('faces'))
                                                            if isinstance(signing, dict) else 'no progress: the probe returned the same cursor and no facts')
                         on_fail(u, _with_notes(u, dict(env, error=u['error'])))
+                elif packed is not None and gate_deps.incomplete(merged):
+                    # it finished in the rest of a call, but cut a look short for time: measured again with its whole budget
+                    u['state'], u['cursor'], u['error'], u['expect_s'] = 'todo', None, None, None
+                    u.pop('read', None)
+                    if os.path.exists(_partial_path(root, u)):
+                        os.remove(_partial_path(root, u))
                 else:
                     u['state'], u['cursor'], u['error'], u['failures'] = 'done', None, None, 0
-                    on_done(u, _with_notes(u, dict(env, facts=merged, done=True, cursor=None)))
+                    on_done(u, _with_notes(u, dict(env, facts=merged, done=True, cursor=None, work_s=u.get('work_s'), calls=u.get('attempts'))))
+                    u.pop('read', None)
                     if os.path.exists(_partial_path(root, u)):
                         os.remove(_partial_path(root, u))
                 save_plan(root, plan)
@@ -499,6 +639,18 @@ def _loop(root, plan, wall_s, transport, pinger, job_for, on_done, on_fail):
         return False
     finally:
         release_lock(root)
+
+
+def _pack_deadline(u, left):
+    """The deadline a unit gets when it starts in the rest of a call (`left` seconds), or None when it waits for the
+    next call: only a unit not begun yet (todo, no cursor, nothing in flight) whose expected cost is known
+    (u["expect_s"], new_plan) and fits: PACK_FACTOR * cost + PACK_MARGIN_S <= left."""
+    cost = u.get('expect_s')
+    if u.get('state') != 'todo' or u.get('cursor') is not None or u.get('flight') or not isinstance(cost, (int, float)) or isinstance(cost, bool):
+        return None
+    if left < PACK_MIN_S or PACK_FACTOR * float(cost) + PACK_MARGIN_S > left:
+        return None
+    return round(max(1.0, left - PACK_MARGIN_S / 2.0), 2)
 
 
 def _probe_facts(data, probe):
@@ -529,6 +681,24 @@ def _unit_args(probe, vals):
     return {}
 
 
+_LOAD = object()
+
+
+def _job(root, reg, vals, target, layout, project, census, run, u, features=_LOAD):
+    """The job of one unit as it is sent (gate_fusion_rpc.new_job), from the census, the layout and the parameters.
+    features: the census features of the part when the caller has them (else they are read from its facts file)."""
+    doc, entry = gate_common.document_entry(layout, u['doc']), census['parts'].get(u['part']) or {}
+    if u['probe'] == 'fusion_census':
+        features = None
+    elif features is _LOAD:
+        features = _features(root, u['part'], u['sig'])
+    return gate_fusion_rpc.new_job(
+        u['id'], run, u['probe'], doc.get('name'), u['doc'], _abs(root, u['out']), part=u['part'],
+        component_id=entry.get('component_id'), occurrence=entry.get('occurrence'), body=entry.get('body'), sig=u['sig'],
+        cursor=u.get('cursor'), deadline_s=u.get('budget_s') or 20, params=vals, tables=reg['tables'], target=target, features=features,
+        not_printed=project['not_printed'], motion_groups=doc.get('motion_groups'), args=_unit_args(u['probe'], vals))
+
+
 def run_units(root, reg, resolved, plan, wall_s=20.0, transport=None, pinger=None, target_key=None):
     """Run the units of a plan that are not finished, in order, until none is left or the wall time is used up.
 
@@ -549,7 +719,11 @@ def run_units(root, reg, resolved, plan, wall_s=20.0, transport=None, pinger=Non
         reported as changed (scan again);
       - "done" false: state "partial", the cursor is kept, the facts so far are merged (gate_fusion_rpc.merge_facts);
       - "done" true: the merged facts are stored with gate_common.save_probe_facts and the unit is "done".
-    The plan is saved after every unit. A unit is not started when less than its budget_s is left of wall_s.
+    The plan is saved after every unit. A unit is not started when less than its budget_s is left of wall_s, unless
+    its last measurement is known to be short (u["expect_s"], new_plan): then it starts with what is left as its
+    deadline (_pack_deadline), so one call of 20 s carries several small units. Such a call that comes back unfinished
+    is no stall; one whose facts say a look was cut short for time (gate_deps.incomplete) is measured again in a call
+    of its own. Each finished unit stores "work_s" (its Fusion work over all its calls) and "calls" beside its facts.
     A document that is not open: its units are "skipped", the part is unreachable (old stamps stay valid, no new stamp).
 
     target_key: the .3mf project whose declared target the units are run for (None = the only declared target).
@@ -561,20 +735,37 @@ def run_units(root, reg, resolved, plan, wall_s=20.0, transport=None, pinger=Non
     vals, target = gate_params.values(resolved), gate_common.target_of(project, target_key)
 
     def job_for(u):
-        doc, entry = gate_common.document_entry(layout, u['doc']), census['parts'].get(u['part']) or {}
-        return gate_fusion_rpc.new_job(
-            u['id'], plan['run'], u['probe'], doc.get('name'), u['doc'], _abs(root, u['out']), part=u['part'],
-            component_id=entry.get('component_id'), occurrence=entry.get('occurrence'), body=entry.get('body'), sig=u['sig'],
-            cursor=u['cursor'], deadline_s=u['budget_s'], params=vals, tables=reg['tables'], target=target,
-            features=None if u['probe'] == 'fusion_census' else _features(root, u['part'], u['sig']),
-            not_printed=project['not_printed'], motion_groups=doc.get('motion_groups'), args=_unit_args(u['probe'], vals))
+        return _job(root, reg, vals, target, layout, project, census, plan['run'], u)
 
     def on_done(u, env):
-        gate_common.save_probe_facts(root, u['part'], u['sig'], dict(env, part=u['part'], sig=u['sig'], probe=u['probe']))
+        entry = census['parts'].get(u['part']) or {}
+        deps = gate_deps.record(u.get('read'), job_for(u), entry, (census['docs'].get(u['doc']) or {}).get('world'), u['probe'], target_key)
+        gate_common.save_probe_facts(root, u['part'], u['sig'], dict(env, part=u['part'], sig=u['sig'], probe=u['probe'], deps=deps))
+
+    def settle(u):
+        # a unit planned only because the census of its part was measured again: when the holes and openings came out
+        # the same (and nothing else it read changed), its stored facts hold and it needs no call
+        if not u.get('recheck'):
+            return False
+        u.pop('recheck', None)
+        data = load_facts(root, u['part'], u['sig'])
+        doc = census['docs'].get(u['doc']) or {}
+        why = gate_deps.why_stale((data.get('probes') or {}).get(u['probe']), census['parts'].get(u['part']) or {}, job_for(u),
+                                  doc.get('world'), u['probe'], fusion=doc.get('fusion'))
+        if why is not None:
+            u['why'] = why
+            return False
+        u['state'], u['reused'], u['error'] = 'done', True, None
+        return True
 
     def on_fail(u, env):
         # an error entry replaces older facts of this probe: a unit that failed leaves its rules NOT_RUN, not "as before"
         bad = dict(env, part=u['part'], sig=u['sig'], probe=u['probe'], facts={}, done=False, error=u['error'] or 'error')
+        if u.get('over_budget') == 'not run':
+            # given up: it stays given up (its NOT_RUN row) while nothing of the document, its inputs or its probe
+            # changed, instead of costing two waits on every run (gate_deps.record_given_up; `run --fresh` tries it)
+            bad['deps'] = gate_deps.record_given_up(u.get('read'), job_for(u), census['parts'].get(u['part']) or {},
+                                                    (census['docs'].get(u['doc']) or {}).get('world'), u['probe'], target_key)
         gate_common.save_probe_facts(root, u['part'], u['sig'], bad)
         if u['probe'] == 'fusion_census':
             for other in plan['units']:
@@ -582,7 +773,7 @@ def run_units(root, reg, resolved, plan, wall_s=20.0, transport=None, pinger=Non
                     other['state'], other['error'] = 'skipped', 'no census: fusion_census ended in an error'
                     gate_common.save_probe_facts(root, u['part'], u['sig'], dict(bad, probe=other['probe'], job=other['id'], error=other['error']))
 
-    more = _loop(root, plan, wall_s, transport, pinger, job_for, on_done, on_fail)
+    more = _loop(root, plan, wall_s, transport, pinger, job_for, on_done, on_fail, settle=settle)
     if plan.get('unreachable'):
         _mark_docs(root, plan['unreachable'], False)
     n, m = progress(plan)
@@ -678,6 +869,8 @@ def _merge_doc(root, census, doc, env, result, registered=None):
         for k in ('copies', 'volume', 'area', 'faces'):
             if k in p:
                 e[k] = p[k]
+        if 'shown' in p or 'visible' in p:
+            e['shown'] = bool(p.get('shown') if 'shown' in p else p.get('visible'))
         e.pop('linked', None)
         if p.get('linked') or p.get('external'):
             e['linked'] = p.get('linked') or '?'
@@ -700,6 +893,9 @@ def _merge_doc(root, census, doc, env, result, registered=None):
                            'parts': len(seen), 'refs': len(facts.get('refs') or [])}
     if linked:
         census['docs'][key]['linked'] = linked
+    census['docs'][key]['world'] = gate_deps.world(facts)    # every body with its signature, pose and visibility: what units depend on
+    if env.get('fusion_version'):
+        census['docs'][key]['fusion'] = str(env['fusion_version'])     # facts measured in another version of Fusion are measured again
     refs = [r for r in facts.get('references') or [] if isinstance(r, dict)]
     if refs:
         census['docs'][key]['references'] = refs
@@ -1094,8 +1290,10 @@ def print_frame(root, part, entry, layout=None):
     return out
 
 
-def judge_part(root, reg, resolved, part, sig=None, stage='design', intent=None, target=None):
+def judge_part(root, reg, resolved, part, sig=None, stage='design', intent=None, target=None, reuse=True):
     """Judge the stored facts of one part with today's judges and parameters and store the result.
+    reuse: a stored judgement made from exactly what the judge would read now, by the same judging code
+    (judging_code) and rule, is taken over (False: every judge runs again, `run --fresh`).
 
     For every rule with a judge of that stage that applies to the part: take the facts of its probe from the part's
     facts file (None when the unit did not run), call gate_judges.run_judge(rule, facts, gate_params.values(resolved,
@@ -1118,7 +1316,12 @@ def judge_part(root, reg, resolved, part, sig=None, stage='design', intent=None,
         raise GateError('part %r has no signature yet (a generated part whose STL is missing?)' % (part,))
     data = load_facts(root, part, sig)
     census_facts = _probe_facts(data, 'fusion_census')
-    out, frame = {}, None
+    out, frame, rows, dg = {}, None, {}, {}
+
+    def digest_of(name, value):
+        if name not in dg:
+            dg[name] = gate_common.digest(value)
+        return dg[name]
     for rule in _stage_rules(reg, stage, entry.get('source', 'fusion')):
         probe, name = rule['check']['probe'], rule['check']['judge']
         if probe == 'fusion_scan':               # a document unit: its facts for one part come from the census
@@ -1138,15 +1341,50 @@ def judge_part(root, reg, resolved, part, sig=None, stage='design', intent=None,
         stored = (data.get('probes') or {}).get(probe)
         if facts is None and isinstance(stored, dict) and str(stored.get('error') or '').startswith(OVER_BUDGET):
             ctx['no_facts'] = _first_line(stored['error'])       # the unit was given up: the NOT_RUN row says so
+        # everything this judge reads, as one key: when the stored judgement was made from the same, it is taken over
+        # (a judge is a pure function of its facts, parameters and ctx: gate_judges.run_judge)
+        # judging_code(): the files the judges run (module constants, shared helpers, finding ids), not only the
+        # judge's own source; digest_of('rule'): the rule as the registry has it today (its fix order, its texts)
+        jh = _judge_hash(name)
+        key = gate_common.digest([rule['id'], jh, judging_code(), gate_common.digest(rule), params, digest_of('facts:' + probe, facts), digest_of('tables', ctx['tables']),
+                                  digest_of('census', census_facts), digest_of('prev:' + probe, ctx['prev']), digest_of('print', frame),
+                                  {k: v for k, v in ctx.items() if k not in ('tables', 'census', 'prev', 'print')}])
+        old = (data.get('judged') or {}).get(rule['id'])
+        if reuse and isinstance(old, dict) and old.get('input') == key and old.get('judge_hash') == jh and old.get('params') == params \
+                and isinstance(old.get('findings'), list):
+            out[rule['id']] = old['findings']
+            continue
         findings = gate_judges.run_judge(rule, facts, params, ctx)
-        gate_common.save_judged(root, part, sig, rule['id'], _judge_hash(name), params, findings)
+        rows[rule['id']] = {'judge_hash': jh, 'params': params, 'findings': findings, 'time': gate_common.now(), 'input': key, 'code': judging_code()}
         out[rule['id']] = findings
+    if rows:
+        gate_common.save_judged_many(root, part, sig, rows)     # one write per part, not one per rule
     import gate_attest
     gate_attest.record_fact_answers(root, reg, part, sig)      # the standing questions the facts of this geometry answer
     return out
 
 
 _JUDGE_HASHES = {}             # (name, function) -> hash: reading a judge's source 1600 times is too slow for the session-start digest
+_JUDGING = {}
+JUDGING_FILES = ('gate_judges.py', 'gate_features.py', 'gate_common.py', os.path.join('probes', '_geom.py'), os.path.join('probes', '_geom_rings.py'))
+
+
+def judging_code():
+    """16 hex over the text of the files the judges run (JUDGING_FILES: their module constants, the public helpers
+    such as finding(), the finding ids and context hashes of gate_features, the classification of _geom). A stored
+    judgement is taken over only when it was made by this code (judge_part); judge_hash() alone covers a judge's own
+    source and the private helpers it calls, which is what a STAMP rests on. Read once per process."""
+    if 'v' not in _JUDGING:
+        here = os.path.dirname(os.path.abspath(__file__))
+        parts = []
+        for name in JUDGING_FILES:
+            try:
+                with open(os.path.join(here, name), 'rb') as f:
+                    parts.append(hashlib.sha256(f.read()).hexdigest())
+            except OSError:
+                parts.append(None)
+        _JUDGING['v'] = gate_common.digest(parts)
+    return _JUDGING['v']
 
 
 def _judge_hash(name):
@@ -1331,12 +1569,47 @@ def _settled(root, census):
     return out
 
 
-def _select(root, args, census, intent):
+def judgement_out_of_date(root, reg, part, sig, resolved, stages=('design',), entry=None):
+    """Rule ids of these stages whose stored judgement at this signature was made by another judge, by other judging
+    code (judging_code) or with other parameter values than today's (judge_part judges them again; their facts may be
+    as they were)."""
+    import gate_judges
+    entry = entry if entry is not None else (load_census(root)['parts'].get(part) or {})
+    judged = load_facts(root, part, sig).get('judged') or {}
+    out = []
+    for stage in stages:
+        for rule in _stage_rules(reg, stage, entry.get('source', 'fusion')):
+            j = judged.get(rule['id'])
+            name = rule['check']['judge']
+            if not isinstance(j, dict) or (name in gate_judges.JUDGES and j.get('judge_hash') != _judge_hash(name)) \
+                    or ('code' in j and j['code'] != judging_code()) or j.get('params') != gate_params.values(resolved, rule.get('params') or []):
+                out.append(rule['id'])
+    return out
+
+
+def unchecked(stale):
+    """Part ids of a stale_units() result with at least one unit that must run again, sorted."""
+    return sorted(p for p, units in stale.items() if any(w is not None for w in units.values()))
+
+
+def _select(root, args, census, intent, stale=None, reg=None, resolved=None):
+    """The parts of a run (what it reports), in order. `--changed`: every part with no valid stamp for its present
+    signature (changed_parts), less the inherited parts of the owner's adopted list (_settled), as before; with `stale`
+    (a run that asks Fusion) also every part with a unit whose stored facts no longer hold (stale_units: a stamped or
+    settled part whose neighbour moved is checked again) and every part whose stored judgement is out of date. Which
+    of their units are MEASURED is not decided here: new_plan() runs only the stale ones, the others are reused."""
     live = sorted(p for p, e in census['parts'].items() if not e.get('gone'))
     changed = changed_parts(root, census)
     if not args.audit and not args.offline:
         settled = _settled(root, census)
         changed = [p for p in changed if p not in settled]
+    if stale is not None:
+        closed = {k for k, d in census['docs'].items() if d.get('open') is False}       # nothing can be measured there: its stamps stay
+        stale = {p: u for p, u in stale.items() if census['parts'][p].get('doc') not in closed}
+        more = set(unchecked(stale))
+        if reg is not None and resolved is not None:
+            more |= {p for p in stale if p not in more and judgement_out_of_date(root, reg, p, census['parts'][p]['sig'], resolved, entry=census['parts'][p])}
+        changed = sorted(set(changed) | more)
     if args.part:
         unknown = [p for p in args.part if p not in live]
         if unknown:
@@ -1353,19 +1626,23 @@ def _select(root, args, census, intent):
 
 def _request(args):
     out = {'select': 'part' if args.part else 'all' if args.all else 'changed', 'part': sorted(args.part or []), 'audit': bool(args.audit)}
+    if getattr(args, 'fresh', False):
+        out['fresh'] = True                       # measured again: never the plan of a run that takes stored facts over
     if getattr(args, 'target', None):
         out['for'] = args.target                  # another target is another run: the units are sent with its numbers
     return out
 
 
-def _judge_all(root, reg, resolved, parts, census, intent, target, unreachable_docs, with_export=False, pending=(), audit_run=None):
+def _judge_all(root, reg, resolved, parts, census, intent, target, unreachable_docs, with_export=False, pending=(), audit_run=None, only=None, reuse=True):
     """Judge every part that can be judged and return the verdicts of all of them, in order. A part of `pending` still
     has units to run: it is judged when they are done, until then its verdict comes from what was stored before.
     audit_run: the id of an audit run; each part it judges is noted in the baseline of inherited parts
     (gate_report.baseline_add: written once per part). A part one of whose units was given up over its budget
     (given_up) is NOT noted: nothing judged the rules of that unit, so the audit has not looked at the part, it stays
     an ordinary part, and its NOT_RUN rows count (exit 1). The verdicts are the ones of a run: the standing questions
-    of an inherited part wait (part_verdict with defer_inherited)."""
+    of an inherited part wait (part_verdict with defer_inherited).
+    only: judge only these parts (the ones whose units finished in this call); the verdicts of the others are read
+    from what is stored. None = judge every part that can be judged."""
     import gate_report
     verdicts = []
     for p in parts:
@@ -1373,11 +1650,14 @@ def _judge_all(root, reg, resolved, parts, census, intent, target, unreachable_d
         reachable = entry.get('doc') not in unreachable_docs or entry.get('source', 'fusion') != 'fusion'
         stages = ('design',)
         if reachable and entry.get('sig') and p not in pending:
-            judge_part(root, reg, resolved, p, stage='design', intent=intent, target=target)
-            if audit_run and not given_up(root, p, entry['sig']):
-                gate_report.baseline_add(root, audit_run, p, entry['sig'])
-            if with_export and target is not None and any(k in (load_facts(root, p, entry['sig']).get('probes') or {}) for k in ('stl_mesh', 'stl_walls')):
-                judge_part(root, reg, resolved, p, stage='export', intent=intent, target=target)
+            stl = with_export and target is not None and any(k in (load_facts(root, p, entry['sig']).get('probes') or {}) for k in ('stl_mesh', 'stl_walls'))
+            if only is None or p in only:
+                judge_part(root, reg, resolved, p, stage='design', intent=intent, target=target, reuse=reuse)
+                if audit_run and not given_up(root, p, entry['sig']):
+                    gate_report.baseline_add(root, audit_run, p, entry['sig'])
+                if stl:
+                    judge_part(root, reg, resolved, p, stage='export', intent=intent, target=target, reuse=reuse)
+            if stl:                                  # judged now or in an earlier call of this plan: its verdict holds both stages
                 stages = ('design', 'export')
         v = part_verdict(root, reg, p, stages=stages, defer_inherited=True)
         if not reachable:
@@ -1460,9 +1740,11 @@ def _finish(root, reg, resolved, run, args, parts, verdicts, plan, intent, unrea
 def cmd_run(root, args):
     """gate.py run [--changed | --all | --part ID ...] [--parts ID,ID] [--for KEY] [--wall 20] [--audit] [--offline].
 
-    args.changed (the default when nothing is named): parts whose census signature has no valid stamp. An inherited
-        part the audit judged, and that has not changed since, is left out (_settled): it has no stamp, and nothing
-        about it is new
+    args.changed (the default when nothing is named): parts whose census signature has no valid stamp (an inherited
+        part the audit judged, and that has not changed since, is left out: _settled), and every part with a unit whose
+        stored facts no longer hold (stale_units). Only the stale units are measured (new_plan with `stale`): a part
+        checked at its present geometry, whose neighbours did not change, costs no call, stamp or no stamp
+    args.fresh: every unit of the chosen parts is measured again
     args.all: every part of the census        args.part: these parts
     args.intent: the parts this change was meant to touch (regression.unintended judges the rest)
     args.wall: do not start a unit when less than its budget is left of this many seconds
@@ -1511,6 +1793,11 @@ def cmd_run(root, args):
         raise GateError('--wall %g is shorter than the budget of one unit (%g s, gate/layout.json "fusion"."budget_s"): no unit could start' % (wall, budget))
     t_end = _clock() + wall
     plan = last if (last and last.get('command') == 'run' and last.get('request') == request and progress(last)[0] < progress(last)[1]) else None
+    planned_now = plan is None
+    # the call after a plan whose units were measured over several calls: it scans again and measures what changed in
+    # Fusion meanwhile. Its own plan takes the stored facts over, also for --fresh (they were just measured)
+    confirming = bool(last and last.get('command') == 'run' and last.get('request') == request and last.get('confirm'))
+    fresh = getattr(args, 'fresh', False) and not confirming
     if plan is None:
         unreachable = [k for k, d in load_census(root)['docs'].items() if d.get('open') is False]
         if not getattr(args, 'no_scan', False):
@@ -1531,22 +1818,39 @@ def cmd_run(root, args):
                                 % ('s' if len(closed) > 1 else '', ', '.join('"%s"' % gate_common.document_entry(layout, k).get('name') for k in closed),
                                    'are' if len(closed) > 1 else 'is', 'them' if len(closed) > 1 else 'it'))
             raise GateError('gate/census.json holds no part: register the document in gate/layout.json and run gate.py scan')
-        parts = _select(root, args, census, args.intent)
+        stale = stale_units(root, reg, resolved, census, target_key=target_key, layout=layout, project=project)
+        parts = _select(root, args, census, args.intent, stale=stale, reg=reg, resolved=resolved)
         intent = args.intent
-        plan = new_plan(root, reg, parts, 'run', intent, args.audit)
-        plan['request'] = request
+        plan = new_plan(root, reg, parts, 'run', intent, args.audit, stale=None if fresh else stale)
+        plan['request'], plan['fresh'] = request, bool(fresh)
         for key in unreachable:
             _skip_doc(plan, key)
         save_plan(root, plan)
     parts = plan['parts']
+    before = {u['id']: u['state'] for u in plan['units']}
     res = run_units(root, reg, resolved, plan, wall_s=t_end - _clock(), target_key=target_key)
+    confirm = None
+    if not res['more'] and not planned_now and not getattr(args, 'no_scan', False) and not res['changed_under_run']:
+        # the units of this plan were measured over several calls, the last scan is as old as the plan: a neighbour
+        # moved meanwhile would be measured on the model before the move. Never exit 0 on that: the next call scans
+        # once more, and its plan measures what changed (one short call when nothing did)
+        plan['confirm'] = True
+        save_plan(root, plan)
+        confirm = ('the units are done; they were measured over several calls, so the next call scans once more and measures again what '
+                   'changed in Fusion while they ran (nothing, usually: then it sends no unit)')
     census = load_census(root)
     pending = {u['part'] for u in plan['units'] if not _finished(u)}
+    # judged: every part at the first call of a plan, then only the parts whose units finished in this call (a judge
+    # whose facts, parameters and ctx are what it judged before is not run again either: judge_part)
+    touched = None if not plan.get('judged') else {u['part'] for u in plan['units'] if _finished(u) and before.get(u['id']) != u['state']}
     verdicts = _judge_all(root, reg, resolved, parts, census, intent, target, res['unreachable'], with_export=True, pending=pending,
-                          audit_run=plan['run'] if args.audit else None)
-    rescan = bool(res['changed_under_run']) and not res['more']
+                          audit_run=plan['run'] if args.audit else None, only=touched, reuse=not plan.get('fresh'))
+    if not plan.get('judged'):
+        plan['judged'] = True
+        save_plan(root, plan)
+    rescan = (bool(res['changed_under_run']) or confirm is not None) and not res['more']
     note = ('changed in Fusion while the run was going: %s. Their units were skipped; the next call scans again.'
-            % ', '.join(res['changed_under_run'])) if res['changed_under_run'] else None
+            % ', '.join(res['changed_under_run'])) if res['changed_under_run'] else confirm
     code = _finish(root, reg, resolved, plan['run'], args, parts, verdicts, plan, intent, res['unreachable'], res['more'] or rescan, note)
     if res['more']:
         print('NEXT %d/%d' % (res['done'], res['total']))

@@ -471,7 +471,7 @@ class WholeChain(Lamp):
     def step_9_the_session_start_digest_names_what_is_open(self):
         text = gate_hook.output(self.root)
         self.assertEqual(text.splitlines()[0], 'Print gate of %s (fusion-bambulab; skill: gate)' % self.root)
-        self.assertIn('gate [enforce]: 3 parts | 1 changed since their stamp | 1 open findings | 0 questions | 1 STLs without a valid stamp', text)
+        self.assertIn('gate [enforce]: 3 parts | 0 changed, not checked | 1 checked, no stamp | 2 stamped | 1 open findings | 0 questions | 1 STLs without a valid stamp', text)
         self.assertRegex(text, r'  FAIL    %s  walls.min_material  wall 0.86 mm .* under 1.5  \[F-[0-9a-f]{6}\]' % CLIP)
         self.assertIn('  checked, no stamp yet (not exported): %s' % CLIP, text); self.assertIn('  STLs without a valid stamp: stl/cable_clip.stl', text)
         self.assertIn('python3 gate/tools/gate.py run --changed', text); self.assertNotIn('forked', text); self.assertNotIn('older than', text)

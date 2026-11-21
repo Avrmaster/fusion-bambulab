@@ -227,6 +227,34 @@ def _ins_floor(body, segs, point, axis, depth, cap):
     return round(best, 2)
 
 
+_INS_M = None                   # part -> document matrix of the unit's part (probe() sets it): the frame _ins_reads() notes regions in
+
+
+def _ins_reads(point, axis, levels, thin_wall, thin_relief):
+    """Note the region the env is asked about for one pocket (gate_read of _fusion.py): _ins_beyond() looks at other
+    bodies only on rays square to the axis, from the centre of a level out to its radius plus the wall it should
+    have (thin_wall, thin_relief for the relief level), and nowhere else. So the facts of a pocket depend on the bodies
+    in the cylinder round its levels, not on everything near the part."""
+    if _INS_M is None or not levels:
+        return
+    reach = max(float(lv['from_r']) + (thin_relief if lv.get('name') == 'relief' else thin_wall) for lv in levels) + 0.55
+    ends = [v_sub(point, v_scale(axis, float(lv['depth']))) for lv in levels]
+    lo = tuple(min(e[i] for e in ends) - reach for i in range(3))
+    hi = tuple(max(e[i] for e in ends) + reach for i in range(3))
+    gate_read(box_transform(_INS_M, lo, hi), 0.0)
+
+
+def _ins_asked(env, tape):
+    """Note every other body the tape asked (tag n + 1 = solid n of the env), so _fusion.py can check it lies in a
+    region _ins_reads() noted."""
+    if not env:
+        return
+    for t in tape.bodies:
+        if isinstance(t, int) and not isinstance(t, bool) and 1 <= t <= len(env['solids']):
+            s = env['solids'][t - 1]
+            gate_asked(s[0], (s[5], s[6]))
+
+
 def _ins_pocket(get_env, body, box, h, row, tol_d, thin_wall, thin_relief, ray, part):
     """the facts of one pocket (see probe)"""
     here = h.get('at') or {}
@@ -247,6 +275,7 @@ def _ins_pocket(get_env, body, box, h, row, tol_d, thin_wall, thin_relief, ray, 
             fine_to = thin_wall + 0.3
         centre = v_sub(point, v_scale(axis, lv['depth']))
         rings.setdefault(lv['name'], []).append((centre, lv['from_r'], _ins_walk(body, centre, dirs, lv['from_r'], start, fine_to, ray)))
+    _ins_reads(point, axis, plan['levels'], thin_wall, thin_relief)
     skip = set(c.get('name') for c in h.get('coaxial') or [])                # the insert or screw that belongs in this hole
     walls = {'lead_in': _ins_level(get_env, body, box, axis, dirs, rings['lead_in'], thin_wall, ray, skip, part),
              'insert': _ins_level(get_env, body, box, axis, dirs, rings['insert'], thin_wall, ray, skip, part),
@@ -363,8 +392,9 @@ def probe(job):
             note = 'the bodies round the part changed between two calls of this unit: %s is measured again from its start' % name
             if note not in _GATE_NOTES:
                 _GATE_NOTES.append(note)
-    global _INS_TAPE
+    global _INS_TAPE, _INS_M
     tape = _INS_TAPE = GateTape(job, reserve=2.5)
+    _INS_M = gate_matrix(occ)
     while i < len(todo):
         if i > i0 and (gate_left(job) < max(3.0, 1.5 * slowest) or tape.out_of_time() or (limit is not None and i - i0 >= int(limit))):
             break
@@ -395,9 +425,11 @@ def probe(job):
                      'asked': gate_states(_ins_recs(env, body), [t for t in tape.tags if t]) if env else {}}
             if i == i0 and again:
                 state['again'] = again
+            _ins_asked(env, tape)
             return {'facts': {'pockets': pockets}, 'done': False, 'cursor': state, 'sig': sig}
         pockets.append(pocket)
         slowest = max(slowest, time.time() - t0)
         i += 1
+    _ins_asked(cache.get('env'), tape)
     done = i >= len(todo)
     return {'facts': {'pockets': pockets}, 'done': done, 'cursor': None if done else i, 'sig': sig}

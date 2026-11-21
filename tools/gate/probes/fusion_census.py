@@ -661,6 +661,7 @@ def _cen_probe(job):
         own_body = body.name
         _cen_n(4)
         plo, phi = box_transform(m_own, lo, hi)
+        gate_read((plo, phi), 2.0)                      # every body this walk can choose lies within 2 mm of the part's box
         try:
             while int(st['o']) <= n_occ:
                 if late():

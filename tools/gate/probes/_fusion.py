@@ -29,7 +29,10 @@ and run() wraps it into the envelope
      the call it sent,
      "timing": only when the probe returned one: where the time of the unit went (seconds and pointContainment calls
      per stage; fusion_bearings and fusion_census sum them over the calls of the unit, fusion_screws gives those of that
-     call). Not a fact: no judge reads it}.
+     call). Not a fact: no judge reads it,
+     "reads": [{"box", "margin", ...}] the regions of the document the call read (gate_read; gate_world notes its own),
+     "inputs_read": {"params": [names] or None (all), "tables": [names] or None, "job": [keys] or None}: what the probe
+     asked of JOB["params"], JOB["tables"] and JOB itself (GateInputs). Both are what the host keeps as the dependencies of the unit (gate_deps.py)}.
 An exception inside the probe becomes "error" (text, with the end of the traceback); the file is still written.
 A document that is not open is such an error; "open_documents" is filled all the same.
 One answer is made here and not by the probe: when the signature of a large body needs more time than the call has left
@@ -466,7 +469,108 @@ def gate_above(occ):
             return []
 
 
-def gate_world(design, job, box, margin, own_path, own_body):
+_GATE_READS = []                            # the regions of the document this call read (gate_read): the host's record of what a unit depends on
+
+
+def gate_read(box, margin, solid_only=False, printed_faces_max=None):
+    """Note that this call read the bodies whose box comes within `margin` mm of `box` (document frame): what the host
+    stores as the dependencies of the unit (the bodies of the census that lie in one of these regions, with their
+    signature, pose and visibility). A unit is measured again when one of them changes, moves, is shown or hidden, or
+    when a body enters or leaves a region. A region must hold EVERY body the facts can depend on: a probe that narrows
+    what gate_world() reads names each smaller region it looks at.
+      solid_only         mesh bodies are never read in this region
+      printed_faces_max  printed bodies with more faces than this are never read in this region
+    Regions are joined over the calls of a unit by the host; the envelope has them as "reads"."""
+    row = {'box': [[round(float(c), 3) for c in box[0]], [round(float(c), 3) for c in box[1]]], 'margin': round(float(margin), 3)}
+    if solid_only:
+        row['solid_only'] = True
+    if printed_faces_max is not None:
+        row['printed_faces_max'] = int(printed_faces_max)
+    if row not in _GATE_READS:
+        _GATE_READS.append(row)
+
+
+_GATE_ASKED = []                            # (name, box) of every other body a narrowing probe asked a question of (gate_asked)
+
+
+def gate_asked(name, box):
+    """Note that the probe asked a question of this body (a point test, a cut). A probe that notes smaller regions
+    than its walk (read=False) notes the bodies it asked, and run() checks that each lies in a noted region: one that
+    does not is noted as a region of its own, with a line in the notes. The record of what the unit read never misses
+    a body it asked, whatever the region logic of the probe says."""
+    try:
+        _GATE_ASKED.append((str(name), ((float(box[0][0]), float(box[0][1]), float(box[0][2])), (float(box[1][0]), float(box[1][1]), float(box[1][2])))))
+    except (TypeError, ValueError, IndexError):
+        pass
+
+
+def _gate_cover_asked():
+    missed = []
+    for name, box in _GATE_ASKED:
+        if not any(boxes_near(box[0], box[1], r['box'][0], r['box'][1], r['margin']) for r in _GATE_READS):
+            gate_read(box, 0.0)
+            missed.append(name)
+    if missed:
+        note = ('the regions this unit noted did not hold %d body(ies) it asked (%s): they are noted as regions of their own. '
+                'A defect of the probe\'s regions: report it' % (len(missed), ', '.join(sorted(set(missed))[:6])))
+        if note not in _GATE_NOTES:
+            _GATE_NOTES.append(note)
+
+
+class GateInputs(dict):
+    """JOB["params"] and JOB["tables"] while a probe runs: a dict that notes every key a probe asks for, found or not
+    (get, [], in). Iterating it, copying it or asking for its keys counts as reading all of it. The host stores the
+    values of the keys read as dependencies of the unit (a parameter no probe of the unit reads does not measure it
+    again). Always true, also when empty: `job.get("params") or {}` must not hand the probe an unwatched dict."""
+
+    def __init__(self, data):
+        dict.__init__(self, data or {})
+        self.read, self.all = set(), False
+
+    def __bool__(self):
+        return True
+
+    def get(self, key, default=None):
+        self.read.add(key)
+        return dict.get(self, key, default)
+
+    def __getitem__(self, key):
+        self.read.add(key)
+        return dict.__getitem__(self, key)
+
+    def __contains__(self, key):
+        self.read.add(key)
+        return dict.__contains__(self, key)
+
+    def _whole(self):
+        self.all = True
+
+    def __iter__(self):
+        self._whole()
+        return dict.__iter__(self)
+
+    def keys(self):
+        self._whole()
+        return dict.keys(self)
+
+    def items(self):
+        self._whole()
+        return dict.items(self)
+
+    def values(self):
+        self._whole()
+        return dict.values(self)
+
+    def copy(self):
+        self._whole()
+        return dict(dict.items(self))
+
+    def noted(self):
+        """The keys read, sorted, or None for all of them."""
+        return None if self.all else sorted(str(k) for k in self.read)
+
+
+def gate_world(design, job, box, margin, own_path, own_body, read=True):
     """Every solid and mesh body whose bounding box comes within `margin` mm of `box`, document frame, the part itself
     included. ONE walker for bearings, openings, screws and gap, with the rule and the names of the scan:
 
@@ -485,7 +589,11 @@ def gate_world(design, job, box, margin, own_path, own_body):
     "above" = gate_above() of the occurrence (the components it lies in, outermost first); a mesh record
     also has "matrix" (its component -> document). A solid body
     is the occurrence's proxy (document frame). A mesh body whose box cannot be read (it was never drawn: no display
-    mesh) is left out and named in the envelope's "notes": it is not seen as an obstacle."""
+    mesh) is left out and named in the envelope's "notes": it is not seen as an obstacle.
+    read=True notes the region (gate_read): every body this walk can return is a dependency of the unit. A probe that
+    uses only a part of the list passes read=False and notes the smaller regions it really looks at itself."""
+    if read:
+        gate_read(box, margin)
     root = design.rootComponent
     out, unread = [], []
     for occ in [None] + list(root.allOccurrences):
@@ -620,6 +728,39 @@ def gate_remember_signature(body, sig):
         cache.partial.pop(key, None)
 
 
+GATE_REF_SHAPE_FACES = 3000     # a ref with more faces than this is told apart by its revision id instead of its faces
+
+
+def gate_ref_shape(body):
+    """16 hex over the faces of a solid body that is NOT a printed part (a ref): the sum of face_digest() over every
+    face, its area and its centroid, as a part's signature has it. A hole that moves inside the outline of a bought
+    plate or washer, with the same volume, area and counts, changes it; the cheap signature of a ref does not see
+    that, and the units of the parts next to it depend on it (gate_deps.py). Remembered per state of the body in the
+    signature cache of this Fusion session (key "shape|..."), so a session reads the faces of each ref once.
+    A body with more than GATE_REF_SHAPE_FACES faces: "r" + 15 hex of its revision id (Fusion changes it whenever the
+    body changes; a reload of a linked document may change it as well, which measures its neighbours again, never a
+    miss). None when neither can be read."""
+    key = _gate_sig_key(body)
+    cache = _gate_cache()
+    if key is not None and ('shape|' + key) in cache.done:
+        return cache.done['shape|' + key]
+    try:
+        n = body.faces.count
+        if n > GATE_REF_SHAPE_FACES:
+            rev = body.revisionId
+            out = ('r' + hashlib.sha256(str(rev).encode()).hexdigest()[:15]) if rev else None
+        else:
+            state = gate_sign_step(body, None, None)
+            out = hashlib.sha256(('%d|%s' % (n, state['acc'])).encode()).hexdigest()[:16]
+    except Exception:
+        return None
+    if key is not None and out is not None:
+        if len(cache.done) > 4000:
+            cache.done.clear()
+        cache.done['shape|' + key] = out
+    return out
+
+
 def gate_signature(body, fresh=False):
     """The B-rep signature (brep_signature of _geom.py) of a NATIVE body: volume, area, counts, bounding box and every
     face's area and centroid, in the component's own frame.
@@ -745,13 +886,20 @@ def run(_context=''):
 
 
 def _gate_run():
+    global JOB
     came = json.loads(json.dumps(JOB.get('cursor')))    # the cursor as it arrived: a probe may work in place on JOB["cursor"]
     env = {'job': JOB.get('id'), 'doc': JOB.get('doc'), 'doc_version': None, 'part': JOB.get('part'), 'sig': None,
            'probe': JOB.get('probe'), 'facts': {}, 'done': False, 'cursor': came, 'elapsed_s': 0.0, 'error': None,
            'open_documents': [], 'seen': {'doc': JOB.get('doc'), 'body': JOB.get('body'), 'occurrence': JOB.get('occurrence')}, 'notes': [],
            'asked': {'run': JOB.get('run'), 'sent': JOB.get('sent'), 'sig': JOB.get('sig'), 'cursor_key': cursor_digest(came)}}
+    watched = {k: GateInputs(JOB.get(k)) for k in ('params', 'tables')}
+    JOB = GateInputs(dict(JOB, **watched))              # what the probe reads of the job, its parameters and tables is noted
     try:
         env['open_documents'] = sorted(_gate_doc_name(d) for d in adsk.core.Application.get().documents)
+        try:
+            env['fusion_version'] = str(adsk.core.Application.get().version)     # facts of another Fusion build are measured again
+        except Exception:
+            env['fusion_version'] = None
         late = _GATE_STARTED - _gate_t0()
         if late > float(JOB.get('deadline_s') or 20) + 10.0:
             raise TimeoutError('the unit started %.0f s after it was sent: the host has stopped waiting, nothing was measured' % late)
@@ -767,7 +915,14 @@ def _gate_run():
         env['facts'], env['done'], env['cursor'] = {'signing': e.args[0] if e.args else {}}, False, came
     except Exception as e:
         env['error'] = '%s: %s\n%s' % (type(e).__name__, e, traceback.format_exc()[-1500:])
+    try:
+        _gate_cover_asked()
+    except Exception:                                   # the record must hold every body asked: none at all rather than half
+        _GATE_READS.append({'box': [[-1e9, -1e9, -1e9], [1e9, 1e9, 1e9]], 'margin': 0.0})
     env['notes'] = list(_GATE_NOTES)
+    # what this call read, beside the facts (never in them): the host keeps it as the dependencies of the unit
+    env['reads'] = list(_GATE_READS)
+    env['inputs_read'] = dict({k: w.noted() for k, w in watched.items()}, job=JOB.noted())
     env['elapsed_s'] = round(time.time() - _GATE_STARTED, 2)
     tmp = JOB['out'] + '.tmp'
     os.makedirs(os.path.dirname(JOB['out']), exist_ok=True)

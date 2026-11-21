@@ -56,11 +56,20 @@ class FakeFusion:
         self.late = {}               # (probe, part) -> list of answers that come after the host stopped waiting
         self.working = None          # (job, answer) of the unit Fusion is still busy with
         self.stacked = 0             # calls that were sent while a unit was still working
+        self.default_inputs = None   # what a unit says it read of the job when set_facts() names nothing: None = all of it
+        self.version = None          # the Fusion version every envelope gives ("fusion_version"); None: not said
 
     # ---- what a test sets up ----
-    def set_facts(self, probe, part, facts, done=True, cursor=None, sig=None, elapsed_s=0.1):
-        """Queue one answer for the unit (probe, part). `sig` None = the signature the job expects (JOB["sig"])."""
-        self.answers.setdefault((probe, part), []).append({'facts': facts, 'done': done, 'cursor': cursor, 'sig': sig, 'elapsed_s': elapsed_s, 'error': None})
+    def set_facts(self, probe, part, facts, done=True, cursor=None, sig=None, elapsed_s=0.1, reads=(), inputs_read=None):
+        """Queue one answer for the unit (probe, part). `sig` None = the signature the job expects (JOB["sig"]).
+        facts may be a function of the JOB dict: it is called when the unit is answered, so a test can make the facts
+        depend on the model as it is at that moment (a neighbour that moved closes a hole).
+        reads: the regions the call read ([{"box", "margin"}], document frame; none by default: the unit read only its
+        own body); inputs_read: {"params", "tables", "job"} as the unit reports them (default: all of each). reads=None
+        answers as an older unit text did: it does not say what it read."""
+        self.answers.setdefault((probe, part), []).append({'facts': facts, 'done': done, 'cursor': cursor, 'sig': sig, 'elapsed_s': elapsed_s, 'error': None,
+                                                           'reads': None if reads is None else [dict(r) for r in reads],
+                                                           'inputs_read': inputs_read})
 
     def set_error(self, probe, part, error):
         """Queue an answer that is a probe error (an exception inside Fusion)."""
@@ -91,7 +100,7 @@ class FakeFusion:
     def _envelope(self, job):
         return {'job': job['id'], 'doc': job['doc'], 'doc_version': self.documents.get(job['doc']), 'part': job['part'],
                 'sig': None, 'probe': job['probe'], 'facts': {}, 'done': False, 'cursor': job['cursor'], 'elapsed_s': 0.0,
-                'error': None, 'open_documents': sorted(self.documents), 'notes': [],
+                'error': None, 'open_documents': sorted(self.documents), 'notes': [], 'fusion_version': self.version,
                 'asked': {'run': job['run'], 'sent': job.get('sent'), 'sig': job['sig'], 'cursor_key': gate_fusion_rpc.cursor_key(job['cursor'])}}
 
     def _write(self, job, env):
@@ -144,8 +153,13 @@ class FakeFusion:
         else:
             queue = self.answers[key]
             a = queue.pop(0) if len(queue) > 1 else queue[0]
-            env.update(facts=a['facts'], done=a['done'], cursor=a['cursor'], elapsed_s=a['elapsed_s'], error=a['error'],
+            env.update(facts=a['facts'](job) if callable(a['facts']) else a['facts'], done=a['done'], cursor=a['cursor'], elapsed_s=a['elapsed_s'], error=a['error'],
                        sig=a['sig'] if a['sig'] is not None else job['sig'])
+            inputs = a.get('inputs_read') if a.get('inputs_read') is not None else (self.default_inputs or {'params': None, 'tables': None, 'job': None})
+            if a.get('reads') is not None:                # what the unit read, as probes/_fusion.py run() reports it
+                env.update(reads=a['reads'], inputs_read=inputs)
+            elif 'reads' not in a:
+                env.update(reads=[], inputs_read={'params': None, 'tables': None, 'job': None})
             if a.get('export'):
                 env['facts'] = self._export(job, a['export'], a['facts'])
         self.now += env['elapsed_s'] or 0.0

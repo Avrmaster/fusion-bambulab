@@ -121,6 +121,7 @@ def _opn_path(point, axis, r, reach, world, skip, coax_names, part=None, clock=N
     length = max(0.1, reach - 0.05)
     end = v_add(start, v_scale(axis, length))
     section = math.pi * rr * rr
+    gate_read(path_box(start, axis, rr, length), 0.0)  # a body this path can meet lies in its box (box_overlaps_path)
     hits = [dict(h) for h in part['hits']] if part else []
     for k in range(int(part['k']) if part else 0, len(world)):
         rec = world[k]
@@ -182,6 +183,22 @@ def _opn_path(point, axis, r, reach, world, skip, coax_names, part=None, clock=N
     return {'r': round(r, 3), 'reach': reach, 'free': path_free(hits, reach), 'hits': hits}
 
 
+_OPN_WALK = None                # the box the walk of this call covers (part box and its margin): probe() sets it
+
+
+def _opn_slab(end, Ad, floor):
+    """The box of what _opn_closed() can find behind a cap: bodies whose box spans [floor, floor + 3] mm behind the blind
+    end along the axis, within the walk. Exact for an axis along x, y or z; the whole walk for any other axis."""
+    lo, hi = list(_OPN_WALK[0]), list(_OPN_WALK[1])
+    for i in range(3):
+        if abs(Ad[i]) > 0.999999:
+            a, b = end[i] - Ad[i] * floor, end[i] - Ad[i] * (floor + 3.0)
+            lo[i], hi[i] = max(lo[i], min(a, b)), min(hi[i], max(a, b))
+            if lo[i] > hi[i]:
+                lo[i] = hi[i] = (a + b) / 2.0
+    return (tuple(lo), tuple(hi))
+
+
 def _opn_closed(h, holes, m, world, cap_max, screws):
     """The "closed" row of a blind hole, or None: a cap of at most cap_max with something on the same axis behind it."""
     floor = h.get('floor')
@@ -198,6 +215,8 @@ def _opn_closed(h, holes, m, world, cap_max, screws):
             return {'hole': h.get('id'), 'anchor': h['anchor'], 'cap': floor, 'behind': {'what': 'hole', 'name': h2.get('id'), 'd': min(ds) if ds else None}}
     Pd, Ad = mat_point(m, P), v_unit(mat_vector(m, A))
     end = v_sub(Pd, v_scale(Ad, depth))                                                      # the blind end, document frame
+    if _OPN_WALK is not None:
+        gate_read(_opn_slab(end, Ad, floor), 0.0)
     for rec in world:
         if rec['own'] or rec['mesh']:
             continue
@@ -281,6 +300,10 @@ def _opn_screws(world, pattern, washers, part_box, own, job, holes, doc_pt):
             far.append((r, named))                                      # perhaps the head body of a shank that reaches the part
             continue
         by_path.setdefault(r['path'], []).append((r, named))
+    gate_read(part_box, 1.0)                                            # the candidates: within 1 mm of the part
+    for rows in by_path.values():                                       # ... and a body of their occurrence that touches one of them
+        for r, _ in rows:
+            gate_read(r['box'], 0.5)
     away = set(id(r) for r, _ in far)
     for r, named in far:                                                # a body that touches a near body of its own occurrence is looked at with it
         near = by_path.get(r['path']) or []
@@ -342,6 +365,7 @@ def _opn_screws(world, pattern, washers, part_box, own, job, holes, doc_pt):
             mine = set(id(x) for x in s['recs'])
             for off in (0.1, 0.6, 1.1, 1.7):                              # a printed part under the head, also under a washer, comes first
                 pts = ring(off)
+                gate_read((pts[0], pts[0]), 2.0 * sh['head_r'])
                 for rec in world:
                     if rec['mesh'] or rec['own'] or id(rec) in mine or box_gap(rec['box'][0], rec['box'][1], pts[0], pts[0]) > 2.0 * sh['head_r']:
                         continue
@@ -453,7 +477,12 @@ def probe(job):
     cap_max = float(params.get('access.cap_max', 2.0))
     iron_r, iron_reach = float(params.get('inserts.iron_d', 8.0)) / 2.0, float(params.get('inserts.iron_reach', 30.0))
     screws_pat = params.get('screws.ref_pattern') or '(?i)screw|bolt'
-    world = gate_world(design, job, part_box, max(reach, iron_reach) + 12.0, '' if occ is None else occ.fullPathName, body.name)
+    global _OPN_WALK
+    walk = max(reach, iron_reach) + 12.0
+    _OPN_WALK = (tuple(c - walk for c in part_box[0]), tuple(c + walk for c in part_box[1]))
+    # the facts depend on the bodies the paths, the look for screws and the look behind caps meet: each notes its own
+    # region (gate_read), not the whole walk
+    world = gate_world(design, job, part_box, walk, '' if occ is None else occ.fullPathName, body.name, read=False)
     own = [r for r in world if r['own']]
     if not own:
         raise KeyError('the body of %r was not found among the bodies of the document' % (job.get('part'),))
@@ -513,6 +542,9 @@ def probe(job):
         except _OpnLate as e:
             e.state['key'] = key
             raise
+        finally:
+            for k in touched:                                           # every body a path asked: in a noted region (_fusion.py checks)
+                gate_asked(world[k]['name'], world[k]['box'])
         begun['paths'][key], begun['path'] = got, None
         return got
     i = start

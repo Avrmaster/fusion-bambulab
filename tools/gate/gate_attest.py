@@ -286,7 +286,18 @@ def _bearing_name(name, params, names):
     text = str(name or '')
     if _matches(params.get('bearings.ref_pattern') or '(?i)bearing', text):
         return True
-    return any(re.search(r'(?<![0-9A-Za-z.])%s(?![0-9A-Za-z])' % re.escape(k), text) for k in names)
+    return bool(names) and _designations(tuple(names)).search(text) is not None
+
+
+_DESIGNATIONS = {}
+
+
+def _designations(names):
+    """One compiled pattern for "one of these designations as a word of its own": the same answer as one search per
+    designation (the engine tries every alternative at every place), read once per table instead of per name."""
+    if names not in _DESIGNATIONS:
+        _DESIGNATIONS[names] = re.compile(r'(?<![0-9A-Za-z.])(?:%s)(?![0-9A-Za-z])' % '|'.join(re.escape(k) for k in names))
+    return _DESIGNATIONS[names]
 
 
 def _unknown_near(near):

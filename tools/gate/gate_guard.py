@@ -817,6 +817,9 @@ def cmd_verify(root, args):
     reg = gate_registry.load_default()
     census = gate_common.load_census(root); project = gate_common.load_project(root)
     overrides = gate_params.load_overrides(root)
+    # no Fusion here: a stamp is held against the model as the last scan saw it (its part, and what its units read)
+    print('stamps are verified against the scan at %s: what changed in Fusion after it counts once `gate.py scan` (or run, or export) has seen it'
+          % (census.get('scanned') or 'never'))
     verdicts, results = [], []
     for entry in entries:
         resolved = gate_params.resolve(reg, overrides, (project.get('targets') or {}).get(entry.get('key')))

@@ -482,10 +482,12 @@ def save_probe_facts(root, part, sig, envelope):
     """Store the result of one finished unit under "probes"[<probe name>] of the part's facts file. The stored entry is the
     envelope without "part", "sig", "probe" (they are the file's own keys), "open_documents" (the names of the other
     open documents never go into a file that is committed) and "asked" / "late" (which call wrote the result file:
-    read by the host to adopt a late answer, of no use after it), with facts["stl"] relative to the root, plus "time".
-    Returns the path."""
+    read by the host to adopt a late answer, of no use after it) and "reads" / "inputs_read" (what the unit read: kept
+    as "deps", gate_deps.record), with facts["stl"] relative to the root, plus "time". Returns the path."""
     data = load_facts(root, part, sig)
-    entry = {k: v for k, v in envelope.items() if k not in ('part', 'sig', 'probe', 'open_documents', 'asked', 'late')}
+    entry = {k: v for k, v in envelope.items() if k not in ('part', 'sig', 'probe', 'open_documents', 'asked', 'late', 'reads', 'inputs_read', 'fusion_version')}
+    if entry.get('deps') is None:
+        entry.pop('deps', None)
     facts = entry.get('facts')
     if isinstance(facts, dict) and isinstance(facts.get('stl'), str) and os.path.isabs(facts['stl']):
         entry['facts'] = dict(facts, stl=rel(root, facts['stl']))
@@ -496,11 +498,20 @@ def save_probe_facts(root, part, sig, envelope):
     return write_json(facts_path(root, part, sig), data)
 
 
-def save_judged(root, part, sig, rule, judge_hash, params, findings):
+def save_judged(root, part, sig, rule, judge_hash, params, findings, input_key=None):
     """Store what one judge said about the stored facts under "judged"[<rule id>]:
-    {"judge_hash", "params": {name: value}, "findings": [...], "time"}. Returns the path."""
+    {"judge_hash", "params": {name: value}, "findings": [...], "time"} and "input" (16 hex over everything the judge
+    read, gate_plan.judge_part) when given. Returns the path."""
+    row = {'judge_hash': judge_hash, 'params': params, 'findings': findings, 'time': now()}
+    if input_key is not None:
+        row['input'] = input_key
+    return save_judged_many(root, part, sig, {rule: row})
+
+
+def save_judged_many(root, part, sig, rows):
+    """Store several judgements of one geometry in one write: {rule id: the row save_judged() stores}."""
     data = load_facts(root, part, sig)
-    data['judged'][rule] = {'judge_hash': judge_hash, 'params': params, 'findings': findings, 'time': now()}
+    data['judged'].update(rows)
     return write_json(facts_path(root, part, sig), data)
 
 

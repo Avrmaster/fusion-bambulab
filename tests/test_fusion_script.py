@@ -148,7 +148,8 @@ class Fake(Dir):
         fusion.set_facts('fusion_census', 'demo/bracket', {'holes': [], 'openings': [], 'counts': {}})
         res, env = self.call(fusion)
         self.assertEqual(res, fake_fusion.OK)
-        self.assertEqual(sorted(env), ['asked', 'cursor', 'doc', 'doc_version', 'done', 'elapsed_s', 'error', 'facts', 'job', 'notes', 'open_documents', 'part', 'probe', 'sig'])
+        self.assertEqual(sorted(env), ['asked', 'cursor', 'doc', 'doc_version', 'done', 'elapsed_s', 'error', 'facts', 'fusion_version', 'inputs_read', 'job', 'notes',
+                                       'open_documents', 'part', 'probe', 'reads', 'sig'])
         self.assertEqual((env['job'], env['doc'], env['doc_version'], env['part'], env['sig'], env['probe'], env['done'], env['error']),
                          ('u-0001', 'Demo Assembly', 12, 'demo/bracket', SIG, 'fusion_census', True, None))
         self.assertEqual(env['open_documents'], ['Demo Assembly']); self.assertEqual(fusion.calls_of('fusion_census', 'demo/bracket')[0]['id'], 'u-0001')

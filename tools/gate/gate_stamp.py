@@ -11,7 +11,7 @@ A stamp, gate/stamps/<doc>/<part>/<sig12>.json. One file per part per signature,
      "doc_version": 41, "time": "2031-02-03T10:31:02Z", "run": "<run id>"}
 
 "checks" holds every block rule of the design and export stages that applies to the part (applicable_rules).
-Optional keys: "for" (the key of the .3mf project whose declared target the part was judged for), "answers" (the ids of
+Optional keys: "facts" ({probe: 16 hex over the facts the judgement rests on}), "for" (the key of the .3mf project whose declared target the part was judged for), "answers" (the ids of
 the questions whose answers the stamp rests on), "tolerated" (how many findings the owner's triage decision closed).
 
 A stamp is VALID for a mesh when all hold (verify):
@@ -28,7 +28,13 @@ A stamp is VALID for a mesh when all hold (verify):
   - a check that rests on a waiver, an answer or a "tolerate" decision still has it: its stored findings at this
     signature are all closed today (a withdrawn waiver re-opens the check);
   - every answer the stamp names in "answers" is still stored, and an answer that is a waiver still has its waiver in
-    gate/owner/waivers.json (a withdrawn waiver behind a question re-opens the stamp).
+    gate/owner/waivers.json (a withdrawn waiver behind a question re-opens the stamp);
+  - the facts of the stamped geometry are the ones the stamp rests on ("facts": {probe: digest}; a stamp without it:
+    no probe entry was stored after the stamp), and no unit of them would be measured again because what it READ
+    changed (a neighbour moved, came or changed, the part moved, a parameter it read changed: gate_deps.py). A moved
+    neighbour that can close a hole of the part re-opens its stamp. Facts measured by a copy of the gate older than
+    gate_deps.py hold no record of what they read: for them only the first test applies, and `gate.py run --changed`
+    measures them again.
 Anything else is "stale" with the reason; no stamp at all is "none".
 What does NOT kill a stamp: a new version of the plugin or of the vendored copy (the lock only says whether the copy is
 intact), a change to a judge of another rule, a change to a rule's text, a new attest or advice rule.
@@ -311,7 +317,60 @@ def build(root, reg, resolved, part, sig, judged, stl_path, target, attested=0, 
         stamp['for'] = target_key
     if answers:
         stamp['answers'] = sorted({str(q) for q in answers})
+    measured = facts_digests(root, part, sig)
+    if measured:
+        stamp['facts'] = measured
     return stamp
+
+
+def facts_digests(root, part, sig):
+    """{probe: 16 hex over its stored facts} of the Fusion units of one geometry: what a stamp rests on (its "facts").
+    verify() finds out from it that the part was measured again after the stamp and came out otherwise. The STL probes
+    of the export stage are not in it: every export measures its own STL for its own target, and the stamp holds that
+    file by its geom_hash."""
+    probes = gate_common.load_facts(root, part, sig).get('probes') or {}
+    return {k: gate_common.digest(e.get('facts')) for k, e in sorted(probes.items())
+            if k.startswith('fusion_') and isinstance(e, dict) and not e.get('error') and isinstance(e.get('facts'), dict)}
+
+
+def _measured_since(root, stamp):
+    """Why the stored facts of the stamped geometry are no longer the ones the stamp rests on, or None. A stamp with
+    "facts": a probe's facts differ from the digest it holds, or are gone. An older stamp (no "facts"): a probe entry
+    was stored later than the stamp was written."""
+    part, sig = stamp.get('part'), stamp.get('sig')
+    probes = gate_common.load_facts(root, part, sig).get('probes') or {}
+    held = stamp.get('facts')
+    if isinstance(held, dict):
+        now = facts_digests(root, part, sig)
+        for k in sorted(held):
+            if now.get(k) != held[k]:
+                return '%s was measured again after the stamp and its facts %s' % (k, 'are gone or an error' if k not in now else 'differ')
+        return None
+    mine = str(stamp.get('time') or '')
+    for k, e in sorted(probes.items()):
+        if k.startswith('fusion_') and isinstance(e, dict) and mine and str(e.get('time') or '') > mine:
+            return '%s was measured again after the stamp (%s)' % (k, e.get('time'))
+    return None
+
+
+def _neighbours_moved(root, reg, stamp, census):
+    """Why a unit the stamp rests on would be measured again today because what it READ changed (gate_plan.stale_units:
+    a neighbour moved or changed, the part moved, a parameter or the probe it read changed), or None. Only units whose
+    record of what they read exists are judged so: facts measured by an older copy of the gate have no such record
+    (`gate.py run --changed` measures them again, and _measured_since() then sees it)."""
+    import gate_plan
+    entry = (census.get('parts') or {}).get(stamp.get('part')) or {}
+    if entry.get('source', 'fusion') != 'fusion' or entry.get('sig') != stamp.get('sig'):
+        return None
+    probes = gate_common.load_facts(root, stamp['part'], stamp['sig']).get('probes') or {}
+    try:
+        units = gate_plan.stale_units(root, reg, census=census, parts=[stamp['part']]).get(stamp['part']) or {}
+    except GateError as e:
+        return 'what the part was measured against cannot be read back (%s)' % e
+    for probe, why in sorted(units.items()):
+        if why and isinstance(probes.get(probe), dict) and isinstance(probes[probe].get('deps'), dict):
+            return '%s: %s' % (probe, why)
+    return None
 
 
 def write(root, stamp, supersede=False):
@@ -398,6 +457,12 @@ def verify(root, reg, stamp, geom_hash=None, census=None, target=None, resolved=
     for other in all_stamps(root, part):
         if other.get('sig') != sig and str(other.get('time') or '') > mine:
             return 'stale', 'not the newest signature of the part: %s was stamped later (%s)' % (gate_common.sig12(other['sig']), other.get('time'))
+    since = _measured_since(root, stamp)
+    if since:
+        return 'stale', since + ': the stamp is about other facts (gate.py run, then export)'
+    moved = _neighbours_moved(root, reg, stamp, census)
+    if moved:
+        return 'stale', 'what the stamped part was checked against changed (%s): that check is open again (gate.py run --changed, then export)' % moved
     if target is not None and _target_key(target) != _target_key(stamp.get('target')):
         return 'stale', 'stamped for another target (%s), this project is declared as %s' % (_target_text(stamp.get('target')), _target_text(target))
     for rid in applicable_rules(reg, {'source': _source(root, part, census, stamp)}):
@@ -601,7 +666,43 @@ def _fusion_origin(root, stl, census, layout):
     return None
 
 
-def export_part(root, reg, resolved, part, target_key=None, wall_s=20.0, transport=None, pinger=None):
+def scan_for_export(root, doc_key, wall_s=20.0, transport=None, pinger=None, show=False):
+    """Scan the document of a part before it is exported: the census, and with it every neighbour and ref the part's
+    units read, is then the model as it is, not as the last scan saw it. Returns None, or (exit code, why) when the
+    export cannot go on: Fusion does not answer or the document is not open (4), the scan needs another call (3).
+    show: print what the scan found (gate_plan._print_scan: new and changed parts, STL paths that moved, ...)."""
+    import gate_plan, gate_fusion_rpc
+    try:
+        res = gate_plan.scan(root, doc_key, wall_s=20.0 if wall_s is None else max(float(wall_s), 1.0), transport=transport, pinger=pinger)
+    except gate_fusion_rpc.FusionDown as e:
+        return EXIT_INFRA, 'Fusion does not answer, so what the part was checked against cannot be confirmed: %s' % e
+    if show:
+        gate_plan._print_scan(res, gate_plan._hint_faces(root))
+    if res.get('errors'):
+        return EXIT_INFRA, 'the scan before the export failed: %s' % '; '.join('%s: %s' % kv for kv in sorted(res['errors'].items()))
+    if doc_key in (res.get('unreachable') or []):
+        return EXIT_INFRA, 'the document of the part is not open in Fusion: what it was checked against cannot be confirmed (open it, then export)'
+    if not res.get('done'):
+        return EXIT_MORE, 'the scan before the export needs another call: call again'
+    return None
+
+
+def _checked_against(root, reg, resolved, part, census, target_key):
+    """Why the facts the part's verdict rests on no longer hold for the model the census has (gate_plan.stale_units:
+    a unit of the part whose part, neighbour, ref, parameter or probe changed since it was measured, or that has no
+    record of what it read), or None."""
+    import gate_plan
+    try:
+        units = gate_plan.stale_units(root, reg, resolved, census, parts=[part], target_key=target_key).get(part) or {}
+    except GateError as e:
+        return 'what the part was measured against cannot be read back (%s)' % e
+    for probe, why in sorted(units.items()):
+        if why:
+            return '%s: %s' % (probe, why)
+    return None
+
+
+def export_part(root, reg, resolved, part, target_key=None, wall_s=20.0, transport=None, pinger=None, scanned=False):
     """Export one part through quarantine as described at the top. Returns {"part", "exit": 0 | 1 | 2 | 3 | 4,
     "stamp": path or None, "stl": promoted path or None, "quarantine": path or None, "open": [findings],
     "questions": [open questions], "why": text when nothing was promoted, "unit": True when the export unit was sent
@@ -612,9 +713,23 @@ def export_part(root, reg, resolved, part, target_key=None, wall_s=20.0, transpo
     "Already stamped: nothing to do" needs a valid stamp of this signature AND a file in the folder that holds exactly
     the bytes of a stamp of this signature. A file with the stamped geometry in other bytes (the same mesh written by
     another tool, an older export under another header) is exported again: the file is replaced and the next stamp
-    is written, so `gate.py status` and `export` say the same about it."""
+    is written, so `gate.py status` and `export` say the same about it.
+
+    Before anything is judged the document of the part is scanned (scan_for_export; scanned=True: the caller did it
+    in this call, cmd_export scans each document once), and the export is refused (exit 1) while a unit of the part
+    must be measured again because what it read changed (_checked_against): a neighbour that moved since the run can
+    close a hole of the part, and its stamp would say otherwise. That holds for "already stamped" too."""
     import gate_plan, gate_report, gate_fusion_rpc, gate_params
     out = _result(part)
+    if not scanned:
+        try:
+            doc_of = gate_common.split_part_id(part)[0]
+        except GateError as e:
+            return _stop(out, EXIT_INFRA, str(e))
+        if doc_of in {d.get('key') for d in gate_common.load_layout(root).get('documents') or []}:
+            stop = scan_for_export(root, doc_of, wall_s, transport, pinger)
+            if stop:
+                return _stop(out, stop[0], stop[1])
     census = gate_common.load_census(root)
     entry = (census.get('parts') or {}).get(part)
     if not entry or entry.get('gone') or not entry.get('sig'):
@@ -639,6 +754,10 @@ def export_part(root, reg, resolved, part, target_key=None, wall_s=20.0, transpo
     if inherited:
         return _stop(out, EXIT_BLOCK, 'inherited findings wait for the owner\'s decision or a fix: %s (gate.py triage)'
                      % ', '.join(str(i.get('id')) for i in inherited), inherited=inherited)
+    moved = _checked_against(root, reg, resolved, part, census, target_key)
+    if moved:
+        return _stop(out, EXIT_BLOCK, 'what the part was checked against changed since it was measured (%s): `gate.py run --changed --for KEY` '
+                                      'measures it again, then export' % moved)
     layout = gate_common.load_layout(root); doc = gate_common.document_entry(layout, doc_key)
     now_stl = gate_common.stl_of(doc, entry.get('name') or slug)
     dest = os.path.join(root, entry.get('stl') or now_stl or 'stl/%s.stl' % slug)     # the census names the file (the scan read "stl_names")
@@ -769,9 +888,18 @@ def cmd_export(root, args):
     else:
         gate_plan.acquire_lock(root)
         try:
+            # one scan per document of the named parts, first: the export judges against the model as it is now
+            registered = {d.get('key') for d in gate_common.load_layout(root).get('documents') or []}
+            stops = {}
+            for doc_key in sorted({gate_common.split_part_id(p)[0] for p in parts if '/' in p} & registered):
+                stops[doc_key] = scan_for_export(root, doc_key, wall, show=True)
             for part in parts:
                 began = time.time()
-                r = export_part(root, reg, resolved, part, args.target, wall_s=None if t0 is None else wall - (time.time() - t0))
+                stop = stops.get(part.split('/', 1)[0])
+                if stop:
+                    results.append(_stop(_result(part), stop[0], stop[1]))
+                    continue
+                r = export_part(root, reg, resolved, part, args.target, wall_s=None if t0 is None else wall - (time.time() - t0), scanned=True)
                 if r.get('unit') and t0 is None:
                     t0 = began
                 results.append(r)

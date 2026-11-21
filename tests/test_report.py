@@ -31,7 +31,8 @@ class Reported(unittest.TestCase):
         self.sigs = self.demo.model({'Bracket': 'v1', 'Cover': 'v1'})
         gate_common.write_json(gate_common.gate_path(self.root, 'owner', 'params.json'),
                                {'inserts.wall_target': {'value': 4.0, 'tag': 'U', 'source': 'owner 2026-03-04', 'date': '2026-03-04'}})
-        self.resolved = gate_params.resolve(self.reg, gate_params.load_overrides(self.root), None)
+        # the parameters of the declared target, as `gate.py run` resolves them: the units record what they were sent
+        self.resolved = gate_params.resolve(self.reg, gate_params.load_overrides(self.root), gate_common.target_of(gate_common.load_project(self.root)))
         gate_plan.scan(self.root, wall_s=600)
         self.plan = gate_plan.new_plan(self.root, self.reg, [BRACKET, COVER])
         gate_plan.run_units(self.root, self.reg, self.resolved, self.plan, wall_s=600)
@@ -374,7 +375,7 @@ class Status(Reported):
     def test_the_status_command_and_its_exit_codes(self):
         code, out, err = self.demo.gate('status')
         self.assertEqual((code, err), (1, ''))
-        self.assertIn('gate [observe]: 2 parts | 2 changed since their stamp | 3 open findings | 3 questions | 0 STLs without a valid stamp', out)
+        self.assertIn('gate [observe]: 2 parts | 0 changed, not checked | 2 checked, no stamp | 0 stamped | 3 open findings | 3 questions | 0 STLs without a valid stamp', out)
         self.assertIn('GROW    demo/bracket  inserts.wall  pocket wall 2.5 under 4.0', out); self.assertIn('ASK     demo/bracket  census.unknown_hole', out)
         self.assertIn('gate.py run --changed', out)
         code, out, err = self.demo.gate('status', '--json')
@@ -387,7 +388,7 @@ class Status(Reported):
         self.assertEqual((st['waiting'], st['inherited_parts'], st['inherited']), (3, 2, 3))
         clean = fake_fusion.DemoProject(self, part_questions=())
         clean.model({'Bracket': 'v1'}); gate_plan.scan(clean.root, wall_s=600)
-        reg = clean.registry(); res = gate_params.resolve(reg, {}, None)
+        reg = clean.registry(); res = gate_params.resolve(reg, {}, gate_common.target_of(gate_common.load_project(clean.root)))
         gate_plan.run_units(clean.root, reg, res, gate_plan.new_plan(clean.root, reg, [BRACKET]), wall_s=600); gate_plan.judge_part(clean.root, reg, res, BRACKET)
         self.assertEqual(clean.gate('status')[0], 0)                                         # checked, nothing open, no question
 
@@ -401,7 +402,7 @@ class Status(Reported):
         text = gate_report.digest(self.root)
         lines = text.splitlines()
         self.assertLessEqual(len(lines), 15)
-        self.assertTrue(lines[0].startswith('gate [observe]: 2 parts | 2 changed since their stamp | 3 open findings'))
+        self.assertTrue(lines[0].startswith('gate [observe]: 2 parts | 0 changed, not checked | 2 checked, no stamp | 0 stamped | 3 open findings'))
         for command in ('gate.py status', 'gate.py run --changed', 'gate.py export PART'):
             self.assertIn(command, lines[-1])
         self.assertIn('BLOCKED demo/bracket  inserts.wall', text)

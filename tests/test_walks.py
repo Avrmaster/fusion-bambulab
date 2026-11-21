@@ -182,10 +182,7 @@ class OwnStlNames(Walk):
         first, entry = self.stamp(FOOT), gate_common.load_census(self.root)['parts'][FOOT]
         self.map_foot()
         n = self.exports()
-        code, out, err = self.gate('export', FOOT)                                       # no scan yet: the census still names the old file, and the export says so
-        self.assertEqual((code, self.exports()), (0, n)); self.assertIn('stamped -> stl/lamp_foot.stl', out)
-        self.assertIn('NOTE gate/layout.json gives this part the file stl/LampFoot_rev2.stl now; the census of the last scan says stl/lamp_foot.stl', out)
-        code, out, err = self.gate('scan')
+        code, out, err = self.gate('export', FOOT)                                       # the export scans first: the map takes effect now
         self.assertEqual((code, err), (0, ''), out); self.assertNotIn('GONE', out); self.assertNotIn('NEW', out); self.assertNotIn('CHANGED', out)
         self.assertIn('STL      %s: stl/lamp_foot.stl -> stl/LampFoot_rev2.stl (gate/layout.json)' % FOOT, out)
         self.assertIn('stl/lamp_foot.stl stays in the folder: delete it once the new file is exported', out)
@@ -193,8 +190,8 @@ class OwnStlNames(Walk):
         self.assertEqual(dict(after, stl=None), dict(entry, stl=None)); self.assertEqual(after['stl'], 'stl/LampFoot_rev2.stl')
         self.assertEqual(gate_stamp.verify(self.root, self.reg, first)[0], 'valid')      # a stamp is tied to the geometry, not to the path
         self.assertNotIn(FOOT, gate_plan.changed_parts(self.root))
-        code, out, err = self.gate('export', FOOT)                                       # the mapped file is not there yet: a full export writes it
-        self.assertEqual((code, err, self.exports()), (0, '', n + 1), out); self.assertIn('stamped -> stl/LampFoot_rev2.stl', out); self.assertNotIn('NOTE', out)
+        # the mapped file is not there yet: a full export writes it, in the same call
+        self.assertEqual(self.exports(), n + 1); self.assertIn('stamped -> stl/LampFoot_rev2.stl', out); self.assertNotIn('NOTE', out)
         both = self.stamps(FOOT)
         self.assertEqual(sorted(s_['stl'] for s_ in both), ['stl/LampFoot_rev2.stl', 'stl/lamp_foot.stl'])
         self.assertEqual(sorted(os.listdir(gate_common.gate_path(self.root, 'stamps', *FOOT.split('/')))), ['%s.2.json' % self.sigs[FOOT][:12], '%s.json' % self.sigs[FOOT][:12]])
@@ -276,6 +273,9 @@ class SeveralTargets(Walk):
         project['targets']['coarse'] = self.coarse
         layout['projects'].append({'key': 'coarse', 'file': 'bambulab/Coarse.3mf', 'stl_dir': 'stl'})
         gate_common.write_json(self.path('gate', 'project.json'), project); gate_common.write_json(self.path('gate', 'layout.json'), layout)
+        # as the shipped probes do: no unit reads the target or a parameter of it, so its facts hold for every target
+        # (a unit that says it read everything would be measured again for the other target, and its export refused)
+        self.fusion.default_inputs = {'params': [], 'tables': [], 'job': ['doc', 'component_id', 'occurrence', 'body', 'features']}
 
     def test_a_run_names_its_target_and_one_part_is_exported_for_both(self):
         self.model(foot='v2', hub='v1', clip='v1')
