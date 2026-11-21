@@ -12,7 +12,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, 'tools', 'gate'))
 for d in (os.path.join(ROOT, 'tools', 'bambu'), os.path.dirname(os.path.abspath(__file__))):
     if d not in sys.path: sys.path.insert(0, d)
-import bambu3mf, fake_fusion, fake_slicer, gate_common, gate_params, gate_plan, gate_registry, gate_report, gate_stamp
+import bambu3mf, fake_fusion, fake_slicer, gate_common, gate_features, gate_params, gate_plan, gate_registry, gate_report, gate_stamp
 from gate_guard import GuardRefusal
 import test_guard as G
 import test_end_to_end as E
@@ -568,6 +568,43 @@ class OwnerTablesAndTheBed(Walk):
         self.assertIn('fits.bought_part_pocket', gate_plan.judgement_out_of_date(self.root, reg, FOOT, s['sig'], resolved))
         self.assertIn(FOOT, gate_plan.changed_parts(self.root))                          # run --changed takes it
 
+    def test_a_pins_edit_judges_again_only_the_checks_that_read_the_pins(self):
+        from unittest import mock
+        gate_common.write_json(self.path('gate', 'owner', 'params.json'),
+                               {'fits.pin_slip_extra': {'value': 0.05, 'tag': 'U', 'source': 'owner in a test', 'date': '2031-01-01'}})
+        self.model(foot='v2', hub='v1', clip='v1')
+        self.assertEqual(self.gate('scan')[0], 0)
+        census = E.foot_census()
+        census['holes'].append({'id': 'h2', 'anchor': {'kind': 'hole', 'axis': [0, 0, 1], 'point': [30, 20, 5]},
+                                'segments': [{'d': 5.05, 'len': 10.0}], 'depth': 10.0, 'through': True, 'floor': None, 'exit': None,
+                                'class': None, 'coaxial': [{'name': 'ref hardware / dowel pin D5 x 20', 'kind': 'hardware', 'part': None}], 'arc': 1.0})
+        self.facts(FOOT, fusion_census=census, fusion_inserts=E.foot_pocket(4.2)); self.facts(HUB); self.facts(CLIP)
+        self.near()
+        self.run_gate()
+        self.fusion.set_export(FOOT, E.stl_bytes(E.MESHES['foot v2'](), E.NAMES[FOOT]))
+        self.answer_all()
+        self.run_gate('--offline')
+        self.assertEqual(self.gate('export', FOOT, '--wall', '60')[0], 0)
+        s = self.stamp(FOOT)
+        judged = gate_common.load_facts(self.root, FOOT, s['sig'])['judged']
+        readers = {rid for rid, j in judged.items() if {'pins', '*'} & set(j.get('tables_read') or [])}
+        self.assertIn('fits.bought_part_pocket', readers)
+        self.assertNotIn('inserts.wall', readers); self.assertLess(len(readers), len(s['checks']) // 4)
+        self.assertTrue(all('pins' in s['checks'][rid]['inputs']['tables_read'] for rid in readers & set(s['checks'])))     # the stamp knows what each check read
+        gate_common.write_json(self.path('gate', 'owner', 'tables.json'), dict(self.read('gate', 'owner', 'tables.json'), pins={'sizes': {'5': {'lengths': [20, 32]}}}))
+        reg = gate_registry.load_default(self.root)
+        judged_again = []
+        real = gate_plan.judge_part
+
+        def spy(*a, **kw):
+            judged_again.extend(sorted(kw.get('rules') or ['every rule']))
+            return real(*a, **kw)
+        with mock.patch.object(gate_plan, 'judge_part', side_effect=spy):
+            self.assertEqual(gate_stamp.verify(self.root, reg, s)[0], 'valid')          # 20 is in stock: the check passes again
+        self.assertTrue(judged_again); self.assertLessEqual(set(judged_again), readers)
+        resolved = gate_params.resolve(reg, gate_params.load_overrides(self.root), TARGET)
+        self.assertLessEqual(set(gate_plan.judgement_out_of_date(self.root, reg, FOOT, s['sig'], resolved, stages=('design', 'export'))), readers)
+
     def test_a_part_placed_on_its_side_after_its_export_loses_its_stamp(self):
         from unittest import mock
         from probes import project_consistency
@@ -587,6 +624,109 @@ class OwnerTablesAndTheBed(Walk):
             self.assertNotIn(FOOT, gate_report.status(self.root)['stamped_ids'])
             self.assertEqual(self.gate('run', '--changed', '--wall', '600')[0], 1)
             self.assertEqual([f['verdict'] for f in gate_common.load_facts(self.root, FOOT, s['sig'])['judged']['print.fit_axis']['findings']], ['FAIL'])
+
+
+
+class FirstExportOfAnOlderStl(Walk):
+    """The upgrade path every real project takes: each STL in its folder comes from an older exporter, the .3mf places
+    it, and the model changed since. The first export through the gate judges the geometry it exports, not the old file;
+    the face comes from the placement, so export, verify and the guarded save of the new mesh agree."""
+    FOOT_ONLY = [('first plate', [('Lamp foot', 'lamp_foot.stl', False)])]
+
+    def placed_from_an_older_stl(self, census=None):
+        H.write_stl(os.path.join(self.stl_dir, 'lamp_foot.stl'), E.MESHES['foot v2']())          # an older exporter: no stamp, no header
+        G.quiet(lambda: (bambu3mf.new_project(self.path('bambulab', 'template.3mf'), self.proj), bambu3mf.build(self.proj, self.stl_dir, self.FOOT_ONLY)))
+        self.model(foot='v3', hub='v1', clip='v1')                                                 # the model changed since
+        self.assertEqual(self.gate('scan')[0], 0)
+        self.facts(FOOT, fusion_census=census or E.foot_census(), fusion_inserts=E.foot_pocket(4.2)); self.facts(HUB); self.facts(CLIP)
+        self.near()
+        code = self.run_gate()[0]
+        for part, mesh in ((FOOT, E.MESHES['foot v3']()), (HUB, E.MESHES['hub']()), (CLIP, H.box(30, 20, 5))):
+            self.fusion.set_export(part, E.stl_bytes(mesh, NAMES[part]))
+        return code
+
+    def frame(self): return gate_plan.print_frame(self.root, FOOT, gate_common.load_census(self.root)['parts'][FOOT])
+
+    def test_export_then_verify_then_the_guarded_swap_all_pass(self):
+        self.placed_from_an_older_stl()
+        self.answer_all()
+        self.assertEqual(self.run_gate('--offline')[0], 0)
+        self.assertEqual(self.frame()['from'], 'project')                  # never exported: the file in the folder is taken as it is for now
+        code, out, err = self.gate('export', FOOT, '--wall', '60')
+        # the exported geometry is not what the project places: the face is the placement's, but print.bed_face is asked
+        self.assertEqual(code, 2, out + err)
+        self.assertIn(('print.bed_face', FOOT), [(r, p) for _q, p, r in self.questions()])
+        self.answer_all()
+        code, out, err = self.gate('export', FOOT, '--wall', '60')
+        self.assertEqual(code, 0, out + err)
+        s = self.stamp(FOOT)
+        reg = gate_registry.load_default(self.root)
+        f = self.frame()
+        self.assertEqual((f['from'], [c + 0.0 for c in f['up']]), ('earlier geometry', [0.0, 0.0, 1.0]))
+        self.assertEqual(gate_stamp.verify(self.root, reg, s), ('valid', 'stamp %s@%s (pass_attested)' % (FOOT, s['sig'][:12])))
+        self.assertIn(FOOT, gate_report.status(self.root)['stamped_ids'])
+        gate_common.write_json(self.path('gate', 'project.json'), dict(self.read('gate', 'project.json'), mode='enforce'))
+        G.quiet(bambu3mf.build, self.proj, self.stl_dir, self.FOOT_ONLY)                  # the swap of that very mesh, guarded, in enforce
+        self.assertEqual(self.events()[-1]['stamp'], '%s@%s' % (FOOT, s['sig'][:12]))
+        self.assertEqual(self.frame()['from'], 'project')
+        self.assertEqual(gate_stamp.verify(self.root, reg, s)[0], 'valid')
+
+    def test_a_seat_the_new_geometry_turns_sideways_is_refused_at_its_export(self):
+        census = E.foot_census()
+        census['holes'][0]['anchor'] = gate_features.anchor('insert_pocket', (1, 0, 0), (0, 8, 6))    # the pocket now opens in a side face
+        self.assertEqual(self.placed_from_an_older_stl(census), 1)
+        self.assertIn(('print.fit_axis', 'FAIL'), self.rows(FOOT))
+        self.answer_all()
+        code, out, err = self.gate('export', FOOT, '--wall', '60')
+        self.assertEqual(code, 1, out + err)
+        self.assertIsNone(self.stamp(FOOT))
+
+    def test_a_turn_inside_the_save_being_written_is_held_against_the_stamp(self):
+        self.placed_from_an_older_stl()
+        self.answer_all()
+        self.gate('export', FOOT, '--wall', '60'); self.answer_all()
+        self.assertEqual(self.gate('export', FOOT, '--wall', '60')[0], 0)
+        G.quiet(bambu3mf.build, self.proj, self.stl_dir, self.FOOT_ONLY)
+        gate_common.write_json(self.path('gate', 'project.json'), dict(self.read('gate', 'project.json'), mode='enforce'))
+        infos, files = bambu3mf.load(self.proj)
+        model = files['3D/3dmodel.model'].decode()
+        side = re.sub(r'(<item objectid="\d+"[^>]*?transform=")([^"]+)', lambda m: m.group(1) + '0 0 -1 0 1 0 1 0 0 ' + ' '.join(m.group(2).split()[9:]), model, count=1)
+        self.assertNotEqual(side, model)
+        before = self.raw()
+        bambu3mf.note_stl('Lamp foot', os.path.join(self.stl_dir, 'lamp_foot.stl'), tool='a test turn')
+        with self.assertRaises(GuardRefusal) as c:
+            G.quiet(bambu3mf.save, self.proj, dict(files, **{'3D/3dmodel.model': side.encode()}), infos)
+        self.assertIn('print.fit_axis', str(c.exception)); self.assertIn('lies 90 deg off the print axis', str(c.exception))
+        self.assertEqual(self.raw(), before)
+        G.quiet(bambu3mf.save, self.proj, files, infos)                                   # the same save without the turn goes through
+
+
+class TwoProjectsTwoFaces(Walk):
+    """A production and a test project share the STL folder and lay the part on different faces: each placement is
+    judged, and the worst decides (before, an unknown face let print.fit_axis and print.z_layers pass as INFO)."""
+
+    def test_the_project_that_lays_it_on_its_side_fails_the_fit_axis(self):
+        layout = self.read('gate', 'layout.json')
+        layout['projects'].append(dict(layout['projects'][0], key='desklamp_test', file='bambulab/DeskLampTest.3mf'))
+        layout['projects'][-1].pop('build_table', None)
+        gate_common.write_json(self.path('gate', 'layout.json'), layout)
+        H.write_stl(os.path.join(self.stl_dir, 'lamp_foot.stl'), E.MESHES['foot v2']())
+        tpl = self.path('bambulab', 'template.3mf'); test = self.path('bambulab', 'DeskLampTest.3mf')
+        G.quiet(lambda: (bambu3mf.new_project(tpl, self.proj), bambu3mf.build(self.proj, self.stl_dir, [('first plate', [('Lamp foot', 'lamp_foot.stl', False)])]),
+                         bambu3mf.new_project(tpl, test), bambu3mf.build(test, self.stl_dir, [('first plate', [('Lamp foot', 'lamp_foot.stl', '+x')])])))
+        self.model(foot='v2', hub='v1', clip='v1')
+        self.assertEqual(self.gate('scan')[0], 0)
+        self.facts(FOOT, fusion_census=E.foot_census(), fusion_inserts=E.foot_pocket(4.2)); self.facts(HUB); self.facts(CLIP)
+        self.near()
+        self.assertEqual(self.run_gate()[0], 1)
+        f = gate_plan.print_frame(self.root, FOOT, gate_common.load_census(self.root)['parts'][FOOT])
+        self.assertIsNone(f['up']); self.assertEqual(len(f['frames']), 2); self.assertEqual(f['from'], 'project')
+        fit = [x for x in gate_common.load_facts(self.root, FOOT, self.sigs[FOOT])['judged']['print.fit_axis']['findings']]
+        self.assertEqual([x['verdict'] for x in fit], ['FAIL'])
+        self.assertIn('lies 90 deg off the print axis', fit[0]['text']); self.assertIn('bambulab/DeskLampTest.3mf', fit[0]['text'])
+        self.answer_all()
+        self.assertEqual(self.gate('export', FOOT, '--wall', '60')[0], 1)
+        self.assertIsNone(self.stamp(FOOT))
 
 
 if __name__ == '__main__':

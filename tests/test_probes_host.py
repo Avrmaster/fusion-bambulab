@@ -650,7 +650,7 @@ class Grid(unittest.TestCase):
 class StandardLibraryOnly(unittest.TestCase):
     def test_the_host_probes_import_nothing_but_the_standard_library_and_the_gate(self):
         allowed = {'argparse', 'array', 'ast', 'glob', 'hashlib', 'itertools', 'json', 'math', 'os', 'random', 're', 'shutil', 'struct', 'subprocess', 'sys',
-                   'time', 'zipfile', 'gate_common', 'gate_stamp', 'gate_registry', 'gate_params', 'probes', 'stl_mesh'}
+                   'time', 'zipfile', 'gate_common', 'gate_stamp', 'gate_registry', 'gate_params', 'gate_coupons', 'probes', 'stl_mesh'}
         for name in ('stl_walls', 'stl_mesh', 'project_consistency', 'project_bed', 'project_slice', 'mesh_overhang'):
             with open(os.path.join(PROBES, name + '.py'), encoding='utf-8') as f: tree = ast.parse(f.read())
             found = set()

@@ -34,16 +34,61 @@ _MOTIONS = {}             # (project file key, object id, stl file key) -> solve
 _IDENTITY = (1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0)
 
 
+CODE_FILES = ('project_bed.py', 'project_consistency.py', 'stl_mesh.py')     # with meshid.py: what a measurement here runs
+_CODE = []
+
+
 def _code():
-    try:
-        with open(os.path.abspath(__file__), 'rb') as f:
-            import hashlib
-            return hashlib.sha1(f.read()).hexdigest()[:12]
-    except OSError:
-        return None
+    """12 hex over the code a bed face measured here depends on: this file, project_consistency.py and stl_mesh.py of
+    the probes, and meshid.py (it reads the projects and the STLs). A new version of any of them measures again
+    (placed_cache.json): a kept verdict of older code is never taken over. Read once per process."""
+    if not _CODE:
+        import hashlib
+        h = hashlib.sha1()
+        paths = [os.path.join(_HERE, n) for n in CODE_FILES]
+        try:
+            paths.append(os.path.abspath(gate_common.sibling('meshid').__file__))
+        except Exception:
+            paths.append(None)
+        for path in paths:
+            try:
+                with open(path, 'rb') as f:
+                    h.update(hashlib.sha1(f.read()).hexdigest().encode())
+            except (OSError, TypeError):
+                h.update(b'missing')
+        _CODE.append(h.hexdigest()[:12])
+    return _CODE[0]
 
 
-_HERE_CODE = _code()                  # a new version of this file measures again (placed_cache.json)
+_PENDING = {}             # real path of a .3mf -> {"files": the archive a save is about to write, "key", "token"}
+_PENDING_READ = {}        # ("pending", real path, token id) -> read_placed() of that archive, while pending() is active
+
+
+class pending(object):
+    """with pending(path, files, key): every measurement here reads `files` (the archive a save is about to write,
+    {member: bytes}) for the project file `path` instead of the file on disk: the guard holds a stamp's print frame and
+    the answers it rests on against what will be in the file, not against what was. A file that is no registered
+    project is read as one more project (`key`, or its path). Nothing is kept on disk while it is active
+    (placed_cache.json, bed_faces.json)."""
+
+    def __init__(self, path, files, key=None):
+        self.real, self.entry, self.before = os.path.realpath(path), {'files': files, 'key': key, 'token': object()}, None
+
+    def __enter__(self):
+        self.before = _PENDING.get(self.real)
+        _PENDING[self.real] = self.entry
+        return self
+
+    def __exit__(self, *exc):
+        real, before = self.real, self.before
+        _PENDING_READ.clear()
+        for k in [k for k in _MOTIONS if isinstance(k[0], tuple) and k[0][:1] == ('pending',)]:
+            _MOTIONS.pop(k, None)                        # a token's id may come back for another archive
+        if before is None:
+            _PENDING.pop(real, None)
+        else:
+            _PENDING[real] = before
+        return False
 
 
 def _file_key(path):
@@ -291,8 +336,9 @@ CACHE = ('run', 'placed_cache.json')
 
 
 def _cache_key(root, layout, stl_rel):
-    """What placed() of one STL depends on, as file states: the STL, every registered .3mf and the memory of earlier
-    measurements. None when the STL is not there."""
+    """What placed() of one STL depends on: the states of the files it reads (the STL, every registered .3mf, the memory
+    of earlier measurements) and the code that measures (_code: this file, project_consistency, stl_mesh, meshid).
+    None when the STL is not there."""
     def state(p):
         try:
             st = os.stat(p)
@@ -307,13 +353,31 @@ def _cache_key(root, layout, stl_rel):
         if isinstance(e, dict) and e.get('file'):
             path = e['file'] if os.path.isabs(e['file']) else os.path.join(root, e['file'])
             files.append([e.get('key'), gate_common.rel(root, path), state(path)])
-    return [state(stl), files, state(gate_common.gate_path(root, *MEMORY)), _HERE_CODE]
+    return [state(stl), files, state(gate_common.gate_path(root, *MEMORY)), _code()]
 
 
-def placed(root, layout, stl_rel):
-    """placed_now() kept on disk (gate/run/placed_cache.json) per STL and the states of the files it reads: `gate.py
-    status`, the digest and every verify of a stamp ask for the bed face of each part, and reading every registered
-    .3mf again in each new process costs seconds in a project of several large ones."""
+def placed(root, layout, stl_rel, geometry=None):
+    """placed_now() kept on disk (gate/run/placed_cache.json) per STL, the states of the files it reads and the code
+    that measured it: `gate.py status`, the digest and every verify of a stamp ask for the bed face of each part, and
+    reading every registered .3mf again in each new process costs seconds in a project of several large ones.
+    While a pending archive is read (pending()), the rows of its project are measured on that archive and the rows of
+    every other project come from the cache as usual. A measurement against another geometry than the STL on disk
+    (`geometry`, the STL an export is about to write) is neither kept nor read from the cache."""
+    if geometry is not None:
+        return placed_now(root, layout, stl_rel, geometry=geometry)
+    rows, problems, projects = _placed_on_disk(root, layout, stl_rel)
+    pend = [src for src in _sources(root, layout) if src[3] is not None]
+    if not pend or not stl_rel:
+        return rows, problems, projects
+    rels, keys = {src[1] for src in pend}, {src[0] for src in pend}
+    rows2, problems2, projects2 = placed_now(root, layout, stl_rel, sources=pend)
+    return ([r for r in rows if r.get('table') not in rels] + rows2,
+            [p for p in problems if not any(str(p).startswith(x) for x in rels)] + problems2, (set(projects) - keys) | projects2)
+
+
+def _placed_on_disk(root, layout, stl_rel):
+    """placed_now() of the files on disk, through the cache."""
+    disk = lambda: _sources(root, layout, use_pending=False)
     key = _cache_key(root, layout, stl_rel) if stl_rel else None
     path = gate_common.gate_path(root, *CACHE)
     if key is not None:
@@ -324,7 +388,7 @@ def placed(root, layout, stl_rel):
         got = data.get(str(stl_rel)) if isinstance(data, dict) else None
         if isinstance(got, dict) and got.get('key') == key:
             return got.get('rows') or [], got.get('problems') or [], set(got.get('projects') or [])
-    rows, problems, projects = placed_now(root, layout, stl_rel)
+    rows, problems, projects = placed_now(root, layout, stl_rel, sources=disk())
     if key is not None:
         try:
             key = _cache_key(root, layout, stl_rel)          # placed_now may have written the memory
@@ -337,67 +401,133 @@ def placed(root, layout, stl_rel):
     return rows, problems, projects
 
 
-def placed_now(root, layout, stl_rel):
-    """How the registered .3mf projects lay the part whose STL is `stl_rel` (relative to the root), measured on the saved
-    files: (rows, problems, projects). A row is {"project": key, "table": the .3mf (relative), "plate", "object",
-    "orient": text that says how it was measured, "down": outward normal of the bed face in the STL frame,
-    "source": "project" | "project, earlier geometry", "measured": {"method", "worst", "pose", "triangles", "model"}}.
-    `projects` are the keys of the projects that place this STL's geometry or its last measured mesh (their build tables
-    are not asked). `problems` say why a placed object could not be measured (a scaled object)."""
-    rows, problems, projects = [], [], set()
-    if not stl_rel:
-        return rows, problems, projects
-    stl_path = os.path.join(root, *str(stl_rel).replace(os.sep, '/').split('/'))
-    if not os.path.isfile(stl_path):
-        return rows, problems, projects
-    try:
-        sV, sF = _stl(stl_path)
-        stl_key = _file_key(stl_path)
-    except Exception as e:
-        problems.append('%s cannot be read as an STL (%s)' % (stl_rel, type(e).__name__))
-        return rows, problems, projects
-    model = None
-    remembered = _memory(root).get(str(stl_rel)) or []
-    seen = set()
+def _sources(root, layout, use_pending=True):
+    """[(project key, the .3mf relative to the root, what read_placed() reads, a key for the motion cache)] of the
+    registered projects, with a pending archive (pending()) in place of its file on disk, and a pending archive of a
+    file that is no registered project as one more. use_pending False: the files on disk only."""
+    out, seen = [], set()
     for entry in (layout or {}).get('projects') or []:
         if not isinstance(entry, dict) or not entry.get('file'):
             continue
         path = entry['file'] if os.path.isabs(entry['file']) else os.path.join(root, entry['file'])
+        real = os.path.realpath(path)
         rel_file = gate_common.rel(root, path)
-        if rel_file in seen or not os.path.isfile(path):
+        if rel_file in seen:
             continue
         seen.add(rel_file)
+        p = _PENDING.get(real) if use_pending else None
+        if p is not None:
+            seen.add(real)
+            out.append((entry.get('key'), rel_file, p['files'], ('pending', real, id(p['token']))))
+        elif os.path.isfile(path):
+            out.append((entry.get('key'), rel_file, path, None))
+    for real, p in sorted(_PENDING.items()) if use_pending else ():
+        if real not in seen:
+            rel_file = gate_common.rel(root, real)
+            out.append((p.get('key') or rel_file, rel_file, p['files'], ('pending', real, id(p['token']))))
+    return out
+
+
+def placed_now(root, layout, stl_rel, geometry=None, sources=None):
+    """How the registered .3mf projects lay the part whose STL is `stl_rel` (relative to the root), measured on the saved
+    files (a pending archive in place of its file while pending() is active): (rows, problems, projects). A row is
+    {"project": key, "table": the .3mf (relative), "plate", "object", "orient": text that says how it was measured,
+    "down": outward normal of the bed face in the STL frame, "source": "project" | "project, earlier geometry",
+    "measured": {"method", "worst", "pose", "triangles", "model"}}.
+    `projects` are the keys of the projects that place this STL's geometry or its last measured mesh (their build tables
+    are not asked). `problems` say why a placed object could not be measured (a scaled object).
+
+    geometry: the STL an export is about to write (absolute path), when it is not the file at stl_rel. An object that is
+    that geometry moved as a rigid body is measured on it ("project"). An object that is the STL still at stl_rel (the
+    earlier geometry: an older export, or an STL of an older exporter while the model changed since) is measured on that
+    file and is "project, earlier geometry": the face on the bed is known from the placement (both STLs are in the frame
+    of the document), but the new geometry was never placed, pre-checked or sliced. The memory of earlier measurements
+    counts the same way.
+    sources: the projects to read (_sources), default all of them."""
+    rows, problems, projects = [], [], set()
+    if not stl_rel:
+        return rows, problems, projects
+    stl_path = os.path.join(root, *str(stl_rel).replace(os.sep, '/').split('/'))
+    sV = sF = stl_key = None
+    if os.path.isfile(stl_path):
         try:
-            data = read_placed(path)
-            pkey = _file_key(path)
+            sV, sF = _stl(stl_path)
+            stl_key = _file_key(stl_path)
+        except Exception as e:
+            problems.append('%s cannot be read as an STL (%s)' % (stl_rel, type(e).__name__))
+            if geometry is None:
+                return rows, problems, projects
+    gV = gF = g_key = None
+    if geometry is not None:
+        try:
+            gV, gF = _stl(geometry)
+            g_key = _file_key(geometry)
+        except Exception as e:
+            problems.append('the STL about to be exported cannot be read (%s)' % type(e).__name__)
+            return rows, problems, projects
+        if sF is not None and gate_common.sha256_file(geometry) == gate_common.sha256_file(stl_path):
+            sV, sF, stl_key = gV, gF, g_key              # the same file: nothing earlier about it
+            gV = gF = g_key = None
+    if sF is None and gF is None:
+        return rows, problems, projects
+    meshid = gate_common.sibling('meshid')
+    models = {}
+
+    def model_of(which):
+        if which not in models:
+            V, F = (gV, gF) if which == 'new' else (sV, sF)
+            models[which] = meshid.geom_hash(V, len(F))
+        return models[which]
+    remembered = _memory(root).get(str(stl_rel)) or []
+    fresh_disk = []                                  # rows measured on the STL on disk, in a file on disk: the memory keeps them
+    for key_, rel_file, source, pkey_ in (sources if sources is not None else _sources(root, layout)):
+        try:
+            if pkey_ is not None:                        # a pending archive: read once per save, not once per stamp it holds
+                if pkey_ not in _PENDING_READ:
+                    _PENDING_READ[pkey_] = read_placed(source)
+                data = _PENDING_READ[pkey_]
+            else:
+                data = read_placed(source)
+            pkey = pkey_ or _file_key(source)
         except Exception as e:
             problems.append('%s cannot be read (%s)' % (rel_file, type(e).__name__))
             continue
+        matched = set()
         for o in data['objects']:
-            if len(o['triangles']) != len(sF):
-                continue
-            mk = (pkey, o['id'], stl_key)
-            if mk not in _MOTIONS:
-                if len(_MOTIONS) > 4096:
-                    _MOTIONS.clear()
-                _MOTIONS[mk] = solve(sV, sF, o['vertices'], o['triangles'])
-            got = _MOTIONS[mk]
+            got, which = None, None
+            for which_, V, F, fk in (('new', gV, gF, g_key), ('disk', sV, sF, stl_key)):
+                if F is None or len(o['triangles']) != len(F):
+                    continue
+                mk = (pkey, o['id'], fk)
+                if mk not in _MOTIONS:
+                    if len(_MOTIONS) > 4096:
+                        _MOTIONS.clear()
+                    _MOTIONS[mk] = solve(V, F, o['vertices'], o['triangles'])
+                if _MOTIONS[mk] is not None:
+                    got, which = _MOTIONS[mk], which_
+                    break
             if got is None:
                 continue
-            projects.add(entry.get('key'))
+            matched.add(o['name'])
+            projects.add(key_)
             if not is_rotation(o['linear']):
                 problems.append('%s: %s is scaled or sheared by its build item: its bed face is not measured' % (rel_file, o['name']))
                 continue
-            if model is None:
-                model = gate_common.sibling('meshid').geom_hash(sV, len(sF))
             down = down_in_stl(got['R'], o['linear'])
-            rows.append({'project': entry.get('key'), 'table': rel_file, 'plate': o['plate'], 'object': o['name'],
-                         'orient': 'measured: face %s of the STL on the bed (%s, within %.3g mm)' % (_face_name(down), got['method'], got['worst']),
-                         'down': down, 'source': 'project',
-                         'measured': {'method': got['method'], 'worst': got['worst'], 'pose': o['pose'], 'triangles': len(sF), 'model': model,
-                                      'R': list(got['R']), 'linear': list(o['linear'])}})
+            earlier = which == 'disk' and gF is not None
+            row = {'project': key_, 'table': rel_file, 'plate': o['plate'], 'object': o['name'],
+                   'orient': ('measured: face %s of the STL on the bed (%s, within %.3g mm)' % (_face_name(down), got['method'], got['worst'])
+                              if not earlier else
+                              'measured on the STL in the folder before this export (%s, within %.3g mm): face %s on the bed; the new geometry is not placed yet'
+                              % (got['method'], got['worst'], _face_name(down))),
+                   'down': down, 'source': 'project, earlier geometry' if earlier else 'project',
+                   'measured': {'method': got['method'], 'worst': got['worst'], 'pose': o['pose'], 'triangles': len(o['triangles']), 'model': model_of(which),
+                                'R': list(got['R']), 'linear': list(o['linear'])}}
+            rows.append(row)
+            if which == 'disk' and pkey_ is None:
+                fresh_disk.append(row)
         for r in remembered:
-            if not isinstance(r, dict) or r.get('file') != rel_file or any(x['table'] == rel_file and x['object'] == r.get('object') for x in rows):
+            if not isinstance(r, dict) or r.get('file') != rel_file or r.get('object') in matched:
                 continue
             o = next((o for o in data['objects'] if o['name'] == r.get('object') and o['pose'] == r.get('pose')), None)
             Rm = r.get('R')
@@ -406,14 +536,13 @@ def placed_now(root, layout, stl_rel):
             # the stored vertices are the same (same pose), so R still sends the STL frame onto them; the build item may have
             # been turned since (a hand turn in the slicer lives there): the face on the bed follows the turn of today
             d = list(down_in_stl(tuple(float(c) for c in Rm), o['linear']))
-            projects.add(entry.get('key'))
-            rows.append({'project': entry.get('key'), 'table': rel_file, 'plate': o['plate'], 'object': o['name'],
+            projects.add(key_)
+            rows.append({'project': key_, 'table': rel_file, 'plate': o['plate'], 'object': o['name'],
                          'orient': 'measured %s on the mesh still placed (model %s), before this STL changed: face %s on the bed'
                                    % (str(r.get('time') or '')[:10], str(r.get('model') or '?')[:12], _face_name(tuple(d))),
                          'down': tuple(float(c) for c in d), 'source': 'project, earlier geometry',
                          'measured': {'method': 'remembered', 'worst': None, 'pose': o['pose'], 'triangles': len(o['triangles']), 'model': r.get('model'),
                                       'turned_since': [round(c, 9) for c in o['linear']] != r.get('linear')}})
-    fresh = [r for r in rows if r['source'] == 'project']
-    if fresh:
-        _remember(root, str(stl_rel), fresh)
+    if fresh_disk and not _PENDING:
+        _remember(root, str(stl_rel), fresh_disk)
     return rows, problems, projects

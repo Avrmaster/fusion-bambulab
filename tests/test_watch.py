@@ -306,6 +306,9 @@ class OwnerQuote(Watch):
         self.assertIsNone(self.bash('%s owner bundle gate/proposals/b.json --dry-run' % GATE_PY))          # a dry run writes nothing: no quote
         self.assertTrue(self.denied(self.bash('%s owner bundle gate/proposals/b.json' % GATE_PY)))
         self.assertTrue(self.denied(self.bash('%s owner bundle b.json --dry-run; %s owner adopt' % (GATE_PY, GATE_PY))))
+        self.assertIsNone(self.bash('%s owner table pins 5 --value 16,20 --source "the stock box" --dry-run' % GATE_PY))     # one table row, shown only
+        self.assertTrue(self.denied(self.bash('%s owner table pins 5 --value 16,20 --source "the stock box"' % GATE_PY)))
+        self.assertIsNone(self.bash('%s owner table pins 5 --value 16,20 --source "the stock box" --quote "yes, adopt it"' % GATE_PY))
         self.assertTrue(self.denied(self.bash('bash -c "%s owner adopt --quote yes"' % GATE_PY)))
         self.assertTrue(self.denied(self.bash("python3 -c \"import subprocess; subprocess.run(['gate.py', 'owner', 'adopt'])\"")))
         gone = dict(self.data(tool_name='Bash', tool_input={'command': '%s owner adopt --quote "yes, adopt it"' % GATE_PY}),

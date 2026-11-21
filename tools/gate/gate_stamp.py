@@ -312,6 +312,8 @@ def build(root, reg, resolved, part, sig, judged, stl_path, target, attested=0, 
         checks[rid] = {'judge_hash': j['judge_hash'], 'params': dict(j.get('params') or {}),
                        'result': 'pass' if not blocking else 'waived' if not still else 'tolerated' if len(left) < len(still) else 'attested'}
         inputs = {k: j[k] for k in ('print', 'tables') if isinstance(j.get(k), str)}
+        if inputs and isinstance(j.get('tables_read'), list):
+            inputs['tables_read'] = list(j['tables_read'])      # the tables its judge looked at: only these re-judge it
         if inputs:
             checks[rid]['inputs'] = inputs              # the print orientation and the tables it was judged with (verify)
     ids = gate_common.sibling('meshid').stl_ids(stl_path)
@@ -411,7 +413,7 @@ def _inputs_moved(root, reg, stamp, entry, resolved, target):
     if not held or not entry:
         return None
     today = gate_plan.judge_inputs(root, reg, stamp['part'], entry)
-    moved = {rid: [k for k in ('print', 'tables') if k in got and got[k] != today[k]] for rid, got in held.items()}
+    moved = {rid: gate_plan.inputs_differ(got, today, reg['tables']) for rid, got in held.items()}
     moved = {rid: ks for rid, ks in moved.items() if ks}
     if not moved:
         return None
@@ -419,8 +421,8 @@ def _inputs_moved(root, reg, stamp, entry, resolved, target):
     again = []
     for rid in sorted(moved):
         j = judged.get(rid)
-        if isinstance(j, dict) and all(j.get(k) == today[k] for k in ('print', 'tables')) and isinstance(j.get('findings'), list) \
-                and j.get('judge_hash') == stamp['checks'][rid].get('judge_hash'):
+        if isinstance(j, dict) and all(k in j for k in ('print', 'tables')) and not gate_plan.inputs_differ(j, today, reg['tables']) \
+                and isinstance(j.get('findings'), list) and j.get('judge_hash') == stamp['checks'][rid].get('judge_hash'):
             if _open_findings(root, stamp['part'], j['findings']):
                 return rid, moved[rid], _open_findings(root, stamp['part'], j['findings'])[0]
         else:
@@ -660,19 +662,29 @@ def _verdict_stop(out, v):
     return True
 
 
-def _finish(root, reg, resolved, out, part, sig, stl, dest, target, stages, doc_version, run, target_key=None):
-    """Judge the export stage, and when everything passes build the stamp, promote and write. Fills and returns `out`."""
+def _finish(root, reg, resolved, out, part, sig, stl, dest, target, stages, doc_version, run, target_key=None, intent=None):
+    """Judge the export stage, and when everything passes build the stamp, promote and write. Fills and returns `out`.
+
+    Everything is judged against the geometry being exported (`stl`, in quarantine; gate_plan.exporting): the face it
+    lies on is the face of the placement, applied to this geometry. A project that still places the STL in the folder
+    (an older export, or an STL of an older exporter while the model changed since) gives "earlier geometry": the
+    design rules that read the print frame are judged again here with it, print.bed_face is asked, not answered by the
+    facts, and the stamp holds the frame the checks were judged with. So export, verify and the save that swaps the
+    new mesh in agree."""
     import gate_plan
-    gate_plan.judge_part(root, reg, resolved, part, sig, stage='export', target=target)
-    v = gate_plan.part_verdict(root, reg, part, sig, stages=stages)
-    if _verdict_stop(out, v):
-        return out
-    judged = gate_common.load_facts(root, part, sig)['judged']
-    try:
-        stamp = build(root, reg, resolved, part, sig, judged, stl, target, attested=v.get('attested') or 0, doc_version=doc_version, run=run,
-                      target_key=target_key, answers=[q['q'] for q in v.get('all_questions') or [] if isinstance(q, dict) and q.get('answer') and q.get('q')])
-    except GateError as e:                              # the stored judgement and the verdict disagree: nothing is promoted
-        return _stop(out, EXIT_INFRA, str(e))
+    with gate_plan.exporting(part, stl if os.path.abspath(stl) != os.path.abspath(dest) else None):
+        if 'design' in stages:
+            gate_plan.judge_part(root, reg, resolved, part, sig, stage='design', target=target, intent=intent)
+        gate_plan.judge_part(root, reg, resolved, part, sig, stage='export', target=target)
+        v = gate_plan.part_verdict(root, reg, part, sig, stages=stages)
+        if _verdict_stop(out, v):
+            return out
+        judged = gate_common.load_facts(root, part, sig)['judged']
+        try:
+            stamp = build(root, reg, resolved, part, sig, judged, stl, target, attested=v.get('attested') or 0, doc_version=doc_version, run=run,
+                          target_key=target_key, answers=[q['q'] for q in v.get('all_questions') or [] if isinstance(q, dict) and q.get('answer') and q.get('q')])
+        except GateError as e:                          # the stored judgement and the verdict disagree: nothing is promoted
+            return _stop(out, EXIT_INFRA, str(e))
     stamp['stl'] = gate_common.rel(root, dest)
     if os.path.abspath(stl) != os.path.abspath(dest):
         promote(stl, dest)
@@ -816,12 +828,12 @@ def export_part(root, reg, resolved, part, target_key=None, wall_s=20.0, transpo
     if target is None and project.get('targets'):
         return _stop(out, EXIT_INFRA, 'several targets are declared: name one with --for KEY')
     target_key = gate_common.target_key_of(project, target_key)
+    last = gate_plan.load_plan(root) or {}
+    intent = last.get('intent') if last.get('command') == 'run' else None
     if gate_common.load_facts(root, part, sig).get('judged'):
         # the stored design judgement may be the one of another target (or of no target): the facts are the same, so
         # judge them again for THIS target before the verdict is read. A part no run has looked at stays "incomplete".
-        last = gate_plan.load_plan(root) or {}
-        gate_plan.judge_part(root, reg, resolved, part, sig, stage='design', target=target,
-                             intent=last.get('intent') if last.get('command') == 'run' else None)
+        gate_plan.judge_part(root, reg, resolved, part, sig, stage='design', target=target, intent=intent)
     if _verdict_stop(out, gate_plan.part_verdict(root, reg, part, sig, stages=('design',))):
         return out
     inherited = gate_report.inherited_block(root, part)
@@ -890,7 +902,7 @@ def export_part(root, reg, resolved, part, target_key=None, wall_s=20.0, transpo
         return _stop(out, EXIT_BLOCK, 'no STL was written: %s' % (facts.get('why_not') or 'the mesh failed its checks'))
     gate_common.save_probe_facts(root, part, sig, dict(env, part=part, sig=sig, probe='fusion_export'))
     _measure_stl(root, reg, resolved, part, sig, quarantine)
-    return _finish(root, reg, resolved, out, part, sig, quarantine, dest, target, ('design', 'export'), env.get('doc_version'), run, target_key)
+    return _finish(root, reg, resolved, out, part, sig, quarantine, dest, target, ('design', 'export'), env.get('doc_version'), run, target_key, intent)
 
 
 def export_generated(root, reg, resolved, stl_path, target_key=None):

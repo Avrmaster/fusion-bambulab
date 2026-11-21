@@ -24,5 +24,6 @@ This project has a print gate in `gate/` (fusion-bambulab plugin). Use the `gate
 - Before and after a `.3mf` write: `python3 gate/tools/gate.py verify`. After a mesh is swapped into a `.3mf`, or a part is turned on its plate: `python3 gate/tools/gate.py slice <project> --changed` (in the background), then `verify` again. The owner accepts the support a part gets with `gate.py owner baseline` (never a typed number).
 - When the session's turn is held at its end ("parts changed in Fusion and are not checked"), run the command it names until it no longer exits 3, then report every open row.
 - `gate/owner/` and `gate/project.json` belong to the owner. Only the owner waives a finding, loosens a number or switches the mode. Put a proposal in `gate/proposals/` and ask.
+- A coupon print, a stock list or a measured bearing goes into `gate/owner/tables.json` only through `python3 gate/tools/gate.py owner table ... --quote "<his words>"` (`--dry-run` first shows the change).
 - `gate/tools/` and `gate/rules/` are vendored from the plugin: change them there, then `setup_project.py <dir> --update-tools`.
 <!-- fusion-bambulab:gate:end -->

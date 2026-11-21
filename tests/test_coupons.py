@@ -132,5 +132,60 @@ class ProjectTables(Project):
         self.assertEqual(gate_registry.load_default(self.d)['tables'], gate_registry.load()['tables'])
 
 
+for _d in (os.path.join(ROOT, 'tools', 'bambu'), os.path.dirname(os.path.abspath(__file__))):
+    if _d not in sys.path: sys.path.insert(0, _d)
+import bambu3mf, test_guard as G                                         # noqa: E402
+from test_stamp import plate, write_stl                                  # noqa: E402
+
+
+class CouponPlate(G.Guarded):
+    """The coupon plate goes into the project in enforce mode: each coupon STL that `gate.py coupons` writes carries a
+    coupon stamp bound to its geometry and the declared target. A mesh with a coupon's name and other geometry has none."""
+    mode = 'enforce'
+
+    def setUp(self):
+        super().setUp()
+        self.set_project('enforce', targets={'main': TARGET})
+        self.ledger()
+        c = {'id': 'insert_M3x4x5', 'kind': 'insert', 'stack': [(7.5, 7.5, 0.54), (4.4, 4.4, 1.5), (3.6, 3.6, 5.0)], 'tests': 'the M3x4x5 profile',
+             'parts': [PART], 'record': 'gate.py owner table inserts M3x4x5 --under main'}
+        self.folder = gate_coupons.write(self.d, 'main', TARGET, [c])
+        self.plate = [('coupons', [('insert coupon', 'insert_M3x4x5.stl', False)])]
+
+    def place(self):
+        bambu3mf.new_project(self.tpl, self.proj)
+        return G.quiet(bambu3mf.build, self.proj, self.folder, self.plate)
+
+    def test_a_coupon_plate_saves_in_enforce_and_is_carried_after(self):
+        self.place()
+        self.assertEqual(self.objects(), ['insert coupon'])
+        stamp = self.journal()[-1]['stamp']
+        self.assertRegex(stamp, r'^coupon:main:insert_M3x4x5@[0-9a-f]{12}$')
+        infos, files = bambu3mf.load(self.proj)
+        G.quiet(bambu3mf.save, self.proj, files, infos)                         # a plain re-save: carried by its coupon stamp
+        data = gate_common.read_json(gate_coupons.stamp_path(self.d, 'main'))
+        self.assertEqual((data['for'], data['target'], len(data['coupons'])), ('main', TARGET, 1))
+
+    def test_a_mesh_with_a_coupon_name_and_other_geometry_is_refused(self):
+        write_stl(os.path.join(self.folder, 'insert_M3x4x5.stl'), *plate())      # the coupon's file name, another mesh
+        with self.assertRaises(G.GuardRefusal) as c:
+            self.place()
+        self.assertIn('insert coupon', str(c.exception)); self.assertIn('no stamp for the geometry', str(c.exception))
+
+    def test_a_coupon_of_another_target_is_refused(self):
+        self.set_project('enforce', targets={'main': dict(TARGET, xy_hole_compensation=0.15)})
+        with self.assertRaises(G.GuardRefusal) as c:
+            self.place()
+        self.assertIn('a coupon of main, made for its declared target', str(c.exception))
+
+    def test_verify_takes_the_coupon_stamp(self):
+        self.place()
+        from probes import project_consistency
+        layout = gate_common.load_layout(self.d)
+        facts = project_consistency.measure(self.d, layout['projects'][0], layout, gate_common.load_census(self.d), declared_target=TARGET)
+        row = [o for o in facts['objects'] if o['name'] == 'insert coupon'][0]
+        self.assertEqual(row['stamp']['state'], 'valid'); self.assertIn('coupon insert_M3x4x5 of the coupon plate of main', row['stamp']['why'])
+
+
 if __name__ == '__main__':
     unittest.main()

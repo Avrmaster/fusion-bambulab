@@ -841,7 +841,7 @@ def owner_calls(cmds, code):
                 call['dry'] = True
             elif a.startswith('--q') or a.startswith('--d') and a != '--dry-run' and '--dry-run'.startswith(a):
                 call['bad'] = 'write %s in full (an abbreviated option is not read the way the gate reads it)' % a
-            elif a in ('--reason', '--note', '--part', '--tag', '--source', '--key', '--under') and k + 1 < len(tail):
+            elif a in ('--reason', '--note', '--part', '--tag', '--source', '--key', '--under', '--value') and k + 1 < len(tail):
                 k += 2
                 continue
             elif not a.startswith('-'):
@@ -1525,6 +1525,8 @@ def _owner_checks(calls, hidden, ok, cmd, data):
             if root and c['proposal']:
                 _note_dry_run(root, os.path.join(c['here'], os.path.expanduser(c['proposal'])))
             continue                                        # a dry run writes nothing: it shows the owner what his yes would change
+        if c['action'] == 'table' and c['dry']:
+            continue                                        # the same for one table row: gate.py stages it and prints the diff
         if not c['quotes']:
             return '`gate.py owner` needs --quote with the owner\'s own words from this session'
         after, sha = None, None

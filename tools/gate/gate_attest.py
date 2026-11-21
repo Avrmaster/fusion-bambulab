@@ -464,6 +464,13 @@ def _bed_face_measured(get, params, tables):
     (print.overhang_angle) or sliced, so the label "judged there" would be ahead of the facts. None when the bed face
     is not known at all."""
     f = get(PRINT_FRAME)
+    frames = f.get('frames') if isinstance(f, dict) and isinstance(f.get('frames'), list) else []
+    if len(frames) > 1 and all(isinstance(x, dict) and isinstance(x.get('up'), list) for x in frames):
+        if all(x.get('from') == 'project' for x in frames):          # every placement measured on this geometry
+            return True, 'measured on the saved projects, on %d faces: %s' % (len(frames), f.get('source'))
+        off = [x for x in frames if x.get('from') != 'project']
+        return False, ('the part lies on %d faces, and %d of them are not measured on this geometry (%s)'
+                       % (len(frames), len(off), '; '.join('%s: %s' % (x.get('from'), x.get('source')) for x in off)))
     if not isinstance(f, dict) or not isinstance(f.get('up'), list):
         return None, 'the bed face is not known: %s' % ((f or {}).get('why') if isinstance(f, dict) else 'it could not be worked out')
     if f.get('from') == 'earlier geometry':

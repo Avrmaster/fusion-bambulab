@@ -281,6 +281,29 @@ class Dies(Gated):
         self.assertNotIn('version', s); self.assertNotIn('plugin', s)
 
 
+class Advice(Gated):
+    """What a stale check says to do: facts measured by an older copy of the gate (no record of what they read) are
+    measured again first (`run --changed`); facts with that record are judged again offline."""
+
+    def facts(self, deps):
+        e = {'job': 'u-1', 'doc': 'Demo Assembly', 'doc_version': 1, 'part': 'demo/bracket', 'sig': SIG1, 'probe': 'fusion_thin',
+             'facts': {'faces': []}, 'done': True, 'cursor': None, 'elapsed_s': 0.1, 'error': None}
+        if deps is not None:
+            e['deps'] = deps
+        gate_common.save_probe_facts(self.d, 'demo/bracket', SIG1, e)
+
+    def test_old_facts_are_measured_again_before_the_export(self):
+        self.facts(None); s = self.stamp()                                       # the stamp holds the digest of these facts
+        self.assertEqual(gate_stamp._advice(self.d, s), 'gate.py run --changed, then export')
+        s['checks'][sorted(s['checks'])[0]]['judge_hash'] = '0' * 16           # a judge changed since the stamp
+        state, why = self.verify(s)
+        self.assertEqual(state, 'stale'); self.assertIn('that check is open again (gate.py run --changed, then export)', why)
+
+    def test_facts_with_their_record_are_judged_again_offline(self):
+        self.facts({'v': 1, 'code': 'x', 'reads': [], 'bodies': {}}); s = self.stamp()
+        self.assertEqual(gate_stamp._advice(self.d, s), 'gate.py run --offline, then export')
+
+
 class Fakes:
     """What the other packages do in an export, reduced to their contracts."""
     def __init__(self, case):
@@ -355,8 +378,9 @@ class Export(Gated):
                          ('stl/bracket.stl', gate_common.sha256_file(dest), meshid.stl_ids(dest)['geom_hash'], 42, TARGET))
         self.assertEqual(self.verify(s, geom_hash=s['geom_hash'], target=TARGET)[0], 'valid')
         kinds = [c[0] for c in self.f.calls]
-        self.assertEqual(kinds, ['judge', 'verdict', 'unit', 'stl_mesh', 'stl_walls', 'judge', 'verdict'])   # the design stage is judged again for this target first
-        self.assertEqual([c[2:] for c in self.f.calls if c[0] == 'judge'], [('design', TARGET), ('export', TARGET)])
+        # the design stage is judged again for this target first, and again against the geometry exported (gate_plan.exporting)
+        self.assertEqual(kinds, ['judge', 'verdict', 'unit', 'stl_mesh', 'stl_walls', 'judge', 'judge', 'verdict'])
+        self.assertEqual([c[2:] for c in self.f.calls if c[0] == 'judge'], [('design', TARGET), ('design', TARGET), ('export', TARGET)])
         unit = [c for c in self.f.calls if c[0] == 'unit'][0]
         self.assertEqual((unit[1], unit[2], unit[3]), ('fusion_export', 'demo/bracket', {'stl': self.quarantine(), 'name': 'Bracket'}))
         self.assertEqual([c for c in self.f.calls if c[0] == 'judge'][-1][2:], ('export', TARGET))

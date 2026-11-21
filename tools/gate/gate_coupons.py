@@ -14,7 +14,12 @@ fits.decided_not_printed gives: gate_judges._decided_fits), and writes one small
 
 Everything goes to gate/proposals/coupons/<KEY>/: one binary STL per coupon (one closed shell each, named after what it
 tests), and coupons.json, the list of the coupons with the sizes of each hole from the left, the parameter or table
-row it tests and how to record the result. Nothing in gate/owner/ is written: a coupon that fits is recorded by the
+row it tests and how to record the result.
+
+Each coupon STL also gets a coupon stamp (gate/stamps/_coupons/<KEY>.json): its geometry hash and the declared target
+of KEY. The .3mf guard takes it like a part's stamp, so the coupon plate can be written in enforce mode: a mesh passes
+as a coupon only when it is the geometry of a coupon this command made (its name does not count) and the project it
+goes into is declared with the same target. A new `gate.py coupons` for the same KEY replaces the stamps of the last. Nothing in gate/owner/ is written: a coupon that fits is recorded by the
 owner (`gate.py owner param NAME VALUE --tag M` for a parameter; a print of an insert profile or a seat fit in
 gate/owner/tables.json). No Fusion call and no .3mf write: the STLs are laid on one plate of the target project with
 the Bambu tools, like any other part.
@@ -22,7 +27,7 @@ the Bambu tools, like any other part.
 The steps are "fits.coupon_steps" sizes (3 as shipped) round the size under test, 0.05 mm apart for a pin and a magnet.
 The geometry is made here, with the standard library: a square block with one hole (a stack of cylinders and cones on
 one axis, blind or through), a post on a base, or a block with a box pocket. Circles are polygons of 64 sides."""
-import json, math, os, struct
+import json, math, os, re, struct
 import gate_common
 from gate_common import GateError, EXIT_PASS, EXIT_INFRA
 
@@ -300,24 +305,106 @@ def meshes(c):
 
 
 def write(root, key, target, coupons):
-    """Write the STLs and coupons.json under gate/proposals/coupons/<key>/. Returns the folder."""
+    """Write the STLs and coupons.json under gate/proposals/coupons/<key>/, and the coupon stamps of those STLs
+    (gate/stamps/_coupons/<key>.json). Returns the folder."""
     folder = gate_common.gate_path(root, 'proposals', 'coupons', key)
     os.makedirs(folder, exist_ok=True)
-    listing = []
+    meshid = gate_common.sibling('meshid')
+    listing, stamps = [], {}
     for c in coupons:
         files = []
         for name, tris, what in meshes(c):
             if volume(tris) <= 0:
                 raise GateError('coupon %s: the mesh of %s is turned inside out' % (c['id'], name))
-            with open(os.path.join(folder, name), 'wb') as f:
+            path = os.path.join(folder, name)
+            with open(path, 'wb') as f:
                 f.write(stl_bytes(tris, name))
             files.append({'stl': name, 'what': what})
+            ids = meshid.stl_ids(path)
+            stamps[ids['geom_hash']] = {'coupon': c['id'], 'stl': gate_common.rel(root, path), 'stl_sha256': ids['sha256'], 'what': what}
         listing.append(dict({k: v for k, v in c.items() if k not in ('stack',)}, files=files))
+    gate_common.write_json(stamp_path(root, key), {
+        'about': 'Coupon stamps written by gate.py coupons: the geometry of each coupon STL of %s and the target it was made for. The .3mf guard lets '
+                 'these meshes in like stamped parts, for a project declared with this target only.' % key,
+        'kind': 'coupons', 'for': key, 'target': target, 'time': gate_common.now(), 'coupons': stamps})
     gate_common.write_json(os.path.join(folder, 'coupons.json'), {
         'about': 'Coupons for the fits the parts of %s rely on that were never printed under its declared target. Print them on one plate of %s with its settings, '
                  'try the bought part in each, and record what fits (each coupon says how). This file is a proposal: nothing is measured until the owner records it.' % (key, key),
         'project': key, 'target': target, 'time': gate_common.now(), 'coupons': listing})
     return folder
+
+
+def _safe(key):
+    return re.sub(r'[^A-Za-z0-9_.-]', '_', str(key)) or '_'
+
+
+def stamp_path(root, key):
+    """gate/stamps/_coupons/<key>.json: the coupon stamps of the coupon plate of one target."""
+    return gate_common.gate_path(root, 'stamps', '_coupons', '%s.json' % _safe(key))
+
+
+def stamp_name(key, entry, geom):
+    """How a coupon stamp is named in the guard's result and the ledger: "coupon:<key>:<coupon id>@<geom12>" (no "/":
+    it is no part id)."""
+    return 'coupon:%s:%s@%s' % (key, entry.get('coupon'), str(geom)[:12])
+
+
+def find(root, geom):
+    """[(key, entry, stamp file data)] of the coupon stamps that hold this geometry (meshid.geom_hash, model form)."""
+    out = []
+    folder = gate_common.gate_path(root, 'stamps', '_coupons')
+    try:
+        names = sorted(os.listdir(folder))
+    except OSError:
+        return out
+    for n in names:
+        if not n.endswith('.json'):
+            continue
+        try:
+            data = gate_common.read_json(os.path.join(folder, n))
+        except (GateError, OSError):
+            continue
+        if not isinstance(data, dict) or data.get('kind') != 'coupons' or not isinstance(data.get('coupons'), dict):
+            continue
+        entry = data['coupons'].get(geom) if isinstance(geom, str) else None
+        if isinstance(entry, dict):
+            out.append((data.get('for'), entry, data))
+    return out
+
+
+COUPON_TARGET_KEYS = ('nozzle', 'line_width', 'material', 'xy_hole_compensation', 'layer_height')   # what a coupon's fit is printed under
+
+
+def _printed_alike(a, b):
+    """Do two declared targets print a coupon alike (COUPON_TARGET_KEYS, each given and equal)?"""
+    if not isinstance(a, dict) or not isinstance(b, dict):
+        return False
+    for k in COUPON_TARGET_KEYS:
+        x, y = a.get(k), b.get(k)
+        if x is None or y is None:
+            return False
+        if isinstance(x, (int, float)) and isinstance(y, (int, float)) and not isinstance(x, bool) and not isinstance(y, bool):
+            if abs(float(x) - float(y)) > 1e-6:
+                return False
+        elif x != y:
+            return False
+    return True
+
+
+def holds(root, geom, target):
+    """(state, why, name) of the coupon stamp of a mesh with this geometry, for a project declared with `target`:
+    "valid" when a coupon of this target holds it, "stale" when only a coupon of another target does, "none" when no
+    coupon holds it (its name says nothing: a block named like a coupon is no coupon)."""
+    import gate_stamp
+    found = find(root, geom)
+    if not found:
+        return 'none', 'no coupon stamp holds this geometry', None
+    for key, entry, data in found:
+        if _printed_alike(data.get('target'), target):
+            return 'valid', 'coupon %s of the coupon plate of %s (%s)' % (entry.get('coupon'), key, entry.get('stl')), stamp_name(key, entry, geom)
+    key, entry, data = found[0]
+    return 'stale', ('a coupon of %s, made for its declared target (%s): this project is declared as %s. Make the coupons of this project '
+                     '(gate.py coupons --for KEY)' % (key, gate_stamp._target_text(data.get('target')), gate_stamp._target_text(target) if target else 'no target')), None
 
 
 def cmd_coupons(root, args):

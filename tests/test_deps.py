@@ -191,6 +191,34 @@ class Deps(unittest.TestCase):
                                'screws': {'heads': {'M3': 5.5}}, 'pins': {'sizes': {'5': {'d': 5.0}}}})
         self.assertIn('measured_under', tables['inserts']['kinds']['M3x4x5'])            # the judges keep the whole tables
 
+    def test_a_record_that_digested_the_whole_tables_measures_again_but_kills_no_stamp(self):
+        full = {'inserts': {'kinds': {'M3x4x5': {'d': 4.0, 'measured_under': [{'layer_height': 0.2}]}}}}
+        view = gate_deps.probe_tables(full)
+        deps = {'v': gate_deps.DEPS_V, 'code': gate_deps.code('fusion_inserts'), 'fusion': None, 'own': None, 'job': {}, 'params': {},
+                'tables': {'inserts': gate_common.digest(full['inserts'])}, 'reads': [], 'bodies': {}}
+        stored = {'facts': {'pockets': []}, 'done': True, 'deps': deps}
+        why = gate_deps.why_stale(stored, {}, {'params': {}, 'tables': view}, {}, 'fusion_inserts')       # a pre-release 0.3.0 record: no "tv"
+        self.assertIn('its record holds the tables as an older copy of the gate digested them (table inserts)', why)
+        self.assertTrue(gate_deps.tool_reason(why))
+        why = gate_deps.why_stale(dict(stored, deps=dict(deps, tv=gate_deps.TABLES_VIEW)), {}, {'params': {}, 'tables': view}, {}, 'fusion_inserts')
+        self.assertEqual(why, 'table inserts changed'); self.assertFalse(gate_deps.tool_reason(why))          # a record of today: the model's business
+        same = dict(deps, tv=gate_deps.TABLES_VIEW, tables={'inserts': gate_common.digest(view['inserts'])})
+        self.assertIsNone(gate_deps.why_stale(dict(stored, deps=same), {}, {'params': {}, 'tables': view}, {}, 'fusion_inserts'))
+        # the same in a project: every record written whole-table, a stamp on top of them
+        self.gate_run()
+        self.assertEqual(self.stored(BRACKET, 'fusion_inserts')['deps']['tv'], gate_deps.TABLES_VIEW)
+        stamp = fake_fusion.whole_stamp(self.root, BRACKET, self.sigs['Bracket'], facts=gate_stamp.facts_digests(self.root, BRACKET, self.sigs['Bracket']))
+        reg = self.demo.registry()
+        path = gate_common.facts_path(self.root, BRACKET, self.sigs['Bracket'])
+        data = gate_common.read_json(path)
+        for e in data['probes'].values():
+            if isinstance(e.get('deps'), dict):
+                e['deps'].pop('tv', None); e['deps']['tables'] = {'inserts': 'f' * 16}
+        gate_common.write_json(path, data)
+        why = gate_plan.stale_units(self.root, reg)[BRACKET]['fusion_inserts']
+        self.assertTrue(gate_deps.tool_reason(why), why)
+        self.assertEqual(gate_stamp.verify(self.root, reg, stamp)[0], 'valid')
+
     def test_a_census_measured_again_with_the_same_holes_needs_no_other_unit(self):
         self.census_reads = [{'box': [[0, 0, 0], [40, 30, 10]], 'margin': 5.0}]                # the bracket's census looks 5 mm round it
         self.answer()

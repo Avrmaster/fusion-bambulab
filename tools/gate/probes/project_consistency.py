@@ -620,7 +620,7 @@ def bed_normal(orient):
     return None
 
 
-def orientations(root, layout, stl_rel):
+def orientations(root, layout, stl_rel, geometry=None):
     """How the registered .3mf projects lay the part whose STL is `stl_rel` (relative to the root):
     [{"project": key, "table": file, "plate": plate name, "object": object name, "orient": the value as written,
       "down": bed_normal(orient) or None}], one row per object that is built from that STL.
@@ -629,11 +629,12 @@ def orientations(root, layout, stl_rel):
     The saved project comes first (probes.project_bed.placed): an object whose mesh is this STL turned as a rigid body
     gives the face it really lies on, measured, with "source": "project" ("table" is then the .3mf). A build table is
     read only for the projects that hold no such object yet (the part is not placed there): its rows have "source":
-    "table". So a project the slicer or an arrange step has turned since the build is judged as it is saved."""
+    "table". So a project the slicer or an arrange step has turned since the build is judged as it is saved.
+    geometry: the STL an export is about to write, when it is not the file at stl_rel (project_bed.placed_now)."""
     from probes import project_bed
     rows, why = [], []
     try:
-        placed, problems, done = project_bed.placed(root, layout, stl_rel)
+        placed, problems, done = project_bed.placed(root, layout, stl_rel, **({'geometry': geometry} if geometry else {}))
     except Exception as e:                       # what could not be measured is unknown; the build tables may still say it
         placed, problems, done = [], ['the saved projects could not be measured (%s: %s)' % (type(e).__name__, e)], set()
     rows += placed
@@ -897,6 +898,9 @@ def measure(root, project_entry, layout, census, declared_target=None, reg=None,
             verdict, why, s = best
             out = {'state': verdict, 'why': why, 'sig12': gate_common.sig12(s.get('sig')) if s.get('sig') else None,
                    'target': s.get('target'), 'part': s.get('part') or part}
+        elif geom and not part and _coupon_state(root, geom, declared_target):
+            state, why = _coupon_state(root, geom, declared_target)
+            out = {'state': state, 'why': why, 'sig12': None, 'target': declared_target, 'part': None}
         elif part:
             other = gate_stamp.all_stamps(root, part)
             if other:
@@ -1026,6 +1030,16 @@ def measure(root, project_entry, layout, census, declared_target=None, reg=None,
 
 
 SUPPORT_KEYS = ('enable_support', 'support_type', 'support_on_build_plate_only', 'support_remove_small_overhang')
+
+
+def _coupon_state(root, geom, target):
+    """(state, why) of the coupon stamp of a geometry (gate_coupons.holds), or None when no coupon holds it."""
+    try:
+        import gate_coupons
+        state, why, _name = gate_coupons.holds(root, geom, target)
+    except Exception:
+        return None
+    return None if state == 'none' else (state, why)
 
 
 def _slice_facts(root, key, rows, path=None):

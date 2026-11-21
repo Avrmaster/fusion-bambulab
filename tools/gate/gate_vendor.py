@@ -106,7 +106,33 @@ def vendor(plugin_root, root):
         if not os.path.isdir(src):
             raise GateError('the plugin has no %s folder' % '/'.join(parts))
         _copy_tree(src, gate_path(root, name))
+    clear_code_caches(root)
     return write_lock(root, version)
+
+
+# what gate/run keeps that a version of the code measured or judged: a new copy of the tools starts without it (each
+# also holds the digest of the code that made it and is measured again when that differs; this is the second belt)
+CODE_CACHES = (('run', 'placed_cache.json'), ('run', 'placed_walls'))
+
+
+def clear_code_caches(root):
+    """Remove the caches of gate/run that hold verdicts of the code that made them (CODE_CACHES). Returns the relative
+    paths removed. The memory of measured bed faces (gate/run/bed_faces.json) is a measurement of the files, not of
+    the code, and stays."""
+    out = []
+    for parts in CODE_CACHES:
+        path = gate_path(root, *parts)
+        try:
+            if os.path.isdir(path):
+                shutil.rmtree(path)
+            elif os.path.exists(path):
+                os.remove(path)
+            else:
+                continue
+        except OSError:
+            continue
+        out.append('gate/' + '/'.join(parts))
+    return out
 
 
 def write_lock(root, version):

@@ -43,7 +43,7 @@ A new `run` scans first (signatures, poses and every body of the document are re
 A unit is measured only when its stored facts no longer hold for the model the scan found (stale_units, gate_deps.py:
 its part, a body in a region it read, a parameter, table or job key it read, or its probe changed); the others are
 taken over as done. `--no-scan` uses the census as it is, `--fresh` measures every unit of the chosen parts."""
-import hashlib, json, os, time
+import contextlib, hashlib, json, os, time
 import gate_common, gate_deps, gate_fusion_rpc, gate_params, gate_registry
 from gate_common import (GateError, EXIT_PASS, EXIT_BLOCK, EXIT_ATTEST, EXIT_MORE, EXIT_INFRA, gate_path, load_census, load_facts,
                          load_layout, load_project, read_json, write_json)
@@ -1251,13 +1251,31 @@ _STL_SHA = {}
 def _stl_is_export(root, part, entry):
     """Can the STL the census names for the part be the export of its present signature? False when the part went
     through the gate's export before and no stamp of entry["sig"] holds the file's bytes: before a re-export the file,
-    and the mesh a project places from it, is the earlier geometry. A part the gate never exported (an STL of an older
-    exporter) has no stamp to tell: its file is taken as it is, as before."""
+    and the mesh a project places from it, is the earlier geometry. A part the gate never stamped (an STL of an older
+    exporter) has no stamp to tell: once an export of this signature has measured its STL (the stl_mesh facts of the
+    geometry, written by the first `gate.py export` of it, also one that stopped at a question) and the file in the
+    folder is another geometry, it is the earlier geometry too. Before any export of the signature the file is taken as
+    it is: nothing says otherwise, and the export judges the geometry it writes (exporting())."""
     import gate_stamp
+    path = os.path.join(root, *str(entry.get('stl') or '').replace(os.sep, '/').split('/'))
     stamps = gate_stamp.all_stamps(root, part)
     if not stamps:
-        return True
-    path = os.path.join(root, *str(entry.get('stl') or '').replace(os.sep, '/').split('/'))
+        exported = _exported_geometry(root, part, entry.get('sig'))
+        if not exported:
+            return True
+        try:
+            st = os.stat(path)
+        except OSError:
+            return False
+        key = ('geom', os.path.abspath(path), st.st_mtime_ns, st.st_size)
+        if key not in _STL_SHA:
+            if len(_STL_SHA) > 512:
+                _STL_SHA.clear()
+            try:
+                _STL_SHA[key] = gate_common.sibling('meshid').stl_ids(path)['geom_hash']
+            except (ValueError, OSError, IndexError):
+                _STL_SHA[key] = None
+        return _STL_SHA[key] == exported
     try:
         st = os.stat(path)
     except OSError:
@@ -1271,11 +1289,56 @@ def _stl_is_export(root, part, entry):
     return any(s.get('sig') == entry.get('sig') and s.get('stl_sha256') == sha for s in stamps)
 
 
+_EXPORTED = {}
+
+
+def _exported_geometry(root, part, sig):
+    """meshid.geom_hash of the STL an export of this signature wrote (the stl_mesh facts of the geometry), or None
+    when no export of it measured one. Read once per state of the facts file."""
+    if not sig:
+        return None
+    path = gate_common.facts_path(root, part, sig)
+    try:
+        st = os.stat(path)
+    except OSError:
+        return None
+    key = (os.path.abspath(path), st.st_mtime_ns, st.st_size)
+    if key not in _EXPORTED:
+        if len(_EXPORTED) > 512:
+            _EXPORTED.clear()
+        e = ((load_facts(root, part, sig).get('probes') or {}).get('stl_mesh') or {})
+        f = e.get('facts') if isinstance(e, dict) else None
+        _EXPORTED[key] = f.get('geom_hash') if isinstance(f, dict) and isinstance(f.get('geom_hash'), str) else None
+    return _EXPORTED[key]
+
+
+_EXPORTING = {}               # part id -> the STL an export of it is about to write (exporting())
+
+
+@contextlib.contextmanager
+def exporting(part, stl):
+    """While active, print_frame() of `part` judges the geometry of `stl` (the STL `gate.py export` is about to write,
+    in quarantine) instead of the STL in the folder: the judges, the fact answers and the stamp's inputs of an export
+    are about the geometry it stamps. A placed mesh that is the STL still in the folder, and not this one, is "earlier
+    geometry" (probes.project_bed.placed_now). stl None: nothing changes."""
+    before = _EXPORTING.get(part)
+    if stl:
+        _EXPORTING[part] = os.path.abspath(stl)
+    try:
+        yield
+    finally:
+        if before is None:
+            _EXPORTING.pop(part, None)
+        else:
+            _EXPORTING[part] = before
+
+
 def print_frame(root, part, entry, layout=None):
     """How one part lies on the bed, for the judges that count layers (ctx["print"]):
     {"up": unit vector of the print axis in the PART frame, pointing away from the bed, or None,
      "bed": the height of the bed face along "up" (the lowest corner of the part's bounding box), or None,
-     "source": where the orientation comes from, "why": text when "up" is None}.
+     "source": where the orientation comes from, "why": text when "up" is None,
+     "from": "project" | "table" | "earlier geometry" | None, "frames": [one frame per face it lies on]}.
 
     The bed face is measured on the saved .3mf: the object whose mesh is the part's STL turned as a rigid body lies on
     the face that turn sends down (probes.project_bed). Only for a project that does not place the part yet does the
@@ -1283,8 +1346,18 @@ def print_frame(root, part, entry, layout=None):
     way "source" names the file, the object and the plate. That direction is in the
     frame of the STL, which is the document frame; the census entry's "matrix" (part frame -> document frame, from the
     scan) turns it into the part frame, where the census holds its holes. Unknown, and said so in "why": no build table
-    names the part; a table is computed, not a literal; two tables lay it on different faces; an orient value that
-    cannot be read; a census entry without its matrix (scanned by an older copy of the tools: scan again)."""
+    names the part; a table is computed, not a literal; an orient value that cannot be read; a census entry without its
+    matrix (scanned by an older copy of the tools: scan again).
+
+    Each placement counts. When the registered projects lay the part on different faces (a production and a test
+    project that share the STL folder), "frames" holds one frame per face ({"up", "bed", "source", "from"}), "up" and
+    "bed" are None and "why" names the faces: judge_part judges every rule that reads the print frame once per face
+    and keeps every finding, so the worst placement decides. "from" is "project" only when every face is measured on
+    this geometry.
+
+    While an export of the part is under way (exporting()), the geometry judged is the STL it is about to write: a mesh
+    placed from the STL still in the folder is the earlier geometry of the part ("from": "earlier geometry"), its face
+    taken from that placement."""
     from probes import _geom, project_consistency
     layout = layout if layout is not None else load_layout(root)
     out = {'up': None, 'bed': None, 'source': None, 'why': None, 'from': None}
@@ -1292,7 +1365,11 @@ def print_frame(root, part, entry, layout=None):
     if not stl:
         out['why'] = 'the census names no STL for this part'
         return out
-    rows, problems = project_consistency.orientations(root, layout, stl)
+    geometry = _EXPORTING.get(part)
+    if geometry:
+        rows, problems = project_consistency.orientations(root, layout, stl, geometry=geometry)
+    else:
+        rows, problems = project_consistency.orientations(root, layout, stl)
     if not rows:
         tables = [e.get('build_table') for e in layout.get('projects') or [] if isinstance(e, dict) and e.get('build_table')]
         unplaced = 'no object of a saved .3mf project is %s turned as a rigid body' % stl       # the measured face comes first
@@ -1307,48 +1384,162 @@ def print_frame(root, part, entry, layout=None):
     if bad:
         out['why'] = 'the orientation %r of %s in %s cannot be read' % (bad[0]['orient'], bad[0]['object'], bad[0]['table'])
         return out
-    downs = sorted({tuple(round(c, 4) for c in r['down']) for r in rows})
-    if len(downs) > 1:
-        out['why'] = 'the build tables lay it on different faces: %s' % '; '.join(sorted({'%s in %s: %r' % (r['object'], r['table'], r['orient']) for r in rows}))
-        return out
-    out['source'] = '%s: %s on plate "%s", orient %r' % (rows[0]['table'], rows[0]['object'], rows[0]['plate'], rows[0]['orient'])
-    sources = {r.get('source') or 'table' for r in rows}
-    out['from'] = 'project' if sources == {'project'} else 'table' if 'table' in sources else 'earlier geometry'      # gate_attest bed_face_measured
-    if out['from'] == 'project' and entry.get('source') != 'generated' and not _stl_is_export(root, part, entry):
-        out['from'] = 'earlier geometry'            # the STL on disk (and the mesh placed from it) is not the export of this signature yet
     m = _geom.IDENTITY if entry.get('source') == 'generated' else entry.get('matrix')     # an STL made by code is its own frame
     if not (isinstance(m, (list, tuple)) and len(m) == 16 and all(isinstance(c, (int, float)) and not isinstance(c, bool) for c in m)):
         out['why'] = 'the census holds no pose of this part (its matrix): scan the document again'
         return out
-    up_doc = tuple(-c for c in rows[0]['down'])
-    up = _geom.v_unit(_geom.mat_vector(_geom.mat_inverse(m), up_doc))
-    out['up'] = [round(c, 6) for c in up]
-    box = entry.get('bbox')
-    try:
-        lo, hi = box
-        corners = [(x, y, z) for x in (lo[0], hi[0]) for y in (lo[1], hi[1]) for z in (lo[2], hi[2])]
-        out['bed'] = round(min(_geom.v_dot(c, up) for c in corners), 6)
-    except (TypeError, ValueError, IndexError):
-        out['bed'] = None
+    exported = None
+
+    def one(group):
+        nonlocal exported
+        f = {'source': '%s: %s on plate "%s", orient %r' % (group[0]['table'], group[0]['object'], group[0]['plate'], group[0]['orient'])}
+        sources = {r.get('source') or 'table' for r in group}
+        f['from'] = 'project' if sources == {'project'} else 'table' if 'table' in sources else 'earlier geometry'      # gate_attest bed_face_measured
+        if f['from'] == 'project' and not geometry and entry.get('source') != 'generated':
+            if exported is None:
+                exported = _stl_is_export(root, part, entry)
+            if not exported:
+                f['from'] = 'earlier geometry'      # the STL on disk (and the mesh placed from it) is not the export of this signature yet
+        up_doc = tuple(-c for c in group[0]['down'])
+        up = _geom.v_unit(_geom.mat_vector(_geom.mat_inverse(m), up_doc))
+        f['up'] = [round(c, 6) for c in up]
+        box = entry.get('bbox')
+        try:
+            lo, hi = box
+            corners = [(x, y, z) for x in (lo[0], hi[0]) for y in (lo[1], hi[1]) for z in (lo[2], hi[2])]
+            f['bed'] = round(min(_geom.v_dot(c, up) for c in corners), 6)
+        except (TypeError, ValueError, IndexError):
+            f['bed'] = None
+        return f
+    groups = {}
+    for r in rows:
+        groups.setdefault(tuple(round(c, 4) + 0.0 for c in r['down']), []).append(r)
+    frames = [one(groups[k]) for k in sorted(groups)]
+    out['frames'] = frames
+    if len(frames) == 1:
+        out.update({k: frames[0][k] for k in ('up', 'bed', 'source', 'from')})
+        return out
+    froms = {f['from'] for f in frames}
+    out['from'] = 'project' if froms == {'project'} else 'earlier geometry' if 'earlier geometry' in froms else 'table'
+    out['source'] = '; '.join(f['source'] for f in frames)
+    out['why'] = ('the registered projects lay it on %d different faces (%s): each face is judged' % (len(frames), '; '.join(sorted({'%s in %s: %r' % (r['object'], r['table'], r['orient']) for r in rows}))))
     return out
 
 
+_TABLE_DIGESTS = {}
+
+
+def tables_digest(tables, read=None):
+    """16 hex over what of the tables a judgement read: `read` the names of the tables its judge looked at (TableReads),
+    None (a row of an older gate, or a judge that read every table) or "*" in it: all of them. A row of gate/owner/tables.json
+    re-judges only the checks whose judge read that table."""
+    want = None if read is None or '*' in read else tuple(sorted(read))
+    key = (id(tables), want)
+    hit = _TABLE_DIGESTS.get(key)
+    if hit is not None and hit[0] is tables:
+        return hit[1]
+    t = tables if isinstance(tables, dict) else {}
+    value = gate_common.digest(tables) if want is None else gate_common.digest({'names': sorted(t), 'read': {n: t.get(n) for n in want}})
+    if len(_TABLE_DIGESTS) > 4096:
+        _TABLE_DIGESTS.clear()
+    _TABLE_DIGESTS[key] = (tables, value)
+    return value
+
+
+class TableReads(dict):
+    """The tables handed to a judge (ctx["tables"]), recording the names of the tables it looks at ("read"): a judge
+    is a pure function of its facts, parameters and ctx, so a table it never looked at cannot change its findings.
+    Walking the tables (keys, items, values, a copy) counts as reading all of them ("*")."""
+
+    def __init__(self, tables):
+        dict.__init__(self, tables if isinstance(tables, dict) else {})
+        self.read = set()
+
+    def __getitem__(self, k):
+        self.read.add(k)
+        return dict.__getitem__(self, k)
+
+    def get(self, k, default=None):
+        self.read.add(k)
+        return dict.get(self, k, default)
+
+    def __contains__(self, k):
+        self.read.add(k)
+        return dict.__contains__(self, k)
+
+    def _all(self):
+        self.read.add('*')
+
+    def __iter__(self):
+        self._all()
+        return dict.__iter__(self)
+
+    def keys(self):
+        self._all()
+        return dict.keys(self)
+
+    def items(self):
+        self._all()
+        return dict.items(self)
+
+    def values(self):
+        self._all()
+        return dict.values(self)
+
+    def copy(self):
+        self._all()
+        return dict(dict.items(self))
+
+    def __reduce__(self):
+        self._all()
+        return (dict, (dict(dict.items(self)),))
+
+
+_READS_PRINT = {}
+
+
+def reads_print(name):
+    """Does the judge `name` (or a private helper it reaches) read ctx["print"]? Only such a judge is judged once per
+    face a part lies on (print_frame "frames")."""
+    import gate_judges
+    fn = gate_judges.JUDGES.get(name)
+    if fn is None:
+        return False
+    if (name, fn) not in _READS_PRINT:
+        _READS_PRINT[(name, fn)] = any(("ctx['print']" in src or "ctx.get('print')" in src) for src in gate_judges._judge_sources(fn))
+    return _READS_PRINT[(name, fn)]
+
+
 def judge_inputs(root, reg, part, entry):
-    """{"print": 16 hex over print_frame() of the part today, "tables": 16 hex over the tables the judges read today}: the
-    two judgement inputs that are no facts of the part. judge_part keeps them beside each judged row (and a stamp in each
+    """{"print": 16 hex over print_frame() of the part today, "tables": 16 hex over all the tables today}: the two
+    judgement inputs that are no facts of the part. judge_part keeps them beside each judged row (and a stamp in each
     check), so that a part turned on its bed or a table the owner changed is judged again (judgement_out_of_date,
-    gate_stamp.verify)."""
+    gate_stamp.verify). A row that holds "tables_read" is held against tables_digest() of only those tables."""
     try:
         frame = print_frame(root, part, entry)
     except Exception as e:
         frame = {'up': None, 'bed': None, 'source': None, 'why': 'the print orientation could not be worked out (%s: %s)' % (type(e).__name__, e)}
-    return {'print': frame_digest(frame), 'tables': gate_common.digest(reg['tables'])}
+    return {'print': frame_digest(frame), 'tables': tables_digest(reg['tables'])}
+
+
+def inputs_differ(row, today, tables):
+    """The names of the inputs ("print", "tables") a judged row or a stamp's check holds that differ from today's
+    (judge_inputs; the tables held against the ones the row read, tables_digest)."""
+    out = []
+    if 'print' in row and row['print'] != today['print']:
+        out.append('print')
+    if 'tables' in row and row['tables'] != tables_digest(tables, row.get('tables_read') if isinstance(row.get('tables_read'), list) else None):
+        out.append('tables')
+    return out
 
 
 def frame_digest(frame):
     """16 hex over what of a print frame can change a verdict: the print axis and the height of the bed face (its texts
-    only say where it comes from)."""
+    only say where it comes from), of every face when the part lies on several."""
     f = frame if isinstance(frame, dict) else {}
+    frames = f.get('frames') if isinstance(f.get('frames'), list) else []
+    if len(frames) > 1:
+        return gate_common.digest({'frames': sorted(([x.get('up'), x.get('bed')] for x in frames), key=json.dumps)})
     return gate_common.digest({'up': f.get('up'), 'bed': f.get('bed')})
 
 
@@ -1401,7 +1592,8 @@ def judge_part(root, reg, resolved, part, sig=None, stage='design', intent=None,
                 frame = print_frame(root, part, entry)
             except Exception as e:                   # what could not be worked out is unknown, and the judge says so
                 frame = {'up': None, 'bed': None, 'source': None, 'why': 'the print orientation could not be worked out (%s: %s)' % (type(e).__name__, e)}
-        ctx = {'part': part, 'rule': rule['id'], 'tables': reg['tables'], 'target': target, 'census': census_facts,
+        tables = reg['tables']
+        ctx = {'part': part, 'rule': rule['id'], 'tables': tables, 'target': target, 'census': census_facts,
                'prev': None if probe == 'fusion_scan' else _prev_facts(root, part, entry, sig, probe),
                'intent': list(intent) if intent is not None else None, 'print': frame}
         stored = (data.get('probes') or {}).get(probe)
@@ -1410,19 +1602,35 @@ def judge_part(root, reg, resolved, part, sig=None, stage='design', intent=None,
         # everything this judge reads, as one key: when the stored judgement was made from the same, it is taken over
         # (a judge is a pure function of its facts, parameters and ctx: gate_judges.run_judge)
         # judging_code(): the files the judges run (module constants, shared helpers, finding ids), not only the
-        # judge's own source; digest_of('rule'): the rule as the registry has it today (its fix order, its texts)
+        # judge's own source; digest_of('rule'): the rule as the registry has it today (its fix order, its texts);
+        # of the tables only those the judge looked at the last time (tables_read): a judge looks at what decides
         jh = _judge_hash(name)
-        key = gate_common.digest([rule['id'], jh, judging_code(), gate_common.digest(rule), params, digest_of('facts:' + probe, facts), digest_of('tables', ctx['tables']),
-                                  digest_of('census', census_facts), digest_of('prev:' + probe, ctx['prev']), digest_of('print', frame),
-                                  {k: v for k, v in ctx.items() if k not in ('tables', 'census', 'prev', 'print')}])
+
+        def key_for(read):
+            return gate_common.digest([rule['id'], jh, judging_code(), gate_common.digest(rule), params, digest_of('facts:' + probe, facts), tables_digest(tables, read),
+                                       digest_of('census', census_facts), digest_of('prev:' + probe, ctx['prev']), digest_of('print', frame),
+                                       {k: v for k, v in ctx.items() if k not in ('tables', 'census', 'prev', 'print')}])
         old = (data.get('judged') or {}).get(rule['id'])
-        if reuse and isinstance(old, dict) and old.get('input') == key and old.get('judge_hash') == jh and old.get('params') == params \
-                and isinstance(old.get('findings'), list):
+        if reuse and isinstance(old, dict) and old.get('judge_hash') == jh and old.get('params') == params and isinstance(old.get('findings'), list) \
+                and old.get('input') == key_for(old.get('tables_read') if isinstance(old.get('tables_read'), list) else None):
             out[rule['id']] = old['findings']
             continue
-        findings = gate_judges.run_judge(rule, facts, params, ctx)
-        rows[rule['id']] = {'judge_hash': jh, 'params': params, 'findings': findings, 'time': gate_common.now(), 'input': key, 'code': judging_code(),
-                            'print': frame_digest(frame), 'tables': digest_of('tables', ctx['tables'])}
+        reads = TableReads(tables)
+        frames = frame.get('frames') if isinstance(frame, dict) and isinstance(frame.get('frames'), list) and len(frame['frames']) > 1 else None
+        if frames and reads_print(name):
+            findings, seen = [], set()
+            for fr in frames:                        # every face the part lies on is judged: the worst placement decides
+                for f in gate_judges.run_judge(rule, facts, params, dict(ctx, tables=reads, print=fr)):
+                    k = json.dumps([f.get('verdict'), f.get('anchor'), f.get('context'), f.get('measure')], sort_keys=True, default=str)
+                    if k in seen:
+                        continue
+                    seen.add(k)
+                    findings.append(dict(f, text='%s (placed in %s)' % (f.get('text'), fr.get('source'))))
+        else:
+            findings = gate_judges.run_judge(rule, facts, params, dict(ctx, tables=reads))
+        read = sorted(reads.read)
+        rows[rule['id']] = {'judge_hash': jh, 'params': params, 'findings': findings, 'time': gate_common.now(), 'input': key_for(read), 'code': judging_code(),
+                            'print': frame_digest(frame), 'tables': tables_digest(tables, read), 'tables_read': read}
         out[rule['id']] = findings
     if not store:
         return out
@@ -1653,7 +1861,7 @@ def judgement_out_of_date(root, reg, part, sig, resolved, stages=('design',), en
             return False                                # a row of an older gate: its other keys decide
         if today[0] is None:
             today[0] = judge_inputs(root, reg, part, entry)
-        return any(k in j and j[k] != today[0][k] for k in ('print', 'tables'))
+        return bool(inputs_differ(j, today[0], reg['tables']))
     out = []
     for stage in stages:
         for rule in _stage_rules(reg, stage, entry.get('source', 'fusion')):

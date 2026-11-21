@@ -54,7 +54,8 @@ JOB_INPUTS = ('doc', 'doc_key', 'component_id', 'occurrence', 'body', 'features'
 WORLD_KINDS = ('part', 'copy', 'ref', 'mesh')
 # reasons of why_stale() that are about the measuring tool, not about the model: they plan a measurement again, but
 # they kill no stamp by themselves (gate_stamp._neighbours_moved): the facts measured again decide (_measured_since)
-TOOL_REASONS = ('no record of what it read', 'the probe changed', 'measured in another version of Fusion')
+TOOL_REASONS = ('no record of what it read', 'the probe changed', 'measured in another version of Fusion', 'its record holds the tables as an older copy')
+TABLES_VIEW = 1                 # the view of the tables a record digests (probe_tables); a record without it ("tv") digested them whole
 
 
 def tool_reason(why):
@@ -358,7 +359,7 @@ def record(read, job, entry, world_lines, probe, target_key=None):
     bodies = w.bodies_in(read.get('reads'), body_key(entry.get('occurrence'), entry.get('body')))
     if bodies is None or (read.get('reads') and not world_lines):
         return None
-    return {'v': DEPS_V, 'code': code(probe), 'fusion': read.get('fusion'), 'for': target_key, 'own': own_state(entry) if read.get('reads') else None,
+    return {'v': DEPS_V, 'tv': TABLES_VIEW, 'code': code(probe), 'fusion': read.get('fusion'), 'for': target_key, 'own': own_state(entry) if read.get('reads') else None,
             'job': _job_part(job, read.get('job')), 'params': _params_part(job.get('params') or {}, read.get('params')),
             'tables': _tables_part(job.get('tables') or {}, read.get('tables')), 'reads': read.get('reads') or [], 'bodies': bodies}
 
@@ -370,7 +371,7 @@ def record_given_up(read, job, entry, world_lines, probe, target_key=None):
     if not world_lines:
         return None
     read = read if isinstance(read, dict) else {}
-    return {'v': DEPS_V, 'code': code(probe), 'fusion': read.get('fusion'), 'for': target_key, 'own': own_state(entry),
+    return {'v': DEPS_V, 'tv': TABLES_VIEW, 'code': code(probe), 'fusion': read.get('fusion'), 'for': target_key, 'own': own_state(entry),
             'job': _job_part(job, None), 'params': _params_part(job.get('params') or {}, None), 'tables': _tables_part(job.get('tables') or {}, None),
             'reads': None, 'bodies': None, 'all': digest(sorted(world_lines.items()))}
 
@@ -426,6 +427,10 @@ def why_stale(stored, entry, job, world_lines, probe, worlds=None, fusion=None):
     tables = job.get('tables') or {}
     for name, v in sorted((d.get('tables') or {}).items()):
         if (digest(tables) if name == '*' else digest(tables.get(name))) != v:
+            if d.get('tv') != TABLES_VIEW:
+                # recorded before the probes got the tables without what only the judges read (probe_tables): the digest
+                # is of the whole table, so it differs once by itself. A tool reason: measured again, no stamp killed by it
+                return 'its record holds the tables as an older copy of the gate digested them (%s): measured again' % ('all' if name == '*' else 'table %s' % name)
             return 'the tables changed' if name == '*' else 'table %s changed' % name
     if d.get('all'):
         if not world_lines:

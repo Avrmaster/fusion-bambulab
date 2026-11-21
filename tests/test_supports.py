@@ -647,6 +647,123 @@ class GuardSeams(G.Guarded):
         self.assertFalse(os.path.exists(project_slice.record_path(self.d, 'None')))       # no slice record for a file of no project
 
 
+class PlacedCache(BedFace):
+    """gate/run/placed_cache.json: the bed face of an STL is measured once per state of the files it reads and of the
+    code that measures, and again after any of them changes."""
+
+    def counted(self):
+        calls = []
+        real = project_bed.placed_now
+
+        def spy(*a, **kw):
+            calls.append(a[2]); return real(*a, **kw)
+        p = mock.patch.object(project_bed, 'placed_now', side_effect=spy); p.start(); self.addCleanup(p.stop)
+        return calls
+
+    def test_a_hit_and_a_miss_after_each_thing_it_depends_on(self):
+        layout = gate_common.load_layout(self.d)
+        project_bed.placed(self.d, layout, 'stl/cover.stl')                             # measured and kept
+        calls = self.counted()
+        self.assertEqual(project_bed.placed(self.d, layout, 'stl/cover.stl')[0][0]['source'], 'project'); self.assertEqual(calls, [])
+        self.assertIn(project_bed._code(), json.dumps(gate_common.read_json(gate_common.gate_path(self.d, *project_bed.CACHE))))
+
+        def touch(path):
+            st = os.stat(path); os.utime(path, ns=(st.st_atime_ns, st.st_mtime_ns + 10 ** 9))
+        for what, change in (('the .3mf', lambda: touch(self.proj)), ('the STL', lambda: touch(os.path.join(self.stls, 'cover.stl'))),
+                             ('the memory', lambda: touch(gate_common.gate_path(self.d, *project_bed.MEMORY)))):
+            with self.subTest(changed=what):
+                n = len(calls)
+                change()
+                project_bed.placed(self.d, layout, 'stl/cover.stl'); self.assertEqual(len(calls), n + 1)
+                project_bed.placed(self.d, layout, 'stl/cover.stl'); self.assertEqual(len(calls), n + 1)     # kept again
+        for name in project_bed.CODE_FILES + ('meshid',):
+            with self.subTest(code=name):
+                n = len(calls)
+                with mock.patch.object(project_bed, '_CODE', ['another version of %s' % name]):
+                    project_bed.placed(self.d, layout, 'stl/cover.stl')
+                self.assertEqual(len(calls), n + 1)
+
+    def test_the_code_digest_covers_every_file_a_measurement_runs(self):
+        project_bed._CODE[:] = []
+        before = project_bed._code()
+        real_open = open
+        for name in project_bed.CODE_FILES + ('meshid.py',):
+            with self.subTest(file=name):
+                project_bed._CODE[:] = []
+                def fake_open(path, *a, **kw):
+                    f = real_open(path, *a, **kw)
+                    if os.path.basename(str(path)) == name and 'b' in (a[0] if a else kw.get('mode', '')):
+                        data = f.read() + b'# another version\n'; f.close()
+                        return io.BytesIO(data)
+                    return f
+                with mock.patch('builtins.open', side_effect=fake_open):
+                    self.assertNotEqual(project_bed._code(), before)
+        project_bed._CODE[:] = []
+        self.assertEqual(project_bed._code(), before)
+
+    def test_a_save_measures_the_archive_it_writes_and_takes_the_rest_from_the_cache(self):
+        layout = gate_common.load_layout(self.d)
+        before = project_bed.placed(self.d, layout, 'stl/cover.stl')
+        seen = []
+        real = project_bed.placed_now
+        with mock.patch.object(project_bed, 'placed_now', side_effect=lambda *a, **kw: seen.append(kw.get('sources')) or real(*a, **kw)):
+            with project_bed.pending(self.proj, bambu3mf.load(self.proj)[1], 'main'):
+                rows = project_bed.placed(self.d, layout, 'stl/cover.stl')[0]
+        self.assertEqual(len(seen), 1); self.assertEqual([src[1] for src in seen[0]], ['bambulab/Demo.3mf'])
+        self.assertEqual([(r['object'], r['down']) for r in rows], [(r['object'], tuple(r['down'])) for r in before[0]])
+        self.assertEqual(project_bed._PENDING, {}); self.assertEqual(project_bed._PENDING_READ, {})       # nothing of the save stays behind
+
+    def test_vendoring_the_tools_clears_the_caches_of_the_old_code(self):
+        import gate_vendor
+        layout = gate_common.load_layout(self.d)
+        project_bed.placed(self.d, layout, 'stl/cover.stl')
+        walls = gate_common.gate_path(self.d, 'run', 'placed_walls', 'x.json'); gate_common.write_json(walls, {})
+        self.assertTrue(os.path.isfile(gate_common.gate_path(self.d, *project_bed.CACHE)))
+        self.assertEqual(gate_vendor.clear_code_caches(self.d), ['gate/run/placed_cache.json', 'gate/run/placed_walls'])
+        self.assertFalse(os.path.exists(gate_common.gate_path(self.d, *project_bed.CACHE))); self.assertFalse(os.path.exists(os.path.dirname(walls)))
+        self.assertTrue(os.path.isfile(gate_common.gate_path(self.d, *project_bed.MEMORY)))          # a measurement of the files, not of the code
+
+
+class SliceKeysCache(G.Guarded):
+    def test_the_slice_keys_of_a_file_are_read_once_per_state(self):
+        self.build(PLATES)
+        calls = []
+        real = project_slice._members
+        with mock.patch.object(project_slice, '_members', side_effect=lambda src: calls.append(src) or real(src)):
+            a = project_slice.slice_keys(self.proj); b = project_slice.slice_keys(self.proj)
+            self.assertEqual((a, len(calls)), (b, 1))
+            a.clear(); self.assertEqual(project_slice.slice_keys(self.proj), b)                # a copy goes out: the kept one is not changed
+            st = os.stat(self.proj); os.utime(self.proj, ns=(st.st_atime_ns, st.st_mtime_ns + 10 ** 9))
+            project_slice.slice_keys(self.proj); self.assertEqual(len(calls), 2)            # another state of the file: read again
+            project_slice.slice_keys(bambu3mf.load(self.proj)[1]); project_slice.slice_keys(bambu3mf.load(self.proj)[1])
+            self.assertEqual(len(calls), 4)                                                  # an archive in memory is never kept
+
+
+class TurnedUnreadable(G.Guarded):
+    """The guard cannot tell which objects of a save are turned: enforce refuses, observe says it loudly."""
+
+    def save_with_broken_keys(self, build=True):
+        if build: self.build([('first plate', [('bracket', 'bracket.stl', False)])])
+        infos, files = bambu3mf.load(self.proj)
+        with mock.patch.object(project_slice, 'slice_keys', side_effect=ValueError('a broken model_settings.config')):
+            return quiet(bambu3mf.save, self.proj, files, infos)
+
+    def test_enforce_refuses_the_save(self):
+        self.stamp('demo/bracket', SIG1, 'bracket'); self.ledger()
+        self.set_project('observe'); self.build([('first plate', [('bracket', 'bracket.stl', False)])])
+        self.set_project('enforce')
+        before = open(self.proj, 'rb').read()
+        with self.assertRaises(G.GuardRefusal) as c:
+            self.save_with_broken_keys(build=False)
+        self.assertIn('the slice keys could not be read (ValueError: a broken model_settings.config)', str(c.exception))
+        self.assertIn('Nothing was written', str(c.exception)); self.assertEqual(open(self.proj, 'rb').read(), before)
+
+    def test_observe_says_it_and_writes(self):
+        _, out = self.save_with_broken_keys()
+        self.assertIn('the slice keys could not be read', out); self.assertIn('written anyway (observe mode; enforce refuses this save)', out)
+        self.assertIn('the slice keys could not be read', self.log())
+
+
 class PlacedWallsCode(G.Guarded):
     def test_a_new_version_of_the_wall_code_measures_a_placed_mesh_again(self):
         from probes import placed_walls, stl_walls

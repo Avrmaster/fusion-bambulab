@@ -184,6 +184,13 @@ def _stamp_holds(root, name, model, ctx):
     'valid') for the target of this save? No model: it does not hold. Never raises: what cannot be verified does not hold."""
     if not isinstance(model, str) or not model:
         return False
+    if name.startswith('coupon:'):                  # a coupon stamp: the coupon of this geometry, for this target
+        try:
+            import gate_coupons
+            state, _why, now = gate_coupons.holds(root, model, ctx.get('target'))
+            return state == 'valid' and now == name
+        except Exception:
+            return False
     try:
         import gate_stamp
         if 'stamps' not in ctx:
@@ -283,6 +290,10 @@ def _judge_mesh(root, mesh, model, ctx):
         turned = set(meshid.turned_hashes(V, len(F)))
         cands, how = [s for s in ctx['stamps'] if s.get('geom_hash') in turned], '; the STL is a quarter-turned copy of the stamped one'
     if not cands:
+        import gate_coupons                         # a coupon of the coupon plate (gate.py coupons) carries a coupon stamp
+        state, why, name = gate_coupons.holds(root, model, ctx.get('target'))
+        if state != 'none':
+            return state, why, None, name
         return 'none', 'no stamp for the geometry of %s: export the part through the gate (gate.py export)' % _shown(root, stl), None, None
     base = os.path.basename(stl)
     cands.sort(key=lambda s: os.path.basename(str(s.get('stl') or '')) != base)     # identical bodies: the one of this file first
@@ -555,13 +566,17 @@ def _check(root, path, meshes, files=None, asked=None, via=None):
     res['settings'] = {k: v for k, v in got.items() if k not in ('disk', 'after')}
     remember = (lambda facts: None) if outside else (lambda facts: _remember(root, prel, facts))
     try:
-        res = _check_meshes(root, path, meshes, project, layout, entry, res, prel, via)
-        # an unregistered file or one outside the tree is judged like a registered project in enforce mode (no declared
-        # target, no slice record of its own): the overhang pre-check runs on it all the same
-        used = entry if entry is not None else ({} if mode == 'enforce' else None)
-        turned = _turned(root, path, files, res, outside)
-        _slice_line(root, path, files, mode, used, res, turned)    # before _remember: a refused save leaves the memory of the file on disk
-        _overhang_line(root, path, files, mode, used, res, turned)
+        # every stamp is held against the archive about to be written, not the file on disk: the face a part lies on in
+        # this save and the answers that rest on it (probes.project_bed.pending)
+        from probes import project_bed
+        with (project_bed.pending(path, files, entry.get('key') if entry else None) if isinstance(files, dict) else _nothing()):
+            res = _check_meshes(root, path, meshes, project, layout, entry, res, prel, via)
+            # an unregistered file or one outside the tree is judged like a registered project in enforce mode (no declared
+            # target, no slice record of its own): the overhang pre-check runs on it all the same
+            used = entry if entry is not None else ({} if mode == 'enforce' else None)
+            turned = _turned_or_say(root, path, files, res, outside, mode, prel)
+            _slice_line(root, path, files, mode, used, res, turned)    # before _remember: a refused save leaves the memory of the file on disk
+            _overhang_line(root, path, files, mode, used, res, turned)
     except GuardRefusal:                                    # refused: the file stays as it is on disk
         remember(got.get('disk'))
         _restore_slice(root, res)
@@ -575,20 +590,42 @@ def _check(root, path, meshes, files=None, asked=None, via=None):
     return res
 
 
+class _nothing(object):
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+
 def _turned(root, path, files, res, outside):
     """Names of the objects of the archive that bring no new mesh and still lie otherwise than in the file on disk: a
     stamped part placed in a new pose, turned in its build item, or under other per-object or support settings (the slice
-    key of probes.project_slice differs). The overhang pre-check and the slice look at them like at a new mesh."""
+    key of probes.project_slice differs). The overhang pre-check and the slice look at them like at a new mesh.
+    Raises when the slice keys of the archive or of the file on disk cannot be read (_turned_or_say)."""
     if not isinstance(files, dict):
         return []
-    try:
-        from probes import project_slice
-        now = project_slice.slice_keys(files)
-        before = project_slice.slice_keys(path) if not outside and os.path.isfile(path) else {}
-    except Exception:
-        return []
+    from probes import project_slice
+    now = project_slice.slice_keys(files)
+    before = project_slice.slice_keys(path) if not outside and os.path.isfile(path) else {}
     new = set(res.get('new') or [])
     return sorted({name for (index, name), (_pose, k) in now.items() if name not in new and (before.get((index, name)) or (None, None))[1] != k})
+
+
+def _turned_or_say(root, path, files, res, outside, mode, prel):
+    """_turned(), or what to do when it cannot be worked out which objects lie otherwise than on disk: enforce refuses
+    the save (the overhang pre-check and the slice could not be held to the turned objects: what was not checked has
+    not passed), observe says so in one loud line, printed and logged, and goes on with none."""
+    try:
+        return _turned(root, path, files, res, outside)
+    except Exception as e:
+        text = ('gate guard [%s] %s: the slice keys could not be read (%s: %s): which objects of this save are turned or under other support '
+                'settings is not known, so the overhang pre-check and the slice could not be held to them' % (mode, prel, type(e).__name__, e))
+        log(root, text)
+        if mode == 'enforce':
+            raise GuardRefusal(text + '\nNothing was written (enforce mode): repair the file on disk or the archive, then save again.')
+        print(text + ' - written anyway (observe mode; enforce refuses this save)')
+        return []
 
 
 def _restore_slice(root, res):

@@ -222,5 +222,85 @@ class FromAnAgentSession(Base):
         self.assertEqual(code, 4); self.assertIn('no ticket', err)
 
 
+
+class OwnerTable(Base):
+    """gate.py owner table: the only writer of gate/owner/tables.json, like every owner file; a bundle entry of kind
+    "table" is the same command."""
+
+    def tables(self): return gate_common.read_json(gate_common.gate_path(self.d, 'owner', 'tables.json'), None)
+
+    def project_file(self, **settings):
+        import zipfile
+        path = os.path.join(self.d, 'bambulab', 'Demo.3mf'); os.makedirs(os.path.dirname(path), exist_ok=True)
+        ps = dict({'nozzle_diameter': ['0.4'], 'xy_hole_compensation': '0.1', 'layer_height': '0.2'}, **settings)
+        with zipfile.ZipFile(path, 'w') as z:
+            z.writestr('3D/3dmodel.model', '<model/>'); z.writestr('Metadata/project_settings.config', json.dumps(ps))
+
+    def test_stock_lists_and_a_measured_bearing_are_written_and_read_by_the_registry(self):
+        for argv in (('pins', '5', '--value', '20,16'), ('screws', 'M3', '--value', '8,12,10'), ('screws_set', 'M3', '--value', '4'),
+                     ('bearings', '608', '--value', '8,22.02,7.1')):
+            code, out, err = self.gate('owner', 'table', *argv, '--source', 'the stock box, counted', '--quote', 'yes, record it')
+            self.assertEqual((code, err), (0, ''), out)
+        t = self.tables()
+        self.assertEqual(t['pins']['sizes']['5']['lengths'], [16, 20]); self.assertEqual(t['screws']['stock_lengths']['M3'], [8, 10, 12])
+        self.assertEqual(t['screws']['stock_lengths_set']['M3'], [4]); self.assertEqual((t['bearings']['measured']['608']['D'], t['bearings']['measured']['608']['source']), (22.02, 'the stock box, counted'))
+        self.assertEqual([r['quote'] for r in t['_records']], ['yes, record it'] * 4)
+        import gate_registry
+        reg = gate_registry.load_default(self.d)
+        self.assertEqual(reg['tables']['pins']['sizes']['5']['lengths'], [16.0, 20.0]); self.assertEqual(reg['tables']['bearings']['sizes']['608']['B'], 7.1)
+
+    def test_a_row_the_registry_would_not_read_is_refused_and_nothing_is_written(self):
+        for argv, said in ((('bearings', '9999', '--value', '8,22,7'), 'no row of the bearings table is called 9999'),
+                           (('bearings', '608', '--value', '8,22'), 'a measured bearing takes --value with 3'),
+                           (('pins', '5', '--value', 'long'), 'a pin stock row takes --value'),
+                           (('screws', '3', '--value', '8'), 'a stock row is "M3"'),
+                           (('inserts', 'M3x4x5', '--value', '1'), 'a print takes no --value'),
+                           (('pins',), 'needs the row'),
+                           (('inserts', 'M3x4x5'), 'the project file bambulab/Demo.3mf does not exist')):
+            with self.subTest(argv=argv):
+                code, out, err = self.gate('owner', 'table', *argv, '--source', 'a source', '--quote', 'yes')
+                self.assertEqual(code, 4, out); self.assertIn(said, err); self.assertIsNone(self.tables())
+        code, out, err = self.gate('owner', 'table', 'pins', '5', '--value', '16', '--source', 'a source')
+        self.assertEqual(code, 4); self.assertIn('needs --quote', err)
+
+    def test_a_print_is_recorded_with_what_its_project_prints_with(self):
+        self.project_file(xy_hole_compensation='0.15')
+        code, out, err = self.gate('owner', 'table', 'inserts', 'M3x4x5', '--source', 'coupon plate, tried', '--quote', 'they fit')
+        self.assertEqual(code, 4); self.assertIn('does not print with the declared values', err); self.assertIsNone(self.tables())
+        self.project_file()
+        for argv in (('inserts', 'M3x4x5'), ('seat_fit',)):
+            code, out, err = self.gate('owner', 'table', *argv, '--under', 'main', '--source', 'coupon plate, tried', '--quote', 'they fit')
+            self.assertEqual((code, err), (0, ''), out)
+        t = self.tables()
+        want = {'nozzle': 0.4, 'material': 'PETG', 'xy_hole_compensation': 0.1, 'layer_height': 0.2}
+        got = t['inserts']['measured_under']['M3x4x5'][0]
+        self.assertEqual({k: got[k] for k in want}, want); self.assertEqual(got['source'], 'coupon plate, tried')
+        self.assertEqual({k: t['bearings']['seat_fit']['measured_under'][0][k] for k in want}, want)
+        import gate_registry
+        self.assertIn(got, gate_registry.load_default(self.d)['tables']['inserts']['kinds']['M3x4x5']['measured_under'])
+
+    def test_the_dry_run_shows_the_row_and_writes_nothing(self):
+        before = self.files()
+        os.remove(os.path.join(self.d, '.claude', 'settings.json'))
+        code, out, err = self.gate('owner', 'table', 'pins', '5', '--value', '16,20', '--source', 'the stock box', '--dry-run')
+        self.assertEqual((code, err), (0, ''), out)
+        self.assertEqual(self.files(), before)
+        self.assertIn('pins D5 in stock: 16, 20', out); self.assertIn('+ "pins": {', out)
+        self.assertIn('DRY RUN: nothing was written. 1 file(s) would change: gate/owner/tables.json', out)
+
+    def test_a_bundle_entry_of_kind_table(self):
+        entries = [{'kind': 'table', 'table': 'pins', 'row': '5', 'value': [16, 20], 'source': 'the stock box', 'why': 'the box holds these'},
+                   {'kind': 'table', 'table': 'screws', 'row': 'M3', 'value': '8,10', 'source': 'the stock box'}]
+        code, out, err = self.gate('owner', 'bundle', self.proposal(entries), '--dry-run')
+        self.assertEqual((code, err), (0, ''), out); self.assertIsNone(self.tables())
+        self.assertIn('1. table: pins D5 in stock: 16, 20', out)
+        code, out, err = self.gate('owner', 'bundle', self.proposal(entries), '--quote', 'yes, both rows')
+        self.assertEqual((code, err), (0, ''), out)
+        t = self.tables()
+        self.assertEqual((t['pins']['sizes']['5']['lengths'], t['screws']['stock_lengths']['M3']), ([16, 20], [8, 10]))
+        bad = [{'kind': 'table', 'table': 'pockets', 'row': 'x', 'source': 's'}]
+        code, out, err = self.gate('owner', 'bundle', self.proposal(bad, name='bad.json'), '--dry-run')
+        self.assertEqual(code, 4); self.assertIn('"table" must be one of', err)
+
 if __name__ == '__main__':
     unittest.main()

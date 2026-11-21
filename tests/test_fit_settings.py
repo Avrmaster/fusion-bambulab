@@ -671,7 +671,8 @@ class Pocket(Settings):
             self.table(orient); self.assertIn(why, self.frame()['why']); self.assertIsNone(self.frame()['up'])
         self.table(None, 'PLATES = make_plates()\n'); self.assertIn('the plate list is computed, not a plain literal', self.frame()['why'])
         self.table(None, "PLATES = [('levers', [('Knob', 'knob.stl', False)])]\n"); self.assertIn('no build table of a registered .3mf project builds an object from stl/lever.stl', self.frame()['why'])
-        self.table(None, "PLATES = [('a', [('Lever', 'lever.stl', False)]), ('b', [('Lever 2', 'lever.stl', '+y')])]\n"); self.assertIn('lay it on different faces', self.frame()['why'])
+        self.table(None, "PLATES = [('a', [('Lever', 'lever.stl', False)]), ('b', [('Lever 2', 'lever.stl', '+y')])]\n"); self.assertIn('lay it on 2 different faces', self.frame()['why'])
+        self.assertEqual(sorted([c + 0.0 for c in f['up']] for f in self.frame()['frames']), [[0.0, -1.0, 0.0], [1.0, 0.0, 0.0]])     # each face is judged (judge_part)
         self.table(False)
         self.census(LEVER, SIG1, stl='stl/lever.stl', bbox=[[0.0, 0.0, 0.0], [42.0, 12.0, 6.0]])                 # a census of before the scan kept the matrix
         self.assertIn('the census holds no pose of this part (its matrix): scan the document again', self.frame()['why'])

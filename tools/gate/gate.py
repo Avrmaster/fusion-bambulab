@@ -150,6 +150,10 @@ def parser():
     o.add_argument('--under', metavar='KEY', help='with --tag M on a fit parameter: the .3mf project the value was printed from; its declared target is stored as "measured_under"')
     o = osub.add_parser('bundle'); o.add_argument('proposal'); o.add_argument('--quote'); o.add_argument('--dry-run', dest='dry_run', action='store_true')
     o = osub.add_parser('baseline'); o.add_argument('project'); o.add_argument('objects', nargs='+'); o.add_argument('--quote', required=True); o.add_argument('--reason')
+    o = osub.add_parser('table'); o.add_argument('table', choices=TABLE_ROWS); o.add_argument('row', nargs='?')
+    o.add_argument('--value', help='bearings: "d,D,B" in mm; pins, screws, screws_set: the stock lengths "16,20,25"')
+    o.add_argument('--under', metavar='KEY', help='inserts, seat_fit: the .3mf project the print was made from (its declared target is recorded)')
+    o.add_argument('--source', required=True); o.add_argument('--quote'); o.add_argument('--dry-run', dest='dry_run', action='store_true')
     return p
 
 
@@ -451,6 +455,115 @@ def _printed_as_declared(root, key, target):
     return ('The file does not print with the declared values: ' + '; '.join(off[:4])) if off else None
 
 
+# gate.py owner table TABLE [ROW]: what a project records of its own in gate/owner/tables.json (gate_registry.project_table_errors)
+TABLE_ROWS = {
+    'inserts': 'a print of the profile of insert kind ROW, made from the .3mf project --under: appended to "inserts" "measured_under" ROW',
+    'seat_fit': 'a print of the bearing seat fit, made from the .3mf project --under: appended to "bearings" "seat_fit" "measured_under"',
+    'bearings': 'the bearing ROW of the batch in hand, measured: --value "d,D,B" -> "bearings" "measured" ROW',
+    'pins': 'the pins of diameter ROW the project stocks: --value "16,20" -> "pins" "sizes" ROW "lengths"',
+    'screws': 'the screws ROW ("M3") the project stocks: --value "8,10,12" -> "screws" "stock_lengths" ROW',
+    'screws_set': 'the set screws ROW ("M3") the project stocks: --value "3,4" -> "screws" "stock_lengths_set" ROW',
+}
+
+
+def _numbers_of(text, what, n=None):
+    try:
+        out = [float(x) for x in str(text or '').replace(';', ',').split(',') if x.strip()]
+    except ValueError:
+        out = []
+    if not out or (n is not None and len(out) != n) or any(not (x > 0) for x in out):
+        raise GateError('%s takes --value with %s positive number(s) in mm, separated by commas; got %r; nothing was written'
+                        % (what, n if n is not None else 'one or more', text))
+    return [int(x) if x == int(x) else x for x in out]
+
+
+def _owner_table(root, args):
+    """One row of gate/owner/tables.json (TABLE_ROWS): a print of a table row (with the declared target of the project
+    it was printed from, checked against that file like `owner param --tag M`), a measured bearing, a stock list. The
+    whole file is checked as the registry reads it (gate_registry.project_table_errors) before it is written; the
+    command, its quote and the date are kept under "_records" (a key the registry does not read)."""
+    import gate_judges, gate_params, gate_registry
+    table, row = args.table, getattr(args, 'row', None)
+    if table not in TABLE_ROWS:
+        raise GateError('unknown table %r (known: %s); nothing was written' % (table, ', '.join(TABLE_ROWS)))
+    if table != 'seat_fit' and not row:
+        raise GateError('owner table %s needs the row: %s; nothing was written' % (table, TABLE_ROWS[table]))
+    if table == 'seat_fit' and row:
+        raise GateError('owner table seat_fit takes no row (one seat fit per project); nothing was written')
+    path = _owner_file(root, 'tables.json')
+    raw = gate_common.read_json(path, {})
+    if not isinstance(raw, dict):
+        raise GateError('gate/owner/tables.json must be an object of table -> rows')
+    data = copy.deepcopy(raw)
+    today = datetime.date.today().isoformat()
+    source = str(args.source or '').strip()
+    if not source:
+        raise GateError('--source must say where it comes from (the calliper, the coupon, the order); nothing was written')
+    value = getattr(args, 'value', None)
+    under = getattr(args, 'under', None)
+    if table in ('inserts', 'seat_fit'):
+        if value is not None:
+            raise GateError('a print takes no --value: what it was printed under is the declared target of --under; nothing was written')
+        project = gate_common.load_project(root)
+        targets = project.get('targets') or {}
+        key = under or (list(targets)[0] if len(targets) == 1 else None)
+        if key is None or key not in targets:
+            raise GateError('a print is recorded with what it was printed under. Name the .3mf project it was printed from with --under KEY '
+                            '(declared targets: %s); nothing was written' % (', '.join(sorted(targets)) or 'none'))
+        entry = {k: targets[key].get(k) for k in gate_params.MEASURED_UNDER}
+        missing = [k for k in gate_params.MEASURED_UNDER if entry[k] is None]
+        if missing:
+            raise GateError('the declared target of %s does not say %s: the owner adds what the project prints with to gate/project.json "targets" '
+                            'first; nothing was written' % (key, ', '.join(missing)))
+        why = _printed_as_declared(root, key, targets[key])
+        if why:
+            raise GateError('a print is stored with what the project %s prints with. %s. Nothing was written: put the project file and its declared '
+                            'target in step first (gate.py verify), then record the print' % (key, why))
+        entry.update(source=source, date=today)
+        if table == 'inserts':
+            data.setdefault('inserts', {}).setdefault('measured_under', {}).setdefault(row, []).append(entry)
+        else:
+            data.setdefault('bearings', {}).setdefault('seat_fit', {}).setdefault('measured_under', []).append(entry)
+        said = '%s %s: printed under %s (%s)' % (table, row or '', key, ', '.join('%s %s' % (k, entry[k]) for k in gate_params.MEASURED_UNDER))
+    else:
+        if under:
+            raise GateError('--under goes with a print (inserts, seat_fit), not with %s; nothing was written' % table)
+        if table == 'bearings':
+            d, D, B = _numbers_of(value, 'a measured bearing', 3)
+            data.setdefault('bearings', {}).setdefault('measured', {})[row] = {'d': d, 'D': D, 'B': B, 'source': source, 'date': today}
+            said = 'bearing %s measured: d %s, D %s, B %s' % (row, d, D, B)
+        elif table == 'pins':
+            lengths = _numbers_of(value, 'a pin stock row')
+            data.setdefault('pins', {}).setdefault('sizes', {})[row] = {'lengths': sorted(lengths), 'source': source, 'date': today}
+            said = 'pins D%s in stock: %s' % (row, ', '.join(str(x) for x in sorted(lengths)))
+        else:
+            lengths = _numbers_of(value, 'a screw stock row')
+            data.setdefault('screws', {}).setdefault('stock_lengths' if table == 'screws' else 'stock_lengths_set', {})[row] = sorted(lengths)
+            said = '%s %s in stock: %s' % ('screws' if table == 'screws' else 'set screws', row, ', '.join(str(x) for x in sorted(lengths)))
+    base = gate_registry.load(judges=set(gate_judges.JUDGES))
+    errors = gate_registry.project_table_errors({k: v for k, v in data.items()}, base)
+    if errors:
+        raise GateError('table row refused, nothing written:\n  ' + '\n  '.join(errors))
+    record = {'table': table, 'row': row, 'value': value, 'under': under, 'source': source, 'date': today, 'quote': getattr(args, 'quote', None)}
+    data['_records'] = list(data.get('_records') or []) + [{k: v for k, v in record.items() if v is not None}]
+    gate_common.write_json(path, data)
+    print(said)
+    print('stored judgements were made with the old tables: python3 gate/tools/gate.py run --offline judges again only the checks that read this table')
+    return EXIT_PASS
+
+
+def _owner_table_dry(root, args):
+    """`owner table ... --dry-run`: what the row would change, as a diff; nothing is written and no quote is needed."""
+    stage = _Stage()
+    with stage:
+        _owner_table(root, args)
+    changes = stage.diff(root)
+    for _rel, text in changes:
+        print(text.rstrip('\n'))
+    print('DRY RUN: nothing was written. %d file(s) would change: %s' % (len(changes), ', '.join(r for r, _ in changes) or 'none'))
+    return EXIT_PASS
+
+
 def cmd_owner(root, args):
     """gate.py owner waive | decide | param: the only writer of gate/owner/*. Every one needs --quote (the owner's own
     words) and is refused while the project's .claude/settings.json lacks the `ask` rules that put a prompt in front of
@@ -480,6 +593,8 @@ def cmd_owner(root, args):
             the project holds now."""
     if args.action == 'bundle' and getattr(args, 'dry_run', False):
         return _owner_bundle(root, args)         # writes nothing: no prompt, no quote needed to show what would change
+    if args.action == 'table' and getattr(args, 'dry_run', False):
+        return _owner_table_dry(root, args)
     if _agent_session():
         args._ticket = _take_ticket(root, args)
     missing = gate_common.ask_rules_missing(root)
@@ -489,7 +604,8 @@ def cmd_owner(root, args):
                         '(setup_project.py --gate prints them); nothing was written' % '; '.join(missing))
     if not str(getattr(args, 'quote', '') or '').strip():
         raise GateError('an owner command needs --quote: the owner\'s own words for this decision; nothing was written')
-    return {'waive': _owner_waive, 'decide': _owner_decide, 'adopt': _owner_adopt, 'param': _owner_param, 'bundle': _owner_bundle, 'baseline': _owner_baseline}[args.action](root, args)
+    return {'waive': _owner_waive, 'decide': _owner_decide, 'adopt': _owner_adopt, 'param': _owner_param, 'bundle': _owner_bundle, 'baseline': _owner_baseline,
+            'table': _owner_table}[args.action](root, args)
 
 
 AGENT_ENV = ('CLAUDECODE', 'CLAUDE_CODE_ENTRYPOINT', 'CLAUDE_CODE_SESSION_ID')
@@ -558,6 +674,7 @@ BUNDLE_KINDS = {                                 # kind -> (required fields, opt
     'adopt': ((), ()),
     'mode': (('mode',), ()),
     'baseline': (('project', 'objects', 'expect'), ('reason',)),     # expect: {object: {"support_e", "top_z", "pose"}} as the dry run shows them
+    'table': (('table', 'source'), ('row', 'value', 'under')),       # a row of gate/owner/tables.json, as `owner table`
 }
 BUNDLE_COMMON = ('kind', 'why')                  # "why": the evidence, for the owner to read; never applied
 
@@ -602,6 +719,8 @@ def read_bundle(path):
                                         or any(not isinstance(e['expect'].get(o), dict) for o in e['objects'])):
             raise GateError('entry %d (baseline): "expect" must give each object of "objects" the numbers the owner is shown '
                             '({"support_e", "top_z", "pose"} from gate/proposals/support_baseline.json): the apply refuses when the slice record moved since' % i)
+        if e['kind'] == 'table' and e['table'] not in TABLE_ROWS:
+            raise GateError('entry %d (table): "table" must be one of %s' % (i, ', '.join(TABLE_ROWS)))
         if e['kind'] == 'decide' and e['decision'] not in DECISIONS:
             raise GateError('entry %d (decide): "decision" must be one of %s' % (i, ', '.join(DECISIONS)))
     return data
@@ -748,7 +867,8 @@ def _owner_bundle(root, args):
         raise GateError('an owner command needs --quote: the owner\'s own words for this decision; nothing was written')
     with open(path, 'rb') as f:
         sha = hashlib.sha256(f.read()).hexdigest()
-    funcs = {'param': _owner_param, 'target': _owner_target, 'waive': _owner_waive, 'decide': _owner_decide, 'adopt': _owner_adopt, 'mode': _owner_mode, 'baseline': _owner_baseline}
+    funcs = {'param': _owner_param, 'target': _owner_target, 'waive': _owner_waive, 'decide': _owner_decide, 'adopt': _owner_adopt, 'mode': _owner_mode, 'baseline': _owner_baseline,
+             'table': _owner_table}
     print('%s %s: %d entr%s%s' % ('DRY RUN of' if dry else 'bundle', gate_common.rel(root, path), len(data['entries']), 'y' if len(data['entries']) == 1 else 'ies',
                                   (' - ' + data['title']) if data.get('title') else ''))
     stage = _Stage()
@@ -758,6 +878,8 @@ def _owner_bundle(root, args):
             ns = argparse.Namespace(quote=quote, **{k: e.get(k) for k in need + may})
             if e['kind'] == 'param':
                 ns.value = e['value'] if isinstance(e['value'], str) else repr(e['value']) if isinstance(e['value'], float) else str(e['value'])
+            if e['kind'] == 'table' and isinstance(e.get('value'), list):
+                ns.value = ','.join(str(x) for x in e['value'])
             out = io.StringIO()
             try:
                 with contextlib.redirect_stdout(out):
