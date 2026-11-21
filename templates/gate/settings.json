@@ -1,13 +1,13 @@
 {
   "permissions": {
-    "ask": [
+    "deny": [
       "Edit(/gate/owner/**)",
       "Write(/gate/owner/**)",
       "Edit(/gate/project.json)",
-      "Write(/gate/project.json)",
-      "Bash(python3 gate/tools/gate.py owner *)",
-      "Bash(*gate.py owner *)",
-      "Bash(*gate.py * owner *)"
+      "Write(/gate/project.json)"
+    ],
+    "ask": [
+      "Bash(python3 gate/tools/gate.py owner *)"
     ]
   }
 }

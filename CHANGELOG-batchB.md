@@ -66,3 +66,7 @@
 ### Privacy and side effects
 
 - Nothing new is sent anywhere: the regions and keys a unit read come back in its own result file on this machine.
+
+### Changed (lead)
+
+- `templates/gate/settings.json`: agents are DENIED direct edits of `gate/owner/**` and `gate/project.json` (no permission prompt for the owner); only `python3 gate/tools/gate.py owner ...` asks. The broad `Bash(*gate.py * owner *)` ask rule is gone: it matched ordinary commands and prompted the owner. `setup_project.py` proposes the deny and ask lists that are missing.

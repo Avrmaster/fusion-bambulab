@@ -164,13 +164,14 @@ def propose(root, claude_md):
     """Print what belongs to the owner: the permission rules and the CLAUDE.md lines. Nothing is written."""
     want = json.load(open(os.path.join(PLUGIN, 'templates', 'gate', 'settings.json'), encoding='utf-8'))
     path = os.path.join(root, '.claude', 'settings.json')
-    try: have = json.load(open(path, encoding='utf-8')).get('permissions', {}).get('ask', []) if os.path.exists(path) else []
-    except Exception: have = []
-    missing = [r for r in want['permissions']['ask'] if r not in have]
+    try: perms = json.load(open(path, encoding='utf-8')).get('permissions', {}) if os.path.exists(path) else {}
+    except Exception: perms = {}
+    missing = {kind: [r for r in want['permissions'].get(kind, []) if r not in (perms.get(kind) or [])] for kind in ('deny', 'ask')}
+    missing = {k: v for k, v in missing.items() if v}
     if missing:
-        print('\nPROPOSED  %s  (not written: the owner adds it). These rules make every change of the owner files show a prompt:' % path)
-        print(json.dumps({'permissions': {'ask': missing}}, indent=2))
-    else: say('kept', path + ' (the ask rules are there)')
+        print('\nPROPOSED  %s  (not written: the owner adds it). Agents may not edit the owner files at all (deny), and an owner command asks first (ask):' % path)
+        print(json.dumps({'permissions': missing}, indent=2))
+    else: say('kept', path + ' (the rules for the owner files are there)')
     lines = claude_sections()[1]
     if GATE_START in claude_md: say('kept', os.path.join(root, 'CLAUDE.md') + ' (the gate lines are there)')
     elif lines: print('\nPROPOSED  %s  (not written: the owner adds these lines)\n%s' % (os.path.join(root, 'CLAUDE.md'), lines))

@@ -173,7 +173,7 @@ This costs time at every save, also a settings-only one and also in `observe` mo
 
 ## What only the owner decides
 
-These files are his: `gate/owner/params.json`, `gate/owner/waivers.json`, `gate/owner/triage.json`, `gate/project.json`. Do not edit them, also not through a script. They change only through `gate.py owner ...`. Such a call shows him a prompt when the ask rules of `templates/gate/settings.json` are in the project's `.claude/settings.json`; while they are missing, `gate.py owner` refuses to write and `doctor` says so. Only he adds them. Every owner command needs `--quote`:
+These files are his: `gate/owner/params.json`, `gate/owner/waivers.json`, `gate/owner/triage.json`, `gate/project.json`. Do not edit them, also not through a script. They change only through `gate.py owner ...`. The rules of `templates/gate/settings.json` in the project's `.claude/settings.json` deny agents any direct edit of these files (no prompt) and let `gate.py owner` ask once; while they are missing, `gate.py owner` refuses to write and `doctor` says so. Only he adds them. Every owner command needs `--quote`:
 
 ```bash
 python3 gate/tools/gate.py owner waive F-9c1e04 --reason "the bore of the bought bearing is 1.8 mm away and cannot move" --quote "leave these two as they are"

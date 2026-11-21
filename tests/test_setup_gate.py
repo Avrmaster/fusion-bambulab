@@ -8,8 +8,9 @@ sys.path.insert(0, os.path.join(ROOT, 'tools', 'gate'))
 import gate_common, gate_vendor
 
 SETUP = os.path.join(ROOT, 'tools', 'setup_project.py')
-ASK = ['Edit(/gate/owner/**)', 'Write(/gate/owner/**)', 'Edit(/gate/project.json)', 'Write(/gate/project.json)',
-       'Bash(python3 gate/tools/gate.py owner *)', 'Bash(*gate.py owner *)', 'Bash(*gate.py * owner *)']
+DENY = ['Edit(/gate/owner/**)', 'Write(/gate/owner/**)', 'Edit(/gate/project.json)', 'Write(/gate/project.json)']
+ASK = ['Bash(python3 gate/tools/gate.py owner *)']
+RULES = DENY + ASK
 
 
 def read(path):
@@ -77,8 +78,8 @@ class NewProject(Tmp):
         r = self.setup('--name', 'Demo', '--gate')
         self.assertFalse(os.path.exists(self.path('.claude')), 'settings belong to the owner')
         self.assertIn('PROPOSED', r.stdout); self.assertIn('not written', r.stdout)
-        for rule in ASK: self.assertIn(json.dumps(rule), r.stdout)
-        self.assertEqual(load(os.path.join(ROOT, 'templates', 'gate', 'settings.json')), {'permissions': {'ask': ASK}})
+        for rule in RULES: self.assertIn(json.dumps(rule), r.stdout)
+        self.assertEqual(load(os.path.join(ROOT, 'templates', 'gate', 'settings.json')), {'permissions': {'deny': DENY, 'ask': ASK}})
         self.assertIn('## Print gate', r.stdout); self.assertIn('gate.py export', r.stdout)
         md = read(self.path('CLAUDE.md'))
         self.assertEqual(md.count('fusion-bambulab:start'), 1); self.assertTrue(md.rstrip().endswith('<!-- fusion-bambulab:end -->'))
@@ -129,13 +130,13 @@ class NewProject(Tmp):
     def test_proposals_stop_once_the_owner_added_them(self):
         self.setup('--name', 'Demo', '--gate')
         os.makedirs(self.path('.claude'))
-        gate_common.write_json(self.path('.claude', 'settings.json'), {'permissions': {'ask': ASK[:2], 'allow': ['Bash(ls *)']}})
+        gate_common.write_json(self.path('.claude', 'settings.json'), {'permissions': {'deny': DENY[:2], 'ask': ASK, 'allow': ['Bash(ls *)']}})
         with open(self.path('CLAUDE.md'), 'a', encoding='utf-8') as f: f.write('\n<!-- fusion-bambulab:gate:start -->\nmine\n<!-- fusion-bambulab:gate:end -->\n')
         r = self.setup('--gate')
-        self.assertIn(json.dumps(ASK[2]), r.stdout); self.assertNotIn(json.dumps(ASK[0]), r.stdout)       # only the missing rule is proposed
+        self.assertIn(json.dumps(DENY[2]), r.stdout); self.assertNotIn(json.dumps(DENY[0]), r.stdout)       # only the missing rule is proposed
         self.assertIn('the gate lines are there', r.stdout)
-        self.assertEqual(load(self.path('.claude', 'settings.json')), {'permissions': {'ask': ASK[:2], 'allow': ['Bash(ls *)']}})
-        gate_common.write_json(self.path('.claude', 'settings.json'), {'permissions': {'ask': ASK}})
+        self.assertEqual(load(self.path('.claude', 'settings.json')), {'permissions': {'deny': DENY[:2], 'ask': ASK, 'allow': ['Bash(ls *)']}})
+        gate_common.write_json(self.path('.claude', 'settings.json'), {'permissions': {'deny': DENY, 'ask': ASK}})
         self.assertNotIn('PROPOSED', self.setup('--gate').stdout)
 
 
