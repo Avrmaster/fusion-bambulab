@@ -6,6 +6,8 @@ questions, the owner commands, the STL probes, the stamps, the guard inside bamb
 ledger and the hook. The project's own copy of the tools (gate/tools, bambulab/tools) runs the steps that need no
 Fusion: the build script, verify, the ledger commands. No Fusion, no Bambu Studio. Every name and number is invented."""
 import contextlib, io, json, os, re, shutil, struct, subprocess, sys, tempfile, unittest, zipfile
+for _k in ('CLAUDECODE', 'CLAUDE_CODE_ENTRYPOINT', 'CLAUDE_CODE_SESSION_ID'): os.environ.pop(_k, None)      # gate.py owner from an agent session needs the hook's ticket: a test is no agent session
+os.environ.pop('CLAUDE_PROJECT_DIR', None)      # bambu3mf finds a gated root for a file outside it from this: never the session's project
 from unittest import mock
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, 'tools', 'gate'))
@@ -26,9 +28,11 @@ PS, MS = 'Metadata/project_settings.config', 'Metadata/model_settings.config'
 # what the slicer project prints with: the gate reads it into the declared target, the fits count as measured under it
 SLICER = {'nozzle_diameter': ['0.4'], 'line_width': '0.42', 'filament_type': ['PETG'], 'layer_height': '0.2', 'initial_layer_print_height': '0.2', 'xy_hole_compensation': '0.1',
           'xy_contour_compensation': '0', 'elefant_foot_compensation': '0.15', 'wall_generator': 'classic',
-          'enable_support': '0', 'support_type': 'normal(auto)', 'support_on_build_plate_only': '0', 'support_remove_small_overhang': '1'}
+          'enable_support': '1', 'support_type': 'tree(auto)', 'support_on_build_plate_only': '0', 'support_remove_small_overhang': '0',
+          'wall_sequence': 'inner wall/outer wall'}       # the supports as the build template sets them (templates/build_3mf.py PROJECT)
 TARGET = {'nozzle': 0.4, 'line_width': 0.42, 'material': 'PETG', 'layer_height': 0.2, 'initial_layer_print_height': 0.2, 'xy_hole_compensation': 0.1, 'xy_contour_compensation': 0.0,
-          'elefant_foot_compensation': 0.15, 'wall_generator': 'classic'}
+          'elefant_foot_compensation': 0.15, 'wall_generator': 'classic',
+          'print': {'enable_support': 1.0, 'support_type': 'tree(auto)', 'support_remove_small_overhang': 0.0, 'wall_sequence': 'inner wall/outer wall'}}
 PLATES = [('first plate', [('Lamp foot', 'lamp_foot.stl', False)]), ('second plate', [('Turntable', 'turntable.stl', False)])]
 WITH_CLIP = PLATES + [('third plate', [('Cable clip', 'cable_clip.stl', False)])]
 FREE_RING = 'a floating bearing: the bought axle carries a snap ring above the inner ring, and that ring closes this face'
@@ -477,7 +481,11 @@ class WholeChain(Lamp):
         self.assertEqual((r.returncode, r.stderr), (0, ''))
         self.assertTrue(r.stdout.startswith('Print gate of %s (fusion-bambulab; skill: gate)' % self.root), r.stdout)
         if 'took longer than' not in r.stdout:                                                             # a loaded machine: the hook leaves in time and says so
-            self.assertEqual(r.stdout.rstrip('\n'), text)
+            self.assertEqual(r.stdout.rstrip('\n'), text + '\n' + gate_hook.project_lines(self.root)[0])
+        # step 7 wrote the project with zipfile, past the tools (as Bambu Studio would): the hook says so
+        self.assertEqual(gate_hook.project_lines(self.root), ['gate: %s changed outside the tools since its last guarded save (%s): Bambu Studio saved it, '
+                                                              'or a file was copied over it. Run python3 gate/tools/gate.py verify'
+                                                              % (PROJ, json.load(open(self.path('gate', 'run', 'saves.json')))['projects'][PROJ]['time'])])
         code, out, err = self.gate('status')
         self.assertEqual(code, 1); self.assertIn('FAIL    %s  walls.min_material' % CLIP, out)
 

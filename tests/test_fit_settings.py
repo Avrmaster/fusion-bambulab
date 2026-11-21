@@ -3,6 +3,8 @@ declared target by gate.py verify, and compared at every save by the guard. Also
 incident: a pocket for a bought part takes its size from a printed fit, and its depth is a whole number of layers.
 No Fusion, no Bambu Studio: the projects are built here with bambu3mf, every name and number is invented."""
 import contextlib, io, json, os, shutil, sys, tempfile, types, unittest, zipfile
+for _k in ('CLAUDECODE', 'CLAUDE_CODE_ENTRYPOINT', 'CLAUDE_CODE_SESSION_ID'): os.environ.pop(_k, None)      # gate.py owner from an agent session needs the hook's ticket: a test is no agent session
+os.environ.pop('CLAUDE_PROJECT_DIR', None)      # bambu3mf finds a gated root for a file outside it from this: never the session's project
 from unittest import mock
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, 'tools', 'gate'))
@@ -19,8 +21,10 @@ from test_stamp import SIG1
 PS, MS = 'Metadata/project_settings.config', 'Metadata/model_settings.config'
 FIT = {'nozzle_diameter': ['0.4'], 'line_width': '0.45', 'layer_height': '0.3', 'initial_layer_print_height': '0.3', 'xy_hole_compensation': '0.125', 'xy_contour_compensation': '0',
        'elefant_foot_compensation': '0.15', 'wall_generator': 'classic'}
+PRINT = {'enable_support': '1', 'support_type': 'tree(auto)', 'support_remove_small_overhang': '0', 'wall_sequence': 'inner wall/outer wall'}
 FULL = {'nozzle': 0.4, 'line_width': 0.45, 'material': 'PETG', 'layer_height': 0.3, 'initial_layer_print_height': 0.3, 'xy_hole_compensation': 0.125, 'xy_contour_compensation': 0.0,
-        'elefant_foot_compensation': 0.15, 'wall_generator': 'classic'}
+        'elefant_foot_compensation': 0.15, 'wall_generator': 'classic',
+        'print': {'enable_support': True, 'support_type': 'tree(auto)', 'support_remove_small_overhang': 0, 'wall_sequence': 'inner wall/outer wall'}}
 UNDER = {k: FULL[k] for k in gate_params.MEASURED_UNDER}
 
 
@@ -28,7 +32,7 @@ def template(path, **settings):
     """The empty template of test_guard with the fit settings a saved project has."""
     G.template(path)
     with zipfile.ZipFile(path) as z: files = {n: z.read(n) for n in z.namelist()}
-    ps = json.loads(files[PS]); ps.update(FIT); ps.update(filament_type=['PETG']); ps.update(settings)
+    ps = json.loads(files[PS]); ps.update(FIT); ps.update(PRINT); ps.update(filament_type=['PETG']); ps.update(settings)
     files[PS] = json.dumps(ps).encode()
     with zipfile.ZipFile(path, 'w') as z:
         for n, data in files.items(): z.writestr(n, data)
@@ -48,6 +52,14 @@ class Settings(G.Guarded):
         super().setUp(); bambu3mf._SETTING_NOTES.clear()
         template(self.tpl)
         self.set_project(self.mode, {'main': FULL})
+
+    def adopt(self, plates=G.PLATES):
+        """The project on disk. In enforce mode a mesh on disk that nothing backs is refused at the next save, so there it
+        is the project as the gate builds it: both parts exported through the gate (stamped for the declared target)."""
+        if self.mode != 'enforce':
+            return G.Guarded.adopt(self, plates)
+        self.stamp('demo/bracket', G.SIG1, 'bracket', target=FULL); self.stamp('demo/cover', G.SIG2, 'cover', target=FULL)
+        quiet(self.build, plates)
 
     def settings(self, proj=None): return project_consistency.read_fit_settings(proj or self.proj)
 
@@ -70,7 +82,7 @@ class Reading(Settings):
             s = project_consistency.read_fit_settings(source)
             self.assertEqual(s['keys'], list(project_consistency.FIT_SETTINGS))
             self.assertEqual(s['global'], {'nozzle_diameter': 0.4, 'line_width': 0.45, 'layer_height': 0.3, 'initial_layer_print_height': 0.3, 'xy_hole_compensation': 0.125, 'xy_contour_compensation': 0.0,
-                                           'elefant_foot_compensation': 0.15, 'wall_generator': 'classic'})
+                                           'elefant_foot_compensation': 0.15, 'wall_generator': 'classic', 'filament': 'PETG'})
             self.assertEqual((s['objects_read'], sorted(s['object_names'])), (2, ['bracket', 'cover']))
             rows = {o['name']: o for o in s['objects']}
             self.assertEqual(rows['bracket']['overrides'], {'xy_hole_compensation': 0.0})         # wall_loops is no fit setting
@@ -217,8 +229,48 @@ class Match(Settings):
     def test_a_target_that_does_not_say_them_is_not_a_pass(self):
         self.adopt(); self.set_project(self.mode, {'main': {'nozzle': 0.4, 'line_width': 0.45, 'material': 'PETG'}})
         open_, _ = self.found()
-        self.assertEqual([f['verdict'] for f in open_], ['NOT_RUN'])
+        self.assertEqual([f['verdict'] for f in open_], ['NOT_RUN', 'NOT_RUN'])
         for word in ('"layer_height"', '"xy_hole_compensation"', '"wall_generator"', 'gate/project.json'): self.assertIn(word, open_[0]['text'])
+        self.assertIn('holds no "print" block', open_[1]['text'])                                    # nor whether its overhangs print with supports
+
+    def test_the_print_block_supports_and_wall_order_every_object_prints_with(self):
+        self.adopt()
+        self.assertEqual(self.found()[0], [])                                                         # tree supports on, small overhangs kept: as declared
+        infos, files = bambu3mf.load(self.proj)
+        quiet(bambu3mf.save, self.proj, with_setting(files, support_remove_small_overhang='1', enable_support='0'), infos)
+        open_, _ = self.found()
+        self.assertEqual([f['verdict'] for f in open_], ['FAIL', 'FAIL'])
+        text = ' | '.join(f['text'] for f in open_)
+        self.assertIn('bambulab/Demo.3mf has the global enable_support = 0, the declared target says 1: 2 object(s) print with it (bracket, cover)', text)
+        self.assertIn('the global support_remove_small_overhang = 1, the declared target says 0', text)
+        infos, files = bambu3mf.load(self.proj)
+        quiet(bambu3mf.save, self.proj, with_setting(files, support_remove_small_overhang='0', enable_support='1'), infos)
+        quiet(bambu3mf.set_settings, self.proj, 'cover', [('enable_support', '0')])                  # one object without supports, by hand
+        open_, _ = self.found()
+        self.assertEqual([f['verdict'] for f in open_], ['FAIL'])
+        self.assertIn('object cover of bambulab/Demo.3mf prints with enable_support = 0, the declared target says 1', open_[0]['text'])
+        self.set_project(self.mode, {'main': dict(FULL, objects={'cover': {'print': {'enable_support': False}}})})     # declared for that object
+        self.assertEqual(self.found()[0], [])
+        part = dict(FULL); part['print'] = {'enable_support': True}                                    # a block that does not say every key
+        self.set_project(self.mode, {'main': part})
+        self.assertIn('does not say support_type, support_remove_small_overhang, wall_sequence', ' '.join(f['text'] for f in self.found()[0] if f['verdict'] == 'NOT_RUN'))
+        for bad in ({'print': ['tree']}, {'print': {'enable_support': None}}, {'print': {'': 1}}):
+            self.assertIn('"print" must be an object of slicer setting -> value', ' '.join(gate_params.check(self.reg, {}, dict(FULL, **bad))))
+
+    def test_the_filament_an_object_prints_with_is_a_fit_setting(self):
+        self.adopt()
+        self.assertEqual(self.settings()['global']['filament'], 'PETG')
+        infos, files = bambu3mf.load(self.proj); ps = json.loads(files[PS])
+        ps['filament_type'] = ['PETG', 'PLA']
+        quiet(bambu3mf.save, self.proj, dict(files, **{PS: json.dumps(ps).encode()}), infos)
+        self.assertEqual(self.found()[0], [])                                                         # a second slot nobody prints with: nothing
+        quiet(bambu3mf.set_settings, self.proj, 'bracket', [('extruder', '2')])                       # the bracket moved to the PLA slot
+        rows = {o['name']: o for o in self.settings()['objects']}
+        self.assertEqual(rows['bracket']['overrides'], {'filament': 'PLA'})
+        open_, _ = self.found()
+        self.assertEqual([f['verdict'] for f in open_], ['FAIL']); self.assertIn('filament', open_[0]['text']); self.assertIn('PLA', open_[0]['text'])
+        self.set_project(self.mode, {'main': dict(FULL, objects={'bracket': {'material': 'PLA'}})})   # declared: the bracket is a PLA test print
+        self.assertEqual(self.found()[0], [])
 
     def test_verify_exits_1_on_it(self):
         self.adopt()
@@ -273,6 +325,11 @@ class Observe(Settings):
     def test_a_change_that_was_asked_for_is_printed(self):
         self.adopt()
         infos, files = bambu3mf.load(self.proj); ps = json.loads(files[PS])
+        quiet(bambu3mf.set_project, ps, {'xy_hole_compensation': '0.1'})
+        _, out = quiet(bambu3mf.save, self.proj, dict(files, **{PS: json.dumps(ps).encode()}), infos)      # named, away from the declared 0.125: loud
+        self.assertIn('FIT SETTINGS CHANGED BY THIS WRITE', out); self.assertIn('a note covers only a change to the declared target', out); self.assertIn('written anyway', out)
+        quiet(bambu3mf.save, self.proj, files, infos)                                                     # back to 0.125 (said loudly too: not named)
+        self.set_project(self.mode, {'main': dict(FULL, xy_hole_compensation=0.1)})
         quiet(bambu3mf.set_project, ps, {'xy_hole_compensation': '0.1'})
         _, out = quiet(bambu3mf.save, self.proj, dict(files, **{PS: json.dumps(ps).encode()}), infos)
         self.assertEqual(out.count('gate guard [observe] bambulab/Demo.3mf: xy_hole_compensation (global) of bambulab/Demo.3mf changes from 0.125 to 0.1, as asked by set_project'), 1)
@@ -344,7 +401,12 @@ class Enforce(Settings):
         self.assertEqual(self.raw(), before); self.assertEqual(sorted(r['context'] != '' for r in c.exception.rows), [True, True])
         self.assertIn('layer_height (global)', str(c.exception)); self.assertIn('xy_hole_compensation (global)', str(c.exception))
         with self.assertRaises(GuardRefusal) as c: quiet(bambu3mf.new_project, other, self.proj, settings=('layer_height',))     # one of the two was meant
-        self.assertNotIn('layer_height (global)', str(c.exception)); self.assertIn('xy_hole_compensation (global)', str(c.exception))
+        self.assertIn('layer_height (global) of bambulab/Demo.3mf from 0.3 to 0.2 as asked by new_project, but the declared target says', str(c.exception))
+        self.assertIn('xy_hole_compensation (global) of bambulab/Demo.3mf from 0.125 to 0, and the caller did not ask for it', str(c.exception))
+        with self.assertRaises(GuardRefusal) as c: quiet(bambu3mf.new_project, other, self.proj, settings=('layer_height', 'xy_hole_compensation'))
+        self.assertEqual(self.raw(), before)                                                           # both named, both away from the declared target:
+        self.assertIn('as asked by new_project, but the declared target says layer_height = 0.3', str(c.exception))     # a note cannot move the target
+        self.set_project(self.mode, {'main': dict(FULL, layer_height=0.2, xy_hole_compensation=0.0)})    # the owner declares the new values first
         _, out = quiet(bambu3mf.new_project, other, self.proj, settings=('layer_height', 'xy_hole_compensation'))
         self.assertEqual((self.settings()['global']['layer_height'], self.settings()['global']['xy_hole_compensation']), (0.2, 0.0))
         # a change that was asked for is never silent, and one whose key is not in the override list says what the slicer may do with it
@@ -362,6 +424,10 @@ class Enforce(Settings):
         other = os.path.join(self.d, 'bambulab', 'Trial.3mf'); shutil.copyfile(self.proj, other)
         bambu3mf.note_setting('xy_hole_compensation', None, tool='new_project', project=other)     # "any value", for the OTHER file
         with self.assertRaises(GuardRefusal): quiet(bambu3mf.save, self.proj, with_setting(files, xy_hole_compensation='0'), infos)
+        bambu3mf.note_setting('xy_hole_compensation', None, tool='new_project', project=self.proj)
+        with self.assertRaisesRegex(GuardRefusal, 'a note covers only a change to the'):              # its own file, but away from the declared 0.125
+            quiet(bambu3mf.save, self.proj, with_setting(files, xy_hole_compensation='0'), infos)
+        self.set_project(self.mode, {'main': dict(FULL, xy_hole_compensation=0.0)})
         bambu3mf.note_setting('xy_hole_compensation', None, tool='new_project', project=self.proj)
         quiet(bambu3mf.save, self.proj, with_setting(files, xy_hole_compensation='0'), infos)
         self.assertEqual(self.settings()['global']['xy_hole_compensation'], 0.0)
@@ -405,22 +471,35 @@ class Enforce(Settings):
         _, out = quiet(bambu3mf.new_project, self.tpl, self.proj)                                    # a first write has nothing to lose: nothing is said
         self.assertNotIn('gate guard', out); self.assertEqual(self.settings()['global']['xy_hole_compensation'], 0.125)
 
-    def test_a_change_the_caller_names_goes_through(self):
+    def test_a_change_the_caller_names_goes_through_only_to_the_declared_target(self):
         self.adopt()
         infos, files = bambu3mf.load(self.proj); ps = json.loads(files[PS])
         quiet(bambu3mf.set_project, ps, {'xy_hole_compensation': '0.1'})
         files[PS] = json.dumps(ps).encode()
+        with self.assertRaises(GuardRefusal) as c: quiet(bambu3mf.save, self.proj, files, infos)      # named, but the target says 0.125
+        self.assertIn('as asked by set_project, but the declared target says xy_hole_compensation = 0.125 and the project would print with 0.1', str(c.exception))
+        self.assertEqual(self.settings()['global']['xy_hole_compensation'], 0.125)
+        self.set_project(self.mode, {'main': dict(FULL, xy_hole_compensation=0.1)})                   # the owner changes the target first
+        quiet(bambu3mf.set_project, ps, {'xy_hole_compensation': '0.1'})
         _, out = quiet(bambu3mf.save, self.proj, files, infos)
         self.assertNotIn('FIT SETTINGS', out); self.assertEqual(self.settings()['global']['xy_hole_compensation'], 0.1)
         self.assertIn('xy_hole_compensation (global) of bambulab/Demo.3mf changes from 0.125 to 0.1, as asked by set_project', self.log())
         infos, files = bambu3mf.load(self.proj)                                # the note covers that value only: 0 is still not asked for
         with self.assertRaises(GuardRefusal): quiet(bambu3mf.save, self.proj, with_setting(files, xy_hole_compensation='0'), infos)
         bambu3mf.note_setting('xy_hole_compensation', '0', tool='a script of the project')
+        with self.assertRaises(GuardRefusal): quiet(bambu3mf.save, self.proj, with_setting(files, xy_hole_compensation='0'), infos)     # named, off the target
+        self.set_project(self.mode, {'main': dict(FULL, xy_hole_compensation=0.0)})
+        bambu3mf.note_setting('xy_hole_compensation', '0', tool='a script of the project')
         quiet(bambu3mf.save, self.proj, with_setting(files, xy_hole_compensation='0'), infos)
         self.assertIn('as asked by a script of the project', self.log())
+        self.set_project(self.mode, {})                                                                # a project with no declared target: no note covers anything
+        bambu3mf.note_setting('xy_hole_compensation', '0.125', tool='a script of the project')
+        with self.assertRaisesRegex(GuardRefusal, 'the project has no declared target'): quiet(bambu3mf.save, self.proj, with_setting(files, xy_hole_compensation='0.125'), infos)
 
     def test_per_object_settings_through_the_tools_and_lost_by_hand(self):
         self.adopt()
+        with self.assertRaisesRegex(GuardRefusal, 'says wall_generator = classic'): quiet(bambu3mf.set_settings, self.proj, 'bracket', [('wall_generator', 'arachne')])
+        self.set_project(self.mode, {'main': dict(FULL, objects={'bracket': {'wall_generator': 'arachne'}})})     # declared for that object: then it goes in
         hit, _ = quiet(bambu3mf.set_settings, self.proj, 'bracket', [('wall_generator', 'arachne')])
         self.assertEqual(hit, ['bracket']); self.assertEqual(self.settings()['objects'][0]['overrides'], {'wall_generator': 'arachne'})
         infos, files = bambu3mf.load(self.proj)
@@ -430,25 +509,33 @@ class Enforce(Settings):
         self.assertIn('wall_generator (object bracket) of bambulab/Demo.3mf from arachne to not set', str(c.exception))
         other = dict(files, **{MS: files[MS].decode().replace('value="arachne"', 'value="classic"').encode()})      # named for arachne, written classic
         with self.assertRaises(GuardRefusal): quiet(bambu3mf.save, self.proj, other, infos)
+        with self.assertRaisesRegex(GuardRefusal, 'for this object'): quiet(bambu3mf.set_settings, self.proj, 'bracket', [('wall_generator', 'classic')])
+        self.set_project(self.mode, {'main': FULL})
         quiet(bambu3mf.set_settings, self.proj, 'bracket', [('wall_generator', 'classic')])
         self.assertEqual(self.settings()['objects'][0]['overrides'], {'wall_generator': 'classic'})
 
     def test_a_rebuild_from_the_plate_table_names_its_own_settings(self):
         self.adopt()                                                            # the meshes are in the file: only the settings are at stake
         plates = [('first plate', [('bracket', 'bracket.stl', False, {'xy_hole_compensation': '0.2'})]), PLATES[1]]
-        _, out = quiet(bambu3mf.build, self.proj, self.stls, plates)            # the table sets an override: asked
+        self.set_project(self.mode, {'main': dict(FULL, objects={'bracket': {'xy_hole_compensation': 0.2}})})
+        _, out = quiet(bambu3mf.build, self.proj, self.stls, plates)            # the table sets an override the target declares: asked
         self.assertNotIn('FIT SETTINGS', out); self.assertEqual(self.settings()['objects'][0]['overrides'], {'xy_hole_compensation': 0.2})
         with self.assertRaises(GuardRefusal) as c: quiet(bambu3mf.build, self.proj, self.stls, PLATES)       # the table drops it again: nobody named that
         self.assertIn('xy_hole_compensation (object bracket)', str(c.exception))
 
     def test_a_template_over_a_project_with_settings_made_by_hand_is_refused_before_it_wipes_them(self):
-        self.adopt()
+        self.adopt()                                                            # stamped parts: a rebuild from the template finds them again
+        self.stamp('demo/bracket', SIG1, 'bracket', target=FULL); self.stamp('demo/cover', 'b2' * 20, 'cover', target=FULL)
+        self.set_project(self.mode, {'main': dict(FULL, objects={'cover': {'xy_hole_compensation': 0.2}})})
         quiet(bambu3mf.set_settings, self.proj, 'cover', [('xy_hole_compensation', '0.2')])           # set for one part, in the file only
         before = self.raw()
         with self.assertRaises(GuardRefusal) as c: self.build()                                       # the template first, then every part: the override would be gone
         self.assertEqual(self.raw(), before); self.assertEqual(self.objects(), ['bracket', 'cover'])  # refused at the first of the two writes: nothing is lost
         self.assertIn('xy_hole_compensation (object cover, removed with every other object) of bambulab/Demo.3mf from 0.2 to not set', str(c.exception))
-        bambu3mf.note_setting('xy_hole_compensation', None, 'cover', tool='the build script')         # a builder that means to drop it says so
+        bambu3mf.note_setting('xy_hole_compensation', None, 'cover', tool='the build script')         # a builder that means to drop it says so,
+        with self.assertRaisesRegex(GuardRefusal, 'for this object'): self.build()                    # and while the target still says 0.2 for it, that is not enough
+        self.set_project(self.mode, {'main': FULL})
+        bambu3mf.note_setting('xy_hole_compensation', None, 'cover', tool='the build script')
         self.build(); self.assertEqual(self.settings()['objects'], [])
 
     def test_a_guard_that_cannot_be_loaded_does_not_switch_enforce_off(self):
@@ -493,20 +580,28 @@ class SyncTool(Settings):
     def sync(self, plates, **kw): return quiet(self.sync3mf.sync, self.proj, plates, self.stls, **kw)[0]
 
     def test_a_setting_the_plate_table_adds_goes_in_and_one_made_by_hand_survives_a_rebuild(self):
+        self.set_project(self.mode, {'main': dict(FULL, objects={'bracket': {'wall_generator': 'arachne'}})})
         self.assertFalse(self.sync(PLATES).get('changed'))                      # the first run records what was built
         with_override = [('first plate', [('bracket', 'bracket.stl', False, {'wall_generator': 'arachne'})]), PLATES[1]]
         rep = self.sync(with_override)
         self.assertEqual((rep.get('refused'), rep['applied']), (None, ['bracket: wall_generator None -> arachne']))
         self.assertEqual({o['name']: o['overrides'] for o in self.settings()['objects']}, {'bracket': {'wall_generator': 'arachne'}})
         self.assertIn('wall_generator (object bracket) of bambulab/Demo.3mf changes from not set to arachne, as asked by sync', self.log())
+        self.set_project(self.mode, {'main': dict(FULL, objects={'bracket': {'wall_generator': 'arachne'}, 'cover': {'xy_hole_compensation': 0.2}})})
+        with self.assertRaisesRegex(GuardRefusal, 'would not print with its declared target'): self.sync(with_override, rebuild=True)   # declared, not in the file yet
         quiet(bambu3mf.set_settings, self.proj, 'cover', [('xy_hole_compensation', '0.2')])           # the owner, by hand
         rep = self.sync(with_override, rebuild=True)
         self.assertEqual(rep.get('refused'), None); self.assertTrue(rep['changed'])
         self.assertEqual({o['name']: o['overrides'] for o in self.settings()['objects']}, {'bracket': {'wall_generator': 'arachne'}, 'cover': {'xy_hole_compensation': 0.2}})
-        self.assertNotIn('REFUSED', self.log())
+        self.assertEqual(self.log().count('REFUSED'), 1)                        # only the rebuild before the owner set it
 
     def test_a_global_value_from_the_config_is_named_and_another_one_is_not(self):
         self.sync(PLATES, project={'layer_height': '0.3'})
+        with self.assertRaisesRegex(GuardRefusal, 'declared target says layer_height = 0.3'): self.sync(PLATES, project={'layer_height': '0.2'})     # named, off the target
+        self.assertEqual(self.settings()['global']['layer_height'], 0.3)
+        self.set_project(self.mode, {'main': dict(FULL, layer_height=0.2)})
+        with self.assertRaisesRegex(GuardRefusal, 'stale stamp'): self.sync(PLATES, project={'layer_height': '0.2'})   # the stamps were made for 0.3: they carry nothing now
+        self.stamp('demo/bracket', G.SIG1, 'bracket', target=dict(FULL, layer_height=0.2)); self.stamp('demo/cover', G.SIG2, 'cover', target=dict(FULL, layer_height=0.2))
         rep = self.sync(PLATES, project={'layer_height': '0.2'})
         self.assertEqual(rep.get('refused'), None); self.assertEqual(self.settings()['global']['layer_height'], 0.2)
         self.assertIn('layer_height (global) of bambulab/Demo.3mf changes from 0.3 to 0.2, as asked by set_project', self.log())

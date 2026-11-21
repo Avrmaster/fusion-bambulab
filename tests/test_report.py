@@ -4,6 +4,7 @@ as one group, the baseline of inherited parts.
 
 No Fusion (tests/fake_fusion.py) and the small demo registry, so nothing here depends on the shipped rules."""
 import json, os, sys, time, unittest
+for _k in ('CLAUDECODE', 'CLAUDE_CODE_ENTRYPOINT', 'CLAUDE_CODE_SESSION_ID'): os.environ.pop(_k, None)      # gate.py owner from an agent session needs the hook's ticket: a test is no agent session
 from unittest import mock
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, 'tools', 'gate'))

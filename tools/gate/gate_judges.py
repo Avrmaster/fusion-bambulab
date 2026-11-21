@@ -1016,7 +1016,7 @@ def _declared(target, key):
     """The value the declared target gives a fit setting: under its own key, the nozzle diameter under "nozzle"."""
     if not isinstance(target, dict):
         return None
-    return target.get({'nozzle_diameter': 'nozzle'}.get(key, key))
+    return target.get({'nozzle_diameter': 'nozzle', 'filament': 'material'}.get(key, key))
 
 
 def _same_setting(a, b):
@@ -3948,6 +3948,80 @@ def project_settings_match(facts, params, ctx):
                                    'the declared target says %s = %s for the object %s, but in %s the object has no override: it prints with the global %s'
                                    % (k, _val(w), name, facts.get('file'), _val(g)), measure=g if _num(g) else None, limit=w if _num(w) else None,
                                    context={'key': k, 'scope': 'object %s' % name, 'file': g, 'declared': w, 'object': 'no override'}))
+    return out + _print_rows(facts, want, ctx, part)
+
+
+PRINT_SETTINGS = ('enable_support', 'support_type', 'support_remove_small_overhang', 'wall_sequence')
+
+
+def _as_declared(w):
+    """A declared print value as the facts hold values: true/false as 1/0, a number in a text as the number."""
+    if isinstance(w, bool):
+        return 1.0 if w else 0.0
+    if isinstance(w, str):
+        try:
+            return float(w.strip())
+        except ValueError:
+            return w
+    return w
+
+
+def _print_rows(facts, want, ctx, part):
+    """The "print" block of a declared target (supports, wall order) against the value every object prints with: its own
+    override, else the global value. {"print": {"enable_support": 1, ...}} for the project, and under "objects" for an
+    object that is meant to differ ({"objects": {"<name>": {"print": {"enable_support": 0}}}}).
+    A target with no "print" block, or one that does not say one of PRINT_SETTINGS: NOT_RUN (whether the overhangs of
+    the project print with supports is then compared with nothing). An object that prints with another value: FAIL on
+    that object; objects that print with a global value that differs: one FAIL on the file. A value the file does not
+    hold, print settings that were not read: NOT_RUN."""
+    block = want.get('print') if isinstance(want.get('print'), dict) else None
+    said = want.get('objects') if isinstance(want.get('objects'), dict) else {}
+    own = {n: o['print'] for n, o in said.items() if isinstance(o, dict) and isinstance(o.get('print'), dict)}
+    if block is None and not own:
+        return [_not_run(ctx, 'the declared target of project %s holds no "print" block (%s): whether its overhangs print with supports, and its wall order, are '
+                              'compared with nothing. The owner declares them in gate/project.json' % (facts.get('project'), ', '.join(PRINT_SETTINGS)), part=part)]
+    ps = facts.get('print_settings')
+    if not isinstance(ps, dict):
+        return [_not_run(ctx, 'the print settings of %s were not read' % facts.get('file'), part=part)]
+    out = []
+    block = block or {}
+    missing = [k for k in PRINT_SETTINGS if block.get(k) is None]
+    if missing:
+        out.append(_not_run(ctx, 'the "print" block of the declared target of project %s does not say %s' % (facts.get('project'), ', '.join(missing)), part=part))
+    glob = ps.get('global') if isinstance(ps.get('global'), dict) else {}
+    overrides = {o.get('name'): o for o in _list(ps.get('objects')) if isinstance(o, dict) and isinstance(o.get('name'), str)}
+    names = [n for n in ps.get('object_names') if isinstance(n, str)] if isinstance(ps.get('object_names'), list) else None
+    own = {n: o for n, o in own.items() if isinstance(n, str)}
+    if names is None:
+        out.append(_not_run(ctx, 'the per-object settings of %s were not read: the print settings were compared for the global values only' % facts.get('file'), part=part))
+        names = []
+    keys = list(dict.fromkeys([k for k in block if block.get(k) is not None] + [k for o in own.values() for k in o if o.get(k) is not None]))
+    for k in keys:
+        on_global, g = [], glob.get(k)
+        for name in names:
+            w = _as_declared((own.get(name) or {}).get(k, block.get(k)))
+            if w is None:
+                continue
+            o = overrides.get(name) or {}
+            got = (o.get('overrides') or {}).get(k) if isinstance(o.get('overrides'), dict) else None
+            if got is None:
+                if g is not None and not _same_setting(g, w):
+                    on_global.append(name)
+                continue
+            if not _same_setting(got, w):
+                out.append(finding(ctx['rule'], o.get('part') or '%s:%s' % (facts.get('project') or '?', name), 'FAIL',
+                                   'object %s of %s prints with %s = %s, the declared target says %s' % (name, facts.get('file'), k, _val(got), _val(w)),
+                                   context={'key': k, 'scope': 'object %s' % name, 'file': got, 'declared': w, 'block': 'print'}))
+        w = _as_declared(block.get(k))
+        if g is None and (on_global or not names) and w is not None:
+            out.append(_not_run(ctx, '%s holds no global value of %s' % (facts.get('file'), k), part=part))
+        elif on_global:
+            out.append(finding(ctx['rule'], part, 'FAIL', '%s has the global %s = %s, the declared target says %s: %d object(s) print with it (%s)'
+                               % (facts.get('file'), k, _val(g), _val(w), len(on_global), ', '.join(on_global[:6]) + (' ...' if len(on_global) > 6 else '')),
+                               context={'key': k, 'scope': 'global', 'file': g, 'declared': w, 'block': 'print'}))
+        elif not names and w is not None and not _same_setting(g, w):
+            out.append(finding(ctx['rule'], part, 'FAIL', '%s has the global %s = %s, the declared target says %s' % (facts.get('file'), k, _val(g), _val(w)),
+                               context={'key': k, 'scope': 'global', 'file': g, 'declared': w, 'block': 'print'}))
     return out
 
 
@@ -3985,6 +4059,12 @@ def project_settings_changed_by_write(facts, params, ctx):
                     'loads that one (bambu3mf.set_project lists the key)') if r.get('unlisted') is True else ''
         if isinstance(r.get('note'), str) and r['note'].strip():
             out.append(finding(ctx['rule'], part, 'FAIL', 'this write of %s %s' % (facts.get('file'), r['note'].strip()), context=dict(context, note='override list')))
+        elif isinstance(r.get('off_target'), str) and r.get('by'):
+            out.append(finding(ctx['rule'], part, 'FAIL', 'this write changes %s (%s) of %s from %s to %s as asked by %s, but %s: a note covers only a change to the '
+                                                          'declared target. The owner changes the declared target first (gate/project.json, gate.py owner bundle)%s'
+                               % (r.get('key'), r.get('scope'), facts.get('file'), _val(r.get('before')), _val(r.get('after')), r.get('by'), r['off_target'], unlisted),
+                               measure=r.get('after') if _num(r.get('after')) else None, limit=r.get('before') if _num(r.get('before')) else None,
+                               context=dict(context, off_target=True)))
         elif r.get('asked') is True:
             out.append(finding(ctx['rule'], part, 'INFO', '%s (%s) of %s changes from %s to %s, as asked by %s%s' % (r.get('key'), r.get('scope'), facts.get('file'), _val(r.get('before')), _val(r.get('after')), r.get('by') or 'the caller', unlisted),
                                context=context))

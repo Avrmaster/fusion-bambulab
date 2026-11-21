@@ -1,6 +1,8 @@
 """The print ledger: the write journal, the folded view, the answers and the mesh tests behind them.
 Synthetic STLs and a synthetic journal built here; neither Fusion nor Bambu Studio, no network."""
 import contextlib, datetime, io, json, os, shutil, struct, sys, tempfile, threading, unittest, zipfile
+for _k in ('CLAUDECODE', 'CLAUDE_CODE_ENTRYPOINT', 'CLAUDE_CODE_SESSION_ID'): os.environ.pop(_k, None)      # gate.py owner from an agent session needs the hook's ticket: a test is no agent session
+os.environ.pop('CLAUDE_PROJECT_DIR', None)      # bambu3mf finds a gated root for a file outside it from this: never the session's project
 from unittest import mock
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, 'tools', 'gate'))

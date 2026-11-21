@@ -2,6 +2,7 @@
 an honest coverage) and project_consistency (a .3mf against its STL folder, the journal and the stamps).
 Every mesh and every .3mf here is made by this file. No Fusion, no Bambu Studio, standard library only."""
 import ast, contextlib, io, json, math, os, random, shutil, struct, sys, tempfile, unittest, zipfile
+os.environ.pop('CLAUDE_PROJECT_DIR', None)      # bambu3mf finds a gated root for a file outside it from this: never the session's project
 from unittest import mock
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, 'tools', 'gate'))

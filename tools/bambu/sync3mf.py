@@ -28,8 +28,9 @@ base_name = lambda n: COPY.sub('', n)
 
 
 # ---------------- reading a project ----------------
-def read(proj):
-    infos, files = bambu3mf.load(proj)
+def read(proj, archive=None):
+    """The project as sync works on it, from the file, or from archive = (order, files) about to be written."""
+    infos, files = archive if archive is not None else bambu3mf.load(proj)
     cfg, model = files[MS].decode(), files[MODEL].decode()
     P = {'infos': infos, 'files': files, 'objects': {}, 'plates': []}
     items = {oid: [float(x) for x in t.split()] for oid, t in re.findall(r'<item objectid="(\d+)"[^>]*?transform="([^"]+)"', model)}
@@ -527,15 +528,16 @@ def _rebuild(proj, plate_list, stl_dir, settings, extra, filament, title, bed, p
     if (lost or conflicts) and not accept_loss:
         rep['refused'] = 'a rebuild would lose manual edits (listed); fold them into the configs or pass accept_loss'
         return rep
-    # the rebuild writes twice: first the configs alone, then the manual settings again. Between the two a setting made
-    # by hand is gone from the file: name those to the guard, or it takes the first write for a lost setting
+    # the rebuild is ONE write: the configs are built into an archive (build(write=False)), the manual settings and kept
+    # positions go back into it, and it is saved once. The guard never sees a half-way file without the settings made by
+    # hand (it would take it for a lost setting, and a note cannot cover a value away from the declared target)
     for key, (oid, _) in old_by_key.items():
         if key in D['objects']:
             for k in set(old['objects'][oid]['settings']) | set(D['objects'][key]['settings']): bambu3mf.note_setting(k, None, old['objects'][oid]['name'], 'sync rebuild', proj)
-    bambu3mf.build(proj, stl_dir, plate_list, settings, extra, filament, title, bed, project)
+    files, order = bambu3mf.build(proj, stl_dir, plate_list, settings, extra, filament, title, bed, project, write=False)
     for d in D['objects'].values(): d.pop('_sig', None); d.pop('_angle', None)     # the snapshot describes what was just built
     # put manual settings and kept positions back
-    P = read(proj); M, why2 = match(P, D)
+    P = read(proj, (order, files)); M, why2 = match(P, D)
     if M is None: raise RuntimeError('rebuilt project does not match the configs: ' + why2)
     cfg = P['files'][MS].decode(); n_old, n_new = len(old['plates']), len(P['plates'])
     for key, oid in M.items():

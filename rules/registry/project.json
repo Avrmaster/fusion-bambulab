@@ -166,7 +166,7 @@
     {
       "id": "project.settings_match",
       "title": "The project prints with the settings its fits were measured under",
-      "statement": "The declared target of a .3mf project (gate/project.json) says the slicer settings every fit was measured under: {target.fit_settings}. The global value of each one in the project file, and every per-object override, equals the declared value. A difference is put back in the project, or the owner changes the declared target: then every fit measured under the old value is open again.",
+      "statement": "The declared target of a .3mf project (gate/project.json) says the slicer settings every fit was measured under: {target.fit_settings}. The global value of each one in the project file, and every per-object override, equals the declared value; so does the value every object prints with for each print setting of the target's \"print\" block (enable_support, support_type, support_remove_small_overhang, wall_sequence). A difference is put back in the project, or the owner changes the declared target: then every fit measured under the old value is open again.",
       "why": "The X-Y hole compensation of a project went from 0.125 to 0 during a tool write, and nothing compared it. Every hole of every part printed from that project since was about 0.25 mm smaller than its fit assumed, and a bought magnet did not go in.",
       "params": [
         "target.fit_settings"

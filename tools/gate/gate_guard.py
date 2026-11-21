@@ -20,11 +20,32 @@ Modes (gate/project.json "mode"):
   enforce  raises GuardRefusal when a NEW mesh has no valid stamp; nothing is written then. A guard that cannot judge
            (a broken gate file, an error of its own) also refuses in this mode: what was not checked has not passed.
 
-A mesh is NEW when its pose hash (meshid.geom_hash of the mesh as placed) is neither in the file on disk nor among the
-`write` events of the ledger for this project file, and its source STL's geometry (model form) is not among those events
-either (the same STL placed again on another face or at another angle is still the same part). A mesh of the file on disk
-whose triangles were merged or repaired (weld_3mf.py: the same vertices, another triangle count) is carried too. A
-carried mesh is never judged: saves that only change settings or plates always go through.
+A mesh is CARRIED when a `write` event of the ledger for this project file backs it: an event with its pose hash
+(meshid.geom_hash of the mesh as placed), with the geometry of its source STL (model form: the same STL placed again
+on another face or at another angle is still the same part), or with its vertex set under its own object name (the
+same vertices with merged or repaired triangles: weld_3mf.py, the slicer's repair), AND that event names a stamp that
+still verifies for the declared target and whose geometry is the event's own model (an event without a model, or
+whose model is not the stamp's, backs nothing). The mode the event was written in does not matter: a journal line
+proves nothing by itself, and a stamp that went stale (a rule tightened, a parameter or the target changed) carries
+nothing in either mode. An event of a mesh the guard found in the file on disk ("tool": "outside", or "carried" from
+before 0.3.0) or let through unchecked ("unchecked": true) never backs anything. A carried mesh is not judged again;
+its stamp goes into the ledger with the write.
+
+A mesh that is in the file on disk (its pose, or the same vertices with merged or repaired triangles) and that no such
+event backs:
+  observe  let through: the owner's hand work in the slicer never blocks a tool save. It is UNCHECKED: every save says
+           "N object(s) in <project> have no stamp: <names>", and only when gate/project.json says
+           "mark_unchecked": true the name of every plate that holds one is prefixed with "[unchecked] " in the archive
+           (bambu3mf applies it; the prefix goes again once every mesh of the plate is backed).
+  enforce  judged like a new mesh, and refused: nothing is let through because it was there before. A project switches
+           to enforce once every part it prints is exported through the gate and swapped in.
+Every other mesh is NEW and is judged.
+
+In enforce mode the archive about to be written is also held against the declared target of a registered project
+(the judge of project.settings_match: hole compensation, layer height, nozzle, the "print" block, per object too): a
+save whose file would print with another value than a declared one is refused, whatever the file on disk held. What
+the target does not declare (or the archive does not hold) cannot be compared: one loud line at every save, and
+`gate.py verify` keeps it NOT_RUN.
 
 A .3mf under a gated root that is NOT a registered project of gate/layout.json is never written in silence: the guard
 prints and logs one line that says so. In observe mode that is all (the file is not judged). In enforce mode it is
@@ -32,10 +53,20 @@ judged like a registered project with no declared target: a new mesh without a v
 "one of four projects registered" does not leave three open, and a trial copy of a project behaves as the project does.
 
 The binding journal is the ledger's bambulab/ledger/events.jsonl. Before it judges, the guard writes one `write` event
-with "tool": "carried" for every mesh of the file on disk that the journal does not know yet, in both modes. That is why
-a build script that first saves the empty template over the project and then saves the parts is not locked out: the
-second save finds its meshes in the journal. It is also how a project is adopted: the meshes it holds at the first
-guarded save are carried from then on.
+with "tool": "outside" (stamp null) for every mesh of the file on disk that the journal does not know yet, in both
+modes: what was found there is on record, and is never carried by it. A build script that first saves the empty
+template over the project and then saves the parts finds its stamped meshes (and those written in enforce mode) in the
+journal at the second save; an unstamped mesh is judged there like any new one.
+
+A .3mf OUTSIDE the gated tree (a scratch folder, /tmp, a download folder) is judged too when bambu3mf finds a gated root
+for it: from the source STL of one of its meshes, from the working folder, or from CLAUDE_PROJECT_DIR (bambu3mf._gate_root).
+A copy of a project's STL in a scratch folder still finds its project: by the bytes of the file, against the STL
+folders of the gated roots on the hooks' list ("content"). It is an unregistered project of that root: one loud line in observe mode; in enforce mode every mesh of it needs a
+valid stamp (nothing of such a file is carried, nothing goes into the journal or gate/fit_settings.json).
+
+After every save bambu3mf calls saved(): gate/run/saves.json keeps, per project file, the time, the mode, the size and
+modification time the file had right after the save, and its unchecked objects. The session hooks read it (gate_watch.py):
+a file whose size or time differs was changed outside the tools since.
 
 The stamp of a new mesh is found through its source STL: meshid.geom_hash of that STL (model form) -> gate_stamp. An
 STL that is a quarter-turned copy of the stamped one (a part turned onto its bed face before a swap) is found by
@@ -49,6 +80,10 @@ them (probes.project_consistency.settings_diff). `asked` are the notes of what t
 covers:
   observe  one loud line, printed and logged; the save goes on
   enforce  GuardRefusal; nothing is written
+A note covers a change only when the new value equals the declared target of the project (gate/project.json "targets",
+the object's own value under "objects" first): a noted change away from the target, or of a key the target does not
+declare, or in a project with no declared target, is judged as not asked for. So a script cannot name its way past the
+target; the owner changes the target first.
 A change a note covers is printed and logged in one line and passes. This runs for every .3mf under the gated root,
 registered or not, and needs no declared target. A writer that hands over no archive (an older bambu3mf.py) is said
 so; in enforce mode its save is refused: what was not compared has not passed.
@@ -62,7 +97,7 @@ building it again from a template does not get a changed hole compensation past 
   no file on disk, or one without settings   nothing to lose and nothing to compare: the save goes on in both modes
                                              (`gate.py verify` holds the written file against its declared target)
   a file that cannot be read                 not compared: one loud line in observe mode, refused in enforce mode"""
-import os, re
+import os, re, time
 
 import gate_common
 from gate_common import GateError, BLOCKING, EXIT_PASS, EXIT_BLOCK, EXIT_INFRA
@@ -114,9 +149,15 @@ def _disk_meshes(path):
         return []
 
 
-def _journal(root, project_rel, path):
-    """(pose hashes, model hashes) of the `write` events of this project file in the ledger's journal."""
-    poses, models, same = set(), set(), {}
+NO_CARRY_TOOLS = ('carried', 'outside')      # events of meshes found in the file on disk: on record, never a backing
+UNCHECKED_MARK = '[unchecked] '               # the prefix of a plate that holds an unchecked mesh
+
+
+def _journal(root, project_rel, path, vsets=None):
+    """({pose hash: [events]}, {model hash: [events]}) of the `write` events of this project file in the ledger's
+    journal, oldest first; `vsets` (a dict), when given, gets {(object, vertex-set hash): [events]}. Every event is
+    listed, also those that cannot carry anything (_carries decides)."""
+    poses, models, same = {}, {}, {}
     try:
         events = gate_common.read_jsonl(gate_common.events_path(root))
     except Exception:
@@ -129,22 +170,78 @@ def _journal(root, project_rel, path):
         if p not in same:
             same[p] = p == project_rel or os.path.realpath(p if os.path.isabs(p) else os.path.join(root, p)) == want
         if same[p]:
-            if e.get('pose'):
-                poses.add(e['pose'])
-            if e.get('model'):
-                models.add(e['model'])
+            if isinstance(e.get('pose'), str) and e['pose']:
+                poses.setdefault(e['pose'], []).append(e)
+            if isinstance(e.get('model'), str) and e['model']:
+                models.setdefault(e['model'], []).append(e)
+            if vsets is not None and isinstance(e.get('vset'), str) and e['vset']:
+                vsets.setdefault((e.get('object'), e['vset']), []).append(e)
     return poses, models
 
 
-def known_poses(root, project_rel, path):
-    """Pose hashes that count as carried for this project file: those of the meshes in the file on disk (when it exists
-    and can be read) plus those of every `write` event of bambulab/ledger/events.jsonl for this project. Returns a set."""
-    return {m['pose'] for m in _disk_meshes(path)} | _journal(root, project_rel, path)[0]
+def _stamp_holds(root, name, model, ctx):
+    """Does the stamp "<part id>@<sig12>" exist, belong to the geometry `model` and still verify (gate_stamp.verify:
+    'valid') for the target of this save? No model: it does not hold. Never raises: what cannot be verified does not hold."""
+    if not isinstance(model, str) or not model:
+        return False
+    try:
+        import gate_stamp
+        if 'stamps' not in ctx:
+            ctx['stamps'] = gate_stamp.all_stamps(root)
+        if 'reg' not in ctx:
+            import gate_registry
+            ctx['reg'] = gate_registry.load_default()
+        if 'census' not in ctx:
+            ctx['census'] = gate_common.load_census(root)
+        for s in ctx['stamps']:
+            if gate_stamp.name_of(s) != name or s.get('geom_hash') != model:
+                continue
+            state, _ = gate_stamp.verify(root, ctx['reg'], s, geom_hash=s.get('geom_hash'), census=ctx['census'], target=ctx.get('target'))
+            if state == 'valid':
+                return True
+    except Exception:
+        return False
+    return False
 
 
-def _bind_carried(root, project_rel, disk, journal_poses):
+def _carries(root, e, ctx):
+    """Does this `write` event back a mesh (see the top)? Only when it names a stamp of its own model that still
+    verifies, whatever mode it was written in; never for an event of a mesh found on disk ("tool" in NO_CARRY_TOOLS)
+    or let through unchecked."""
+    if not isinstance(e, dict) or e.get('tool') in NO_CARRY_TOOLS or e.get('unchecked'):
+        return False
+    name = e.get('stamp')
+    if not isinstance(name, str) or not name:
+        return False
+    key = (name, e.get('model'))
+    held = ctx.setdefault('held', {})
+    if key not in held:
+        held[key] = _stamp_holds(root, name, e.get('model'), ctx)
+    return held[key]
+
+
+def _backing(root, events, ctx):
+    """The first event of `events` that backs a mesh: (True, its stamp or None), else (False, None)."""
+    for e in events:
+        if _carries(root, e, ctx):
+            return True, e.get('stamp') if isinstance(e.get('stamp'), str) else None
+    return False, None
+
+
+def known_poses(root, project_rel, path, target=None):
+    """Pose hashes that count as carried for this project file: those of the `write` events of
+    bambulab/ledger/events.jsonl for this project that back a mesh (_carries: a stamp that still verifies for
+    `target`), plus those of the meshes in the file on disk (when it exists and can be read: in observe mode they pass
+    a save, unchecked unless such an event backs them too; in enforce mode they are judged like new ones). Returns a set."""
+    poses, _ = _journal(root, project_rel, path)
+    ctx = {'target': target}
+    return {m['pose'] for m in _disk_meshes(path)} | {p for p, events in poses.items() if _backing(root, events, ctx)[0]}
+
+
+def _bind_carried(root, project_rel, disk, journal_poses, mode=None):
     """Write the meshes of the file on disk that the journal does not know yet into it: one `write` event each, in the
-    format of the ledger, with "tool": "carried". Returns how many lines were written. Never raises."""
+    format of the ledger, with "tool": "outside" and stamp null: on record, never a backing. Returns how many lines
+    were written. Never raises."""
     n, seen = 0, set(journal_poses)
     try:
         for m in disk:
@@ -154,10 +251,10 @@ def _bind_carried(root, project_rel, disk, journal_poses):
             gate_common.append_jsonl(gate_common.events_path(root), {
                 'v': 1, 't': gate_common.now(), 'by': 'tool', 'kind': 'write', 'project': project_rel, 'object': m['object'],
                 'plate': m['plate'], 'plate_index': m['plate_index'], 'pose': m['pose'], 'model': None, 'stl': None,
-                'stl_sha256': None, 'stamp': None, 'cad': None, 'tool': 'carried'})
+                'stl_sha256': None, 'stamp': None, 'cad': None, 'tool': 'outside', 'mode': mode})
             n += 1
     except Exception as e:
-        log(root, 'could not write carried meshes of %s into the journal: %s: %s' % (project_rel, type(e).__name__, e))
+        log(root, 'could not write the meshes found in %s into the journal: %s: %s' % (project_rel, type(e).__name__, e))
     return n
 
 
@@ -260,6 +357,16 @@ def _remember(root, project_rel, settings):
         log(root, 'could not remember the fit settings of %s: %s: %s' % (project_rel, type(e).__name__, e))
 
 
+def _declared_target(root, project_key):
+    """The declared target of a project (gate/project.json "targets"), or {} when it has none: a note then covers no
+    change (project_consistency.settings_diff with `target`)."""
+    try:
+        t = (gate_common.load_project(root).get('targets') or {}).get(project_key) if project_key else None
+    except Exception:
+        t = None
+    return t if isinstance(t, dict) else {}
+
+
 def check_settings(root, path, files, asked=None, project_key=None):
     """Compare the fit settings of the archive about to be written with the file on disk and let the judge of
     project.settings_changed_by_write decide.
@@ -275,7 +382,7 @@ def check_settings(root, path, files, asked=None, project_key=None):
     remembers of this file (remembered()). Nothing remembered: a missing file or one without settings has nothing to
     lose ("compared" False, "said" set, no finding); a file that cannot be read is a NOT_RUN finding.
     files None (the writer handed over no archive) while there is something to compare with: "compared" False with a
-    NOT_RUN finding."""
+    NOT_RUN finding. A note covers a change only when the new value is the declared target's (_declared_target)."""
     from probes import project_consistency
     import gate_judges
     out = {'compared': False, 'why': None, 'changed': [], 'refused': [], 'asked': [], 'with': None, 'disk': None, 'after': None, 'outside': []}
@@ -329,7 +436,7 @@ def check_settings(root, path, files, asked=None, project_key=None):
         if isinstance(after, dict) and out['with'] == 'memory':
             after = dict(after, keys=keys)
             before = dict(before, keys=keys)
-        facts['settings_write'] = project_consistency.settings_diff(before, after, asked)
+        facts['settings_write'] = project_consistency.settings_diff(before, after, asked, target=_declared_target(root, project_key))
     found = gate_judges.JUDGES['project_settings_changed_by_write'](facts, {'target.fit_settings': ' '.join(fit_setting_keys(root))}, ctx)
     w = facts['settings_write']
     out.update(compared=bool(w.get('compared')), why=w.get('why') or out['why'], changed=list(w.get('changed') or []))
@@ -382,7 +489,43 @@ def _guard_settings(root, path, files, asked, mode, key, prel):
                                'before the save; then the owner changes the declared target in gate/project.json.' % line, got['refused'])
         line += ' - written anyway (observe mode; enforce would refuse this save)'
         _say(root, line)
+    if mode == 'enforce' and key and files is not None:     # enforce: the file about to be written prints with the declared values
+        found = match_target(root, files, key, prel)
+        off = [f for f in found if f.get('verdict') in ('FAIL', 'BLOCKED')]
+        unsaid = [f for f in found if f.get('verdict') not in ('FAIL', 'BLOCKED')]
+        if unsaid:                                          # what the target does not say, or the reader could not read: loud, never a pass
+            _say(root, 'gate guard [enforce] %s: NOT compared with the declared target: %s. `gate.py verify` holds it as NOT_RUN until the owner '
+                       'declares it' % (prel, '; '.join(f.get('text') or '' for f in unsaid[:4])))
+        if off:
+            line = 'gate guard [enforce] %s: the file would not print with its declared target: %s' % (prel, '; '.join(f.get('text') or '' for f in off[:6]))
+            log(root, '%s REFUSED' % line)
+            _remember(root, prel, got.get('disk'))
+            raise GuardRefusal('%s\nNothing was written. Set the values of the declared target (bambu3mf.set_project / set_settings), or the owner '
+                               'changes the target (gate.py owner bundle with a "target" entry).' % line, off)
     return got
+
+
+def match_target(root, files, key, prel):
+    """The FAIL / BLOCKED / NOT_RUN findings of project.settings_match for the archive `files` against the declared
+    target of the project `key` (no declared target: one NOT_RUN). Raises nothing the caller must catch: a reader error
+    comes back as a NOT_RUN finding. The save refuses FAIL and BLOCKED (the file contradicts a declared value); a
+    NOT_RUN (the target does not say a key, the archive does not hold it) is said in one loud line."""
+    from probes import project_consistency
+    import gate_judges
+    if not any(isinstance(v, bytes) and b'<object' in v for k, v in files.items() if str(k).startswith('3D/')):
+        return []                                        # an empty project (a template laid first): nothing prints from it
+    target = _declared_target(root, key)
+    keys = fit_setting_keys(root)
+    rule = 'project.settings_match'
+    ctx = {'part': '%s:' % key, 'rule': rule, 'tables': {}, 'target': None, 'census': None, 'prev': None, 'intent': None}
+    try:
+        facts = {'project': key, 'file': prel, 'exists': True, 'target_declared': target or None,
+                 'fit_settings': project_consistency.read_fit_settings(files, keys),
+                 'print_settings': project_consistency.read_fit_settings(files, project_consistency.print_keys(target or None))}
+        found = gate_judges.JUDGES['project_settings_match'](facts, {'target.fit_settings': ' '.join(keys)}, ctx)
+    except Exception as e:
+        return [{'rule': rule, 'verdict': 'NOT_RUN', 'text': 'the settings of the archive could not be compared with the declared target: %s: %s' % (type(e).__name__, e)}]
+    return [dict(f, rule=rule) for f in found if f.get('verdict') in BLOCKING]
 
 
 def _names(names, limit=6):
@@ -390,34 +533,51 @@ def _names(names, limit=6):
     return ', '.join(names[:limit]) + (', ... (%d more)' % (len(names) - limit) if len(names) > limit else '')
 
 
-def _check(root, path, meshes, files=None, asked=None):
+def _outside_tree(root, path):
+    """Does `path` lie outside the gated tree `root` (a scratch folder, /tmp, a download folder)?"""
+    return gate_common.rel(root, path).startswith('..')
+
+
+VIA = {'stl': 'the source STL of one of its meshes lies in it', 'cwd': 'the working folder lies in it',
+       'env': 'CLAUDE_PROJECT_DIR names it', 'content': 'a source STL of one of its meshes is a copy of an STL of it', 'tree': None, None: None}
+
+
+def _check(root, path, meshes, files=None, asked=None, via=None):
     project = gate_common.load_project(root); mode = project['mode']
     layout = gate_common.load_layout(root)
     entry = registered_project(root, path, layout)
+    outside = _outside_tree(root, path)
     res = {'gated': True, 'mode': mode, 'project': entry.get('key') if entry else None, 'meshes': len(meshes) if meshes is not None else 0,
-           'new': [], 'unstamped': [], 'stale': [], 'rows': [], 'stamps': {}, 'line': ''}
-    prel = gate_common.rel(root, path)
+           'new': [], 'unstamped': [], 'stale': [], 'rows': [], 'stamps': {}, 'line': '', 'unchecked': [], 'mark': None,
+           'outside_tree': outside, 'root': root}
+    prel = path if outside else gate_common.rel(root, path)
     got = _guard_settings(root, path, files, asked, mode, entry.get('key') if entry else None, prel)
     res['settings'] = {k: v for k, v in got.items() if k not in ('disk', 'after')}
+    remember = (lambda facts: None) if outside else (lambda facts: _remember(root, prel, facts))
     try:
-        res = _check_meshes(root, path, meshes, project, layout, entry, res, prel)
+        res = _check_meshes(root, path, meshes, project, layout, entry, res, prel, via)
     except GuardRefusal:                                    # refused: the file stays as it is on disk
-        _remember(root, prel, got.get('disk'))
+        remember(got.get('disk'))
         raise
     except Exception:                                       # the judging broke: enforce refuses, observe writes (check())
-        _remember(root, prel, got.get('disk') if mode == 'enforce' else (got.get('after') or got.get('disk')))
+        remember(got.get('disk') if mode == 'enforce' else (got.get('after') or got.get('disk')))
         raise
-    _remember(root, prel, got.get('after') or got.get('disk'))      # the save goes on: this is what the file holds next
+    remember(got.get('after') or got.get('disk'))           # the save goes on: this is what the file holds next
     return res
 
 
-def _check_meshes(root, path, meshes, project, layout, entry, res, prel):
+def _check_meshes(root, path, meshes, project, layout, entry, res, prel, via=None):
     """The mesh part of one save (see the top): fills and returns `res`, raises GuardRefusal in enforce mode."""
     mode = project['mode']
+    outside = res.get('outside_tree')
     note = ''
     if entry is None:
-        note = ('gate guard [%s] %s is not a registered project of gate/layout.json ("projects"): register it, with its declared '
-                'target in gate/project.json' % (mode, prel))
+        if outside:
+            note = ('gate guard [%s] %s lies outside the gated project %s (%s) and is not a registered project of it: '
+                    'a print from it is judged like one of that project' % (mode, prel, root, VIA.get(via) or 'it was handed over'))
+        else:
+            note = ('gate guard [%s] %s is not a registered project of gate/layout.json ("projects"): register it, with its declared '
+                    'target in gate/project.json' % (mode, prel))
         if mode != 'enforce':
             res['line'] = note + ' - NOT guarded, written as it is (observe mode; enforce judges such a file like a registered one)'
             log(root, res['line'])
@@ -425,32 +585,46 @@ def _check_meshes(root, path, meshes, project, layout, entry, res, prel):
             return res
         entry = {}                                          # enforce: judged like a registered project, no declared target
         log(root, note)
-        print(note + ' - judged like a registered project, no declared target')
+        print(note + ' - judged like a registered project, no declared target' + (', nothing of it carried' if outside else ''))
     if meshes is None:
         raise TypeError('the meshes of %s were not handed over (they could not be read from the archive)' % prel)
     meshid = gate_common.sibling('meshid')
-    disk = _disk_meshes(path)
-    poses, models = _journal(root, prel, path)
-    bound = _bind_carried(root, prel, disk, poses)
-    known = poses | {m['pose'] for m in disk}
+    disk = [] if outside else _disk_meshes(path)            # a file outside the tree carries nothing of its own
+    vsets = {}
+    poses, models = ({}, {}) if outside else _journal(root, prel, path, vsets)
+    bound = 0 if outside else _bind_carried(root, prel, disk, set(poses), mode)
+    on_disk = {m['pose'] for m in disk}
     welded = {(m['object'], m['vset']) for m in disk}
     ctx = {'target': (project.get('targets') or {}).get(entry.get('key'))}
+    plates = set()
     for m in meshes:
         name = m.get('object')
         pose, vset = meshid.both_hashes(m['vertices'], len(m['triangles']))
-        if pose in known or (name, vset) in welded:         # the second: the same vertices with other triangles (a weld, a repair)
-            continue
         stl, model = m.get('stl'), m.get('model')
         try:
             if stl and not model and os.path.isfile(stl):
                 model = meshid.stl_ids(stl)['geom_hash']
-            if model and model in models:
-                continue                                    # this STL geometry was placed in this project before: carried
+        except Exception:
+            model = None
+        backed, stamp = _backing(root, poses.get(pose, []) + (models.get(model, []) if model else []) + vsets.get((name, vset), []), ctx)
+        if backed:                                          # a stamp of the event's own model that still verifies
+            if stamp:
+                res['stamps'][name] = stamp
+            continue
+        from_disk = pose in on_disk or (name, vset) in welded   # the second: the same vertices with other triangles (a weld, a repair)
+        if from_disk and mode != 'enforce':
+            res['unchecked'].append(name)                   # the owner's hand work, or older than the gate: passes in observe, said every time
+            plates.add(m.get('plate_index'))
+            continue
+        try:
             state, why, part, stamp = _judge_mesh(root, m, model, ctx)
         except GuardRefusal:
             raise
         except Exception as e:                              # what could not be judged has not passed
             state, why, part, stamp = 'none', 'could not be judged: %s: %s' % (type(e).__name__, e), None, None
+        if from_disk and state != 'valid':
+            why = ('it lies in the file on disk and nothing on record backs it (no stamp of its geometry that still verifies): enforce lets nothing '
+                   'through because it was there before. Export the part through the gate (gate.py export PART) and swap it in; %s' % why)
         res['new'].append(name)
         res['rows'].append({'object': name, 'state': state, 'why': why, 'part': part, 'stl': _shown(root, stl)})
         if state == 'valid':
@@ -464,7 +638,7 @@ def _check_meshes(root, path, meshes, project, layout, entry, res, prel):
     if res['stale']:
         line += ', %d with a stale stamp (%s)' % (len(res['stale']), _names(res['stale']))
     if bound:
-        line += ', %d already in the file now carried' % bound
+        line += ', %d found in the file on disk and put on record' % bound
     res['line'] = line
     for r in bad:
         log(root, '%s %s: %s %s: %s' % (mode, prel, r['object'], r['state'], r['why']))
@@ -478,7 +652,51 @@ def _check_meshes(root, path, meshes, project, layout, entry, res, prel):
         res['line'] = line = line + ' - written anyway (observe mode; enforce would refuse this save)'
         log(root, line)
         print(line)
+        for r in bad:                                       # written unchecked: its plate is marked like that of a mesh from disk
+            plates.update(m.get('plate_index') for m in meshes if m.get('object') == r['object'])
+    unchecked = list(dict.fromkeys(res['unchecked'] + [r['object'] for r in bad]))
+    res['unchecked'] = unchecked
+    if unchecked:
+        _say(root, unchecked_line(prel, unchecked))
+    if mode == 'enforce' or project.get('mark_unchecked') is True:
+        res['mark'] = sorted(p for p in plates if isinstance(p, int))
     return res
+
+
+def unchecked_line(prel, names):
+    """The one line said at every save, and by the session hooks, while objects of a project have no stamp."""
+    return ('gate: %d object(s) in %s have no stamp (in the file before this save, or written unchecked): %s. Export them through the gate '
+            '(gate.py export PART), then build or swap them in again' % (len(names), prel, _names(names, 12)))
+
+
+def saves_path(root):
+    """gate/run/saves.json: what the guard knows of each project file after its last guarded save (git-ignored)."""
+    return gate_common.gate_path(root, 'run', 'saves.json')
+
+
+def saved(root, path, result=None):
+    """Called by bambu3mf.save() right after the file was replaced: keep its size, modification time, the mode and its
+    unchecked objects in gate/run/saves.json, so that the session hooks can say when the file changed outside the tools
+    and which objects have no stamp. A file outside the gated tree is not kept. Never raises."""
+    try:
+        root, path = os.path.realpath(root), os.path.realpath(path)
+        if _outside_tree(root, path):
+            return
+        st = os.stat(path)
+        p = saves_path(root)
+        try:
+            data = gate_common.read_json(p, {})
+        except GateError:
+            data = {}
+        if not isinstance(data, dict) or not isinstance(data.get('projects'), dict):
+            data = {'_about': 'Written by the gate guard after every guarded save: size and modification time of the file right after it, the mode, '
+                              'and the objects without a stamp. A file that differs was changed outside the tools since.', 'projects': {}}
+        r = result if isinstance(result, dict) else {}
+        data['projects'][gate_common.rel(root, path)] = {'time': gate_common.now(), 'ts': time.time(), 'mode': r.get('mode'), 'size': st.st_size,
+                                                          'mtime_ns': st.st_mtime_ns, 'unchecked': list(r.get('unchecked') or [])[:400]}
+        gate_common.write_json(p, data)
+    except Exception as e:
+        log(root, 'could not keep the state of %s after the save: %s: %s' % (path, type(e).__name__, e))
 
 
 def _enforce(root):
@@ -494,22 +712,27 @@ def _enforce(root):
             return False
 
 
-def check(path, meshes, root=None, files=None, asked=None):
+def check(path, meshes, root=None, files=None, asked=None, via=None):
     """Judge the meshes and the fit settings of a save. Called by bambu3mf.save() before the file is replaced.
 
     path    the .3mf about to be written        meshes  see the top
     root    the project root; None = found from the path. No gate/project.json above the path: returns {"gated": False}.
     files   the archive about to be written, {member name: bytes}: its fit settings are compared with the file on disk
     asked   the settings the caller means to change: [{"key", "value" (None = any), "scope": "global" | an object name |
-            "*", "tool"}] (bambu3mf.note_setting). A changed fit setting no note covers is refused in enforce mode and
-            is one loud line in observe mode. The result holds the comparison under "settings" (check_settings).
+            "*", "tool"}] (bambu3mf.note_setting). A changed fit setting no note covers, or a noted one whose new value
+            is not the declared target's, is refused in enforce mode and is one loud line in observe mode. The result
+            holds the comparison under "settings" (check_settings).
+    via     how the caller found `root` for a file outside it: "stl" | "cwd" | "env" (bambu3mf._gate_root); said in the line
     The registry is loaded here (gate_registry.load_default()) only when a new mesh has to be judged.
 
     Returns {"gated": bool, "mode": "observe" | "enforce", "project": key or None (None = not a registered project: not
     guarded), "meshes": n, "new": [object names], "unstamped": [object names], "stale": [object names],
     "rows": [{"object", "state": "valid" | "stale" | "none", "why", "part", "stl"}] for the new meshes ("project" None
     with rows: an unregistered file judged in enforce mode),
-    "stamps": {object name: "<part id>@<sig12>" or None} for every mesh that has a valid stamp, "line": summary text}.
+    "stamps": {object name: "<part id>@<sig12>" or None} for every mesh that has a valid stamp (carried ones too),
+    "line": summary text, "unchecked": [object names let through without a stamp: from the file on disk, or written
+    in observe mode], "mark": [plate indices whose name gets the "[unchecked] " prefix] or None (leave the names alone),
+    "outside_tree": bool, "root": the gated root}.
     observe: logs, prints the line when anything is unstamped or stale, never raises (an internal error returns
     {"gated": True, "error": text, ...} after logging it). enforce: raises GuardRefusal when "unstamped" or "stale" is
     not empty, and when the guard itself fails."""
@@ -521,7 +744,7 @@ def check(path, meshes, root=None, files=None, asked=None):
         return {'gated': False}
     try:
         root, path = os.path.realpath(root), os.path.realpath(path)
-        return _check(root, path, meshes, files, asked)
+        return _check(root, path, meshes, files, asked, via)
     except GuardRefusal:
         raise
     except Exception as e:

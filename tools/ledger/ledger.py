@@ -23,7 +23,10 @@ Files, under <root>/bambulab/ledger/ (the ledger is on when this folder exists):
         write   one per object each time a tool writes meshes into a .3mf (record_writes): "project" (path relative to
                 the root), "object", "plate", "plate_index", "pose" (geom_hash as placed), "model" (geom_hash of the
                 source STL or null), "stl" (relative path or null), "stl_sha256", "stamp" ("<part id>@<sig12>" or null),
-                "cad" (the "Fusion <doc> v<N>" of the STL header or null), "tool"
+                "cad" (the "Fusion <doc> v<N>" of the STL header or null), "tool", and in a gated project "mode"
+                (the gate's mode at that save) and "unchecked": true for a mesh the guard let through unchecked.
+                "tool": "outside" (or "carried", before 0.3.0) marks a mesh the guard found in the file on disk and
+                no tool had written: such an event never carries anything
         job     a print job tied to an object of this project: "id", "source", "sent_at", "project", "plate_index",
                 "objects" ([{"object", "pose", "model"}]), "basis" ("write-journal" | "picture" | "owner"), "quote"
         said    the owner's statement, verbatim: "object", "what" ("printed" | "not-printed"), "quote", "hash" (model
@@ -323,7 +326,7 @@ def find_stl(root, model_hash, events=None, obj=None):
 
 # ---------------------------------------------------------------- the write journal
 
-def record_writes(project_path, meshes, stamps=None, tool=None):
+def record_writes(project_path, meshes, stamps=None, tool=None, mode=None, unchecked=None):
     """The ONE function every .3mf writer calls after a save (bambu3mf.save does): one `write` event per object.
 
     project_path  the .3mf that was written
@@ -331,6 +334,11 @@ def record_writes(project_path, meshes, stamps=None, tool=None):
                   "triangles", "stl": source STL path or None, ...}
     stamps        {object name: "<part id>@<sig12>"} from the guard's result, or None
     tool          name of the writing function ("build", "update_meshes", "add_plate", ...)
+    mode          the gate's mode at this save ("observe" | "enforce"), from the guard's result; stored as "mode" in
+                  every event (None: no gate above the project). The guard counts a mesh as carried only when its event
+                  holds a stamp that still verifies, or was written in enforce mode
+    unchecked     object names the guard let through without a check (a mesh that was in the file on disk and that no
+                  stamp backs): their events get "unchecked": true and never carry anything
 
     Does nothing and returns [] when no ledger folder is found above the project. An object whose pose hash equals its
     last `write` event for this project is not written again. Never raises: a ledger problem must not break a save
@@ -351,6 +359,7 @@ def record_writes(project_path, meshes, stamps=None, tool=None):
             if not name:
                 continue
             pose = m.geom_hash(mesh['vertices'], len(mesh['triangles']))
+            vset = m.vset_hash(mesh['vertices']) if hasattr(m, 'vset_hash') else None
             before = last.get(name)
             if before is not None and before.get('pose') == pose:
                 continue
@@ -366,6 +375,12 @@ def record_writes(project_path, meshes, stamps=None, tool=None):
                 except Exception as e:                       # the STL could not be read or kept: the write is still recorded
                     print('ledger: %s: %s' % (os.path.basename(stl), type(e).__name__))
             extra = {'orient': mesh['orient']} if mesh.get('orient') not in (None, False) else {}
+            if vset:
+                extra['vset'] = vset                        # the vertex set: a weld or a repair of the same mesh is still backed by this event
+            if mode is not None:
+                extra['mode'] = mode
+            if name in (unchecked or ()):
+                extra['unchecked'] = True
             e = append_event(root, 'write', 'tool', project=project, object=name, plate=mesh.get('plate'), plate_index=mesh.get('plate_index'),
                              pose=pose, model=model, stl=_rel(root, stl) if stl else None, stl_sha256=sha,
                              stamp=(stamps or {}).get(name), cad=cad, tool=tool, **extra)
@@ -1012,7 +1027,7 @@ def plate_status(root, project_path):
             st = '[OK]'
         else:
             st = '[TODO]'
-        now = re.match(r'^\s*(\[[^\]]*\])', p['plate'])
+        now = re.match(r'^\s*(?:\[unchecked\]\s*)?(\[[^\]]*\])', p['plate'])     # the gate's [unchecked] mark is not a print status
         row = {'plate': p['plate'], 'plate_index': p['plate_index'], 'status': st, 'objects': objs, 'now': now.group(1) if now else None, 'source': source}
         if ask:
             row['ask'] = 'the print record of %s is a guess or has no version: ask the owner' % ', '.join(repr(a) for a in ask)

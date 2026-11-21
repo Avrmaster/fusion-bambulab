@@ -92,13 +92,13 @@
       "description": "wall generator of the .3mf project (classic or arachne): a thin wall and a small hole print at another size under the other one"
     },
     "target.fit_settings": {
-      "default": "nozzle_diameter line_width layer_height initial_layer_print_height xy_hole_compensation xy_contour_compensation elefant_foot_compensation wall_generator",
+      "default": "nozzle_diameter line_width layer_height initial_layer_print_height xy_hole_compensation xy_contour_compensation elefant_foot_compensation wall_generator filament",
       "unit": "text",
       "looser": null,
       "measured_on": "decided: the slicer settings that move the size of a printed hole, pin or step",
       "class": "geometry",
       "formula": null,
-      "description": "the slicer settings every fit is measured under, by their keys in the project settings of the .3mf, separated by spaces. project.settings_match compares each one, the value every object prints with (its own override, else the global value), with the declared target; the .3mf writer does not change one unasked. In the declared target nozzle_diameter is \"nozzle\"; every other key keeps its name. An object that is meant to print with another value is declared under \"objects\" of the target"
+      "description": "the slicer settings every fit is measured under, by their keys in the project settings of the .3mf, separated by spaces. project.settings_match compares each one, the value every object prints with (its own override, else the global value), with the declared target; the .3mf writer does not change one unasked. In the declared target nozzle_diameter is \"nozzle\" and filament (the filament type an object prints with: the type of its extruder slot, else of slot 1) is \"material\"; every other key keeps its name. An object that is meant to print with another value is declared under \"objects\" of the target"
     }
   },
   "rules": []

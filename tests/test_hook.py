@@ -1,6 +1,7 @@
 """The SessionStart hook: silent where nothing is gated, never exit 2, never slow, and the digest of a gated project.
 No Fusion, no Bambu Studio."""
 import io, json, os, shutil, subprocess, sys, tempfile, time, unittest
+for _k in ('CLAUDECODE', 'CLAUDE_CODE_ENTRYPOINT', 'CLAUDE_CODE_SESSION_ID'): os.environ.pop(_k, None)      # gate.py owner from an agent session needs the hook's ticket: a test is no agent session
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 GATE = os.path.join(ROOT, 'tools', 'gate')
 sys.path.insert(0, GATE)
@@ -226,23 +227,39 @@ class HooksFile(unittest.TestCase):
         with open(os.path.join(ROOT, 'hooks', 'hooks.json'), encoding='utf-8') as f:
             self.data = json.load(f)
 
-    def test_the_event_map_is_wrapped_and_holds_session_start_only(self):
+    def test_the_event_map_is_wrapped_and_holds_the_gate_events(self):
         self.assertEqual(list(self.data), ['hooks'])            # a file with the bare event map does not load
-        self.assertEqual(list(self.data['hooks']), ['SessionStart'])
+        self.assertEqual(sorted(self.data['hooks']), sorted(['SessionStart', 'SubagentStart', 'PreToolUse', 'PostToolUse', 'PostToolUseFailure', 'Stop', 'SubagentStop']))
 
-    def test_the_handler_is_one_direct_command_on_the_plugin_copy(self):
-        groups = self.data['hooks']['SessionStart']
-        self.assertEqual(len(groups), 1)
-        handlers = groups[0]['hooks']
-        self.assertEqual(len(handlers), 1)
-        h = handlers[0]
-        self.assertEqual(h['type'], 'command')
-        self.assertEqual(h['command'], 'python3')               # with "args" the command is spawned directly: no shell, no quoting
-        self.assertEqual(h['args'], ['${CLAUDE_PLUGIN_ROOT}/tools/gate/gate_hook.py', 'session-start'])
-        self.assertTrue(os.path.isfile(h['args'][0].replace('${CLAUDE_PLUGIN_ROOT}', ROOT)))
-        self.assertIn(h['args'][1], gate_hook.EVENTS)
-        self.assertLessEqual(h['timeout'], 15)
-        self.assertNotIn('onFailure', h)
+    def test_each_handler_is_one_direct_command_on_the_plugin_copy(self):
+        events = {'SessionStart': 'session-start', 'SubagentStart': 'subagent-start', 'PreToolUse': 'pre-tool', 'PostToolUse': 'post-tool',
+                  'PostToolUseFailure': 'post-tool', 'Stop': 'stop', 'SubagentStop': 'subagent-stop'}
+        for event, arg in events.items():
+            groups = self.data['hooks'][event]
+            self.assertEqual(len(groups), 1, event)
+            handlers = groups[0]['hooks']
+            self.assertEqual(len(handlers), 1, event)
+            h = handlers[0]
+            self.assertEqual(h['type'], 'command')
+            self.assertEqual(h['command'], 'python3')           # with "args" the command is spawned directly: no shell, no quoting
+            self.assertEqual(h['args'], ['${CLAUDE_PLUGIN_ROOT}/tools/gate/gate_hook.py', arg])
+            self.assertTrue(os.path.isfile(h['args'][0].replace('${CLAUDE_PLUGIN_ROOT}', ROOT)))
+            self.assertIn(h['args'][1], gate_hook.EVENTS)
+            self.assertLessEqual(h['timeout'], 15)
+            self.assertNotIn('onFailure', h)
+
+    def test_the_tool_hooks_match_what_they_judge_and_nothing_else(self):
+        import re
+        pre = re.compile('^(?:%s)$' % self.data['hooks']['PreToolUse'][0]['matcher'])
+        post = re.compile('^(?:%s)$' % self.data['hooks']['PostToolUse'][0]['matcher'])
+        for tool in ('Bash', 'Write', 'Edit', 'MultiEdit', 'NotebookEdit', 'mcp__fusion__fusion_mcp_execute', 'mcp__plugin_x_fusion__fusion_mcp_update'):
+            self.assertTrue(pre.match(tool), tool)
+        for tool in ('Bash', 'mcp__fusion__fusion_mcp_execute', 'mcp__fusion__fusion_mcp_update'):
+            self.assertTrue(post.match(tool), tool)
+        for tool in ('Read', 'Grep', 'Glob', 'mcp__fusion__fusion_mcp_read', 'WebFetch'):
+            self.assertFalse(pre.match(tool) or post.match(tool), tool)       # read-only tools never start the hook at all
+        for tool in ('Write', 'Edit'):
+            self.assertFalse(post.match(tool), tool)
 
 
 if __name__ == '__main__':

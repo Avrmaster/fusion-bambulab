@@ -83,6 +83,7 @@ def fill_json(obj, v):
     return v[m.group(1)] if m and m.group(1) in v else fill(obj, {k: str(x) for k, x in v.items()})
 
 FIT_SETTINGS = ('layer_height', 'initial_layer_print_height', 'xy_hole_compensation', 'xy_contour_compensation', 'elefant_foot_compensation', 'wall_generator')
+PRINT_SETTINGS = ('enable_support', 'support_type', 'support_remove_small_overhang', 'wall_sequence')     # a target's "print" block
 
 def read_target(path):
     """{"nozzle", "line_width", "material"} from the project settings of a .3mf, or None when they cannot be read. The
@@ -99,6 +100,13 @@ def read_target(path):
             if v is None or v == '': continue
             try: target[k] = float(v)
             except (TypeError, ValueError): target[k] = str(v)
+        printing = {}                       # the print settings the gate compares too (supports, wall order): as the file holds them
+        for k in PRINT_SETTINGS:
+            v = first(ps.get(k))
+            if v is None or v == '': continue
+            try: printing[k] = float(v)
+            except (TypeError, ValueError): printing[k] = str(v)
+        if printing: target['print'] = printing
         return target
     except Exception: return None
 
@@ -146,6 +154,8 @@ def setup_gate(root, proj=None, doc=None, overwrite_fork=False):
         have = [k for k in FIT_SETTINGS if k in target]
         if have: print('          fit settings as the file holds them today: %s. The owner confirms each one: every fit counts as measured under these values, and a tool write may have changed one before the gate was here.' % ', '.join('%s %s' % (k, target[k]) for k in have))
         if len(have) < len(FIT_SETTINGS): print('          not in the file, to declare by hand in gate/project.json "targets": %s' % ', '.join(k for k in FIT_SETTINGS if k not in target))
+        miss = [k for k in PRINT_SETTINGS if k not in (target.get('print') or {})]
+        if miss: print('          print settings not in the file, to declare by hand under "print" of that target: %s' % ', '.join(miss))
     if os.path.exists(os.path.join(root, 'bambulab', 'tools', 'bambu3mf.py')) and 'gate_guard' not in open(os.path.join(root, 'bambulab', 'tools', 'bambu3mf.py'), encoding='utf-8').read():
         print('OLD TOOLS bambulab/tools/bambu3mf.py has no guard yet: --update-tools brings the .3mf writer that asks the gate.')
     propose(root, old)

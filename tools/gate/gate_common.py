@@ -370,6 +370,37 @@ def unregistered(root, layout, limit=20000):
     return out
 
 
+_ZIP_WRITE = re.compile(r"""ZipFile\s*\((?:[^()]|\([^()]*\))*?,\s*(?:mode\s*=\s*)?['"][wax]b?['"]""")
+
+
+def zip_writers(root, limit=50000):
+    """Python files of the project tree that write a zip archive themselves and name a .3mf: {"files": [relative paths],
+    "complete": bool}. Every .3mf of a gated project is written through bambu3mf.save(), the one writer that runs the
+    guard and tells the ledger; a script that opens zipfile.ZipFile(..., 'w') on a .3mf by itself bypasses both.
+    bambu3mf.py itself, gate/, folders whose name starts with a dot, node_modules, __pycache__ and a folder that is a
+    repository of its own (it holds .git: vendored sources) are not looked at; the walk stops after `limit` files."""
+    out, seen = {'files': [], 'complete': True}, 0
+    for folder, dirs, files in os.walk(root):
+        dirs[:] = sorted(d for d in dirs if not d.startswith('.') and d not in _SKIP_DIRS
+                         and not os.path.exists(os.path.join(folder, d, '.git')))
+        seen += len(files)
+        if seen > limit:
+            out['complete'] = False
+            break
+        for f in sorted(files):
+            if not f.endswith('.py') or f == 'bambu3mf.py':
+                continue
+            full = os.path.join(folder, f)
+            try:
+                with open(full, encoding='utf-8', errors='replace') as fh:
+                    text = fh.read(2000000)
+            except OSError:
+                continue
+            if '.3mf' in text and _ZIP_WRITE.search(text):
+                out['files'].append(rel(root, full))
+    return out
+
+
 def document_entry(layout, doc_key):
     """The entry of gate/layout.json "documents" with that key."""
     for d in layout['documents']:

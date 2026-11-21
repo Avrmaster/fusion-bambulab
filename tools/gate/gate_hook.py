@@ -1,9 +1,18 @@
 #!/usr/bin/env python3
-"""The SessionStart hook: print the gate digest of the session's project, or nothing.
+"""The hooks of the gate. SessionStart prints the gate digest of the session's project, or nothing; the others are the
+live checks of gate_watch.py.
 
-    python3 gate_hook.py [session-start]
+    python3 gate_hook.py [session-start]     the digest, and what changed outside the tools / has no stamp
+    python3 gate_hook.py subagent-start      the kept digest as context of a subagent (JSON)
+    python3 gate_hook.py post-tool           a call that changed the model in Fusion: a dirty mark (PostToolUse, PostToolUseFailure)
+    python3 gate_hook.py pre-tool            deny writes of the gate's state, unstamped STL/.3mf writes (enforce), unquoted owner calls
+    python3 gate_hook.py stop | subagent-stop   block the end of a turn while changed parts are unchecked
 
-Contract: it NEVER exits 2 and never takes more than about a second. No Fusion call, no judging.
+Contract: it NEVER exits 2 and never takes more than about two seconds. No Fusion call, no judging. A decision is JSON on
+stdout with exit 0 (a PreToolUse "deny", a Stop "block"). When a live check fails (an error of its own, or it takes
+longer than LIVE_S): a PreToolUse call whose input names the gate's files, a printed file, the settings or an owner
+command is DENIED with a line that says to call it again (what was not checked has not passed); every other call goes
+on, with one systemMessage line that says the hook failed and nothing of that call was checked.
 The session's project has no gate/project.json: exit 0, no output. Any error at all (a broken file, an unknown argument,
 bad JSON on stdin): exit 0, no output. Arguments are read by hand, not with argparse (argparse exits 2).
 
@@ -25,7 +34,8 @@ the plugin, one more line says so; `python3 gate/tools/gate.py status` is then t
 Time: the work runs in helper threads (KEPT_S for the kept digest, BUDGET_S for computing it now). Nothing is printed for a folder that is not gated, however long the look took."""
 import sys
 
-EVENTS = ('session-start',)
+EVENTS = ('session-start', 'subagent-start', 'pre-tool', 'post-tool', 'stop', 'subagent-stop')
+LIVE_S = 3.0                    # for one live check (gate_watch): a check that takes longer is a failure (gate_hook.failed)
 KEPT_S = 0.3                    # for reading the digest the gate keeps (gate_digest.py) and checking that it holds
 BUDGET_S = 0.7                  # for computing the digest now; with STDIN_S and the interpreter start the hook stays near a second
 STDIN_S = 0.2                   # a hook input that never ends must not hold the session
@@ -168,6 +178,78 @@ def _read_input(src):
         return ''
 
 
+FAILED = object()                # live(): the check itself broke
+
+
+def risky(text):
+    """Does a PreToolUse input touch what the gate guards (its files, a printed file, the settings, an owner command)?
+    Cheap: a look at the tool input's text only."""
+    import json, re
+    try:
+        data = json.loads(text)
+        ti = json.dumps(data.get('tool_input')) if isinstance(data, dict) else ''
+    except Exception:
+        return False
+    return re.search(r'gate|\.3mf|\.stl|\.claude|ledger|bambu3mf|owner|27182|fusion_mcp|claude\s+plugin', ti, re.I) is not None
+
+
+def live(event, text, environ):
+    """The output of one live hook (gate_watch.py) for the hook input `text`; '' when there is nothing to say,
+    FAILED when the check broke."""
+    import json
+    try:
+        data = json.loads(text) if text and text.strip() else {}
+    except ValueError:
+        return ''
+    if not isinstance(data, dict):
+        return ''
+    try:
+        return _live(event, data, environ)
+    except Exception:
+        return FAILED
+
+
+def _live(event, data, environ):
+    _here_on_path()
+    import gate_watch
+    if event == 'pre-tool':
+        return gate_watch.pre_tool(data, environ)
+    if event == 'post-tool':
+        return gate_watch.post_tool(data, environ)
+    if event in ('stop', 'subagent-stop'):
+        return gate_watch.stop(data, environ, subagent=event == 'subagent-stop')
+    if event == 'subagent-start':
+        root = gate_watch.session_root(data, environ)
+        have = None
+        if root:
+            done, have = _within(lambda: kept(root), KEPT_S)
+            have = have if done else None
+        return gate_watch.subagent_start(data, environ, output(root, have[0], have[1]) if have else '')
+    return ''
+
+
+def failed(event, text, what):
+    """The answer when a live check broke or ran out of time (see the contract at the top)."""
+    import json
+    if event == 'pre-tool' and risky(text):
+        return json.dumps({'hookSpecificOutput': {'hookEventName': 'PreToolUse', 'permissionDecision': 'deny', 'permissionDecisionReason':
+                           'print gate: the check of this call %s, and the call touches what the gate guards: call it again (what was not checked has '
+                           'not passed). If it keeps failing, tell the owner.' % what}})
+    if event == 'pre-tool' and not text.strip().startswith('{'):
+        return ''
+    return json.dumps({'systemMessage': 'print gate: the %s hook %s; nothing of this call was checked by it.' % (event, what)})
+
+
+def project_lines(root):
+    """gate_watch.project_lines(root), or [] on any trouble."""
+    try:
+        _here_on_path()
+        import gate_watch
+        return gate_watch.project_lines(root)
+    except Exception:
+        return []
+
+
 def main(argv=None, stdin=None, stdout=None):
     """Run the hook. Always returns 0. Every exception is swallowed (the stub's NotImplementedError too)."""
     try:
@@ -176,6 +258,15 @@ def main(argv=None, stdin=None, stdout=None):
         if argv and (len(argv) != 1 or argv[0] not in EVENTS):
             return 0                                           # an unknown argument: say nothing, stop nothing
         text = _read_input(stdin or sys.stdin)
+        if argv and argv[0] != 'session-start':
+            done, out = _within(lambda: live(argv[0], text, dict(os.environ)), LIVE_S)
+            if not done or out is FAILED or (done and out is None):
+                out = failed(argv[0], text, 'took longer than %.0f s' % LIVE_S if not done else 'failed')
+            if out:
+                dst = stdout or sys.stdout
+                dst.write(out.rstrip('\n') + '\n')
+                dst.flush()
+            return 0
         root = find_project(text, os.environ, os.getcwd())
         if not root:
             return 0
@@ -190,6 +281,9 @@ def main(argv=None, stdin=None, stdout=None):
             elif not done:
                 out = ('Print gate of %s (fusion-bambulab; skill: gate): the digest took longer than %.1f s and was left '
                        'out, and the gate keeps none yet (`%s` builds it). Run it before changing or exporting a part.' % (root, BUDGET_S, STATUS_COMMAND))
+        more = project_lines(root)
+        if more:
+            out = (out.rstrip('\n') + '\n' if out else '') + '\n'.join(more)
         if out:
             dst = stdout or sys.stdout
             dst.write(out.rstrip('\n') + '\n')

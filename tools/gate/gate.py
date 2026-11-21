@@ -17,6 +17,8 @@
     python3 gate/tools/gate.py owner adopt --quote "..."     the audit becomes the list of inherited findings and parts
     python3 gate/tools/gate.py owner decide T-ID|G-ID fix|waive|tolerate|rule_wrong --quote "..." [--note "..."] [--part ID]
     python3 gate/tools/gate.py owner param NAME VALUE --tag M|U|D|S --source "..." [--key SIZE] [--under KEY] --quote "..."
+    python3 gate/tools/gate.py owner bundle PROPOSAL [--dry-run] --quote "..."   a prepared proposal of param, target, waiver,
+                                                           triage and mode entries, applied in one call or not at all
 
 `--for KEY` names the .3mf project (its key in gate/layout.json) whose declared target a part is judged for. A project
 with one declared target needs none; with several, `run` and `export` refuse to guess.
@@ -35,8 +37,9 @@ This file only parses the command line and hands over: COMMANDS names, per sub-c
 
 `run` is resumable: it works for `--wall` seconds, never starts a unit it has no time for, and exits 3 with `NEXT n/m`
 as its last line until every unit is done. A new run scans the open documents first (`--no-scan`: take the census as it
-is). `owner ...` is the only writer of gate/owner/*: a project's permission rule asks the owner before each such call."""
-import argparse, datetime, importlib, os, sys
+is). `owner ...` is the only writer of gate/owner/*: a project's permission rule asks the owner before each such call, and from
+an agent session it needs the one-time ticket the PreToolUse hook leaves when --quote is the owner's own words (_take_ticket)."""
+import argparse, contextlib, copy, datetime, difflib, hashlib, importlib, io, json, os, re, sys, time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import gate_common                                                  # noqa: E402
@@ -67,6 +70,10 @@ DECISIONS = ('fix', 'waive', 'tolerate', 'rule_wrong')
 
 
 class _Parser(argparse.ArgumentParser):
+    def __init__(self, *a, **kw):
+        kw.setdefault('allow_abbrev', False)  # "--quo" is no --quote: what the hook checked is what is applied
+        argparse.ArgumentParser.__init__(self, *a, **kw)
+
     def error(self, message):                  # argparse would exit 2, which here means "attest questions open"
         self.print_usage(sys.stderr)
         sys.stderr.write('%s: %s\n' % (self.prog, message))
@@ -90,9 +97,10 @@ def parser():
     verify    project (path of a .3mf or None = every registered project)
     report    last (bool)
     triage    md (bool)
-    owner     action ("waive" | "decide" | "adopt" | "param"); waive: finding, reason, quote; decide: item (T-id of a row
-              or G-id of a group), decision, quote, note, part (with a G-id: only the rows of this part); adopt: quote;
-              param: name, value (text as typed), tag, source, key, quote"""
+    owner     action ("waive" | "decide" | "adopt" | "param" | "bundle"); waive: finding, reason, quote; decide: item (T-id
+              of a row or G-id of a group), decision, quote, note, part (with a G-id: only the rows of this part); adopt:
+              quote; param: name, value (text as typed), tag, source, key, quote; bundle: proposal (path), dry_run (bool),
+              quote (None with --dry-run)"""
     p = _Parser(prog='gate.py', description='One gate for printed parts: rules, checks, stamps.')
     p.add_argument('--root', help='project root (default: the nearest folder above the working directory with gate/project.json)')
     sub = p.add_subparsers(dest='command', parser_class=_Parser)
@@ -128,6 +136,7 @@ def parser():
     o = osub.add_parser('param'); o.add_argument('name'); o.add_argument('value'); o.add_argument('--tag', required=True, choices=('M', 'U', 'D', 'S'))
     o.add_argument('--source', required=True); o.add_argument('--key'); o.add_argument('--quote', required=True)
     o.add_argument('--under', metavar='KEY', help='with --tag M on a fit parameter: the .3mf project the value was printed from; its declared target is stored as "measured_under"')
+    o = osub.add_parser('bundle'); o.add_argument('proposal'); o.add_argument('--quote'); o.add_argument('--dry-run', dest='dry_run', action='store_true')
     return p
 
 
@@ -453,6 +462,10 @@ def cmd_owner(root, args):
             of the declared target of the .3mf project it was printed from (args.under, or the only declared target).
             That project file must exist and hold those values today (_printed_as_declared): the coupon was printed
             from the file. A per-size value (--key) cannot be M while the base value of the parameter is not."""
+    if args.action == 'bundle' and getattr(args, 'dry_run', False):
+        return _owner_bundle(root, args)         # writes nothing: no prompt, no quote needed to show what would change
+    if _agent_session():
+        args._ticket = _take_ticket(root, args)
     missing = gate_common.ask_rules_missing(root)
     if missing:
         raise GateError('the owner commands write the owner\'s files, and nothing in this project puts a prompt in front of him first. '
@@ -460,7 +473,314 @@ def cmd_owner(root, args):
                         '(setup_project.py --gate prints them); nothing was written' % '; '.join(missing))
     if not str(getattr(args, 'quote', '') or '').strip():
         raise GateError('an owner command needs --quote: the owner\'s own words for this decision; nothing was written')
-    return {'waive': _owner_waive, 'decide': _owner_decide, 'adopt': _owner_adopt, 'param': _owner_param}[args.action](root, args)
+    return {'waive': _owner_waive, 'decide': _owner_decide, 'adopt': _owner_adopt, 'param': _owner_param, 'bundle': _owner_bundle}[args.action](root, args)
+
+
+AGENT_ENV = ('CLAUDECODE', 'CLAUDE_CODE_ENTRYPOINT', 'CLAUDE_CODE_SESSION_ID')
+
+
+def _agent_session():
+    """Does this process run inside an agent session (Claude Code sets these in every command it runs)?"""
+    return any(os.environ.get(k) for k in AGENT_ENV)
+
+
+def _take_ticket(root, args):
+    """An owner command from an agent session needs the one-time ticket the PreToolUse hook (gate_watch.py) leaves in
+    gate/run/owner_tickets.json when the quote is the owner's own words: the same arguments from "owner" on, the same
+    quote, and for a bundle the proposal unchanged since. The ticket is used up. GateError when there is none: the
+    command did not go through the hook as a plain `gate.py owner ...` (an import of gate.py, `python3 -m gate`, a script
+    file), the hooks are not live, or the quote did not hold."""
+    import gate_watch
+    argv = list(getattr(args, '_argv', None) or [])
+    if 'owner' not in argv:
+        raise GateError('an owner command from an agent session needs its arguments as the hook saw them; nothing was written')
+    tail = argv[argv.index('owner'):]
+    key = gate_watch.ticket_key(tail)
+    path = gate_common.gate_path(root, *gate_watch.TICKETS)
+    try:
+        with open(path, encoding='utf-8') as f:
+            book = json.load(f)
+    except (OSError, ValueError):
+        book = {}
+    now = time.time()
+    tickets = [t for t in (book.get('tickets') if isinstance(book, dict) else None) or [] if isinstance(t, dict) and now - float(t.get('ts') or 0) < gate_watch.TICKET_S]
+    hit = next((t for t in tickets if t.get('key') == key), None)
+    why = None
+    if hit is None:
+        why = ('no ticket of the print gate\'s hook for exactly this command. From an agent session an owner command runs only as a plain '
+               '`python3 gate/tools/gate.py owner ... --quote "<his words>"` call that the PreToolUse hook checked against the owner\'s own turns '
+               '(not through python -m, an import or a script file; within %d s of the check). The owner can also run it in his own terminal' % gate_watch.TICKET_S)
+    elif gate_watch.normalize(args.quote or '') not in (hit.get('quotes') or []):
+        why = 'the --quote of this command is not the one the hook checked'
+    elif hit.get('proposal_sha256'):
+        prop = args.proposal if os.path.isabs(args.proposal) else os.path.join(os.getcwd(), args.proposal)
+        try:
+            with open(prop, 'rb') as f:
+                sha = hashlib.sha256(f.read()).hexdigest()
+        except OSError:
+            sha = None
+        if sha != hit['proposal_sha256']:
+            why = 'the proposal changed after the hook checked the quote against the dry run the owner saw'
+    if hit is not None:
+        tickets.remove(hit)
+        try:
+            gate_common.write_json(path, dict(book if isinstance(book, dict) else {}, tickets=tickets))
+        except Exception:
+            pass
+    if why:
+        raise GateError(why + '; nothing was written')
+    return hit
+
+
+# ---- owner bundle: a prepared proposal applied in one call ---------------------------------------------------------------
+
+BUNDLE_KINDS = {                                 # kind -> (required fields, optional fields)
+    'param': (('name', 'value', 'tag', 'source'), ('key', 'under')),
+    'target': (('project', 'set'), ('object', 'unset')),
+    'waive': (('finding', 'reason'), ()),
+    'decide': (('item', 'decision'), ('note', 'part')),
+    'adopt': ((), ()),
+    'mode': (('mode',), ()),
+}
+BUNDLE_COMMON = ('kind', 'why')                  # "why": the evidence, for the owner to read; never applied
+
+
+def read_bundle(path):
+    """The entries of a proposal file: a .json file {"bundle": 1, "title", "entries": [...]}, or a Markdown file that
+    holds that object in a fenced block (```json gate-bundle, else the only ```json block). Every entry is checked for
+    its kind and fields here (BUNDLE_KINDS); GateError names the first problem."""
+    try:
+        with open(path, encoding='utf-8') as f:
+            text = f.read()
+    except OSError as e:
+        raise GateError('the proposal %s cannot be read (%s)' % (path, e))
+    if not path.lower().endswith('.json'):
+        blocks = re.findall(r'^```json([^\n]*)\n(.*?)^```', text, re.S | re.M)
+        tagged = [b for tag, b in blocks if 'gate-bundle' in tag]
+        if len(tagged) == 1:
+            text = tagged[0]
+        elif len(blocks) == 1 and not tagged:
+            text = blocks[0][1]
+        else:
+            raise GateError('%s must hold exactly one fenced block ```json gate-bundle (found %d json block(s), %d tagged)' % (path, len(blocks), len(tagged)))
+    try:
+        data = json.loads(text)
+    except ValueError as e:
+        raise GateError('the bundle in %s is not valid JSON: %s' % (path, e))
+    if not isinstance(data, dict) or data.get('bundle') != 1 or not isinstance(data.get('entries'), list) or not data['entries']:
+        raise GateError('the bundle in %s must be {"bundle": 1, "title": "...", "entries": [at least one entry]}' % path)
+    for i, e in enumerate(data['entries'], 1):
+        if not isinstance(e, dict) or e.get('kind') not in BUNDLE_KINDS:
+            raise GateError('entry %d: "kind" must be one of %s' % (i, ', '.join(BUNDLE_KINDS)))
+        need, may = BUNDLE_KINDS[e['kind']]
+        missing = [k for k in need if e.get(k) is None]
+        extra = sorted(k for k in e if k not in need + may + BUNDLE_COMMON)
+        if missing or extra:
+            raise GateError('entry %d (%s): %s' % (i, e['kind'], '; '.join((['missing ' + ', '.join(missing)] if missing else []) + (['unknown ' + ', '.join(extra)] if extra else []))))
+        if e['kind'] == 'target' and (not isinstance(e['set'], dict) or not isinstance(e.get('unset') or [], list)):
+            raise GateError('entry %d (target): "set" must be an object of key -> value, "unset" a list of keys' % i)
+        if e['kind'] == 'mode' and e['mode'] not in ('observe', 'enforce'):
+            raise GateError('entry %d (mode): "mode" must be "observe" or "enforce"' % i)
+        if e['kind'] == 'decide' and e['decision'] not in DECISIONS:
+            raise GateError('entry %d (decide): "decision" must be one of %s' % (i, ', '.join(DECISIONS)))
+    return data
+
+
+class _Stage(object):
+    """Every gate_common.read_json / write_json of this process goes through a staging area while it is active: writes
+    are kept in memory, reads see them. Nothing reaches the disk until commit(). So a bundle is applied entry by entry
+    with the owner commands as they are, and either every entry holds or nothing is written; a dry run is the same
+    run without the commit, and no other process ever sees a half-applied bundle."""
+    _MISSING = object()
+
+    def __init__(self):
+        self.files, self.patched = {}, []
+        self.read0, self.write0 = gate_common.read_json, gate_common.write_json
+
+    def read(self, path, default=gate_common._MISSING):
+        key = os.path.abspath(path)
+        if key in self.files:
+            return copy.deepcopy(self.files[key])
+        return self.read0(path, default) if default is not gate_common._MISSING else self.read0(path)
+
+    def write(self, path, data):
+        self.files[os.path.abspath(path)] = copy.deepcopy(data)
+        return path
+
+    def __enter__(self):
+        for m in list(sys.modules.values()):
+            for name, fn in (('read_json', self.read), ('write_json', self.write)):
+                if m is not None and getattr(m, name, None) is (self.read0 if name == 'read_json' else self.write0):
+                    self.patched.append((m, name, getattr(m, name)))
+                    setattr(m, name, fn)
+        return self
+
+    def __exit__(self, *exc):
+        for m, name, fn in self.patched:
+            setattr(m, name, fn)
+        self.patched = []
+        for m in list(sys.modules.values()):             # a module first imported inside the stage took the staged functions
+            for name, fn in (('read_json', self.read0), ('write_json', self.write0)):
+                if m is not None and getattr(m, name, None) in (self.read, self.write):
+                    setattr(m, name, fn)
+        return False
+
+    def diff(self, root):
+        """[(relative path, unified diff text)] of every staged file against the disk."""
+        out = []
+        for path in sorted(self.files):
+            try:
+                with open(path, encoding='utf-8') as f:
+                    old = f.read()
+            except OSError:
+                old = ''
+            new = json.dumps(self.files[path], indent=1, sort_keys=True, ensure_ascii=False) + '\n'
+            if old != new:
+                rel = gate_common.rel(root, path)
+                out.append((rel, ''.join(difflib.unified_diff(old.splitlines(True), new.splitlines(True), 'a/' + rel, 'b/' + rel, n=1))))
+        return out
+
+    def commit(self, root):
+        """Write every staged file (gate/project.json last: a mode switch never lands before the numbers it rests on)."""
+        project = os.path.abspath(gate_common.gate_path(root, 'project.json'))
+        for path in sorted(self.files, key=lambda p: (p == project, p)):
+            self.write0(path, self.files[path])
+
+
+def _owner_target(root, args):
+    """One "target" entry: set (and unset) keys of the declared target of the .3mf project args.project in
+    gate/project.json, or of one object of it under "objects" (args.object). A "print" block is merged key by key.
+    Refused when the project is not registered in gate/layout.json or gate_params.check() objects."""
+    import gate_params, gate_registry
+    reg = gate_registry.load_default()
+    keys = [e.get('key') for e in gate_common.load_layout(root).get('projects') or [] if isinstance(e, dict)]
+    if args.project not in keys:
+        raise GateError('%s is no .3mf project of gate/layout.json (registered: %s)' % (args.project, ', '.join(k for k in keys if k) or 'none'))
+    path = gate_common.gate_path(root, 'project.json')
+    data = gate_common.read_json(path, {})
+    if not isinstance(data, dict):
+        raise GateError('gate/project.json must be an object')
+    targets = dict(data.get('targets') or {})
+    target = copy.deepcopy(targets.get(args.project) or {})
+    where = target
+    if args.object:
+        objects = target.setdefault('objects', {})
+        where = objects.setdefault(args.object, {})
+    for k, v in sorted(args.set.items()):
+        if k == 'print' and isinstance(v, dict) and isinstance(where.get('print'), dict):
+            where['print'] = dict(where['print'], **v)
+        else:
+            where[k] = v
+    for k in args.unset or []:
+        where.pop(k, None)
+    if args.object and not where:
+        target['objects'].pop(args.object, None)
+    if 'objects' in target and not target['objects']:
+        target.pop('objects')
+    errors = gate_params.check(reg, {}, target)
+    if errors:
+        raise GateError('declared target of %s refused:\n  %s' % (args.project, '\n  '.join(errors)))
+    targets[args.project] = target
+    data['targets'] = targets
+    gate_common.write_json(path, data)
+    print('declared target of %s%s: %s' % (args.project, ' (object %s)' % args.object if args.object else '',
+                                           ', '.join('%s = %s' % (k, json.dumps(v)) for k, v in sorted(args.set.items())) + (('; removed ' + ', '.join(args.unset)) if args.unset else '')))
+    return EXIT_PASS
+
+
+def _owner_mode(root, args):
+    path = gate_common.gate_path(root, 'project.json')
+    data = gate_common.read_json(path, {})
+    if not isinstance(data, dict):
+        raise GateError('gate/project.json must be an object')
+    old = data.get('mode', 'observe')
+    data['mode'] = args.mode
+    gate_common.write_json(path, data)
+    print('mode: %s -> %s' % (old, args.mode))
+    if args.mode == 'enforce':
+        try:
+            import gate_guard
+            saves = gate_common.read_json(gate_guard.saves_path(root), {}).get('projects') or {}
+        except Exception:
+            saves = {}
+        for f, e in sorted(saves.items()):
+            names = (e or {}).get('unchecked') or []
+            if names:
+                print('  %s: %d object(s) have no stamp at its last guarded save; in enforce they are still let through while they lie in the file, '
+                      'and every new mesh needs a stamp' % (f, len(names)))
+    return EXIT_PASS
+
+
+def _owner_bundle(root, args):
+    """gate.py owner bundle PROPOSAL --quote "...": apply every entry of a prepared proposal (read_bundle) with the
+    owner commands, under one quote, in one call: either every entry holds and every file is written, or nothing is.
+    --dry-run prints what each entry does and the exact change of every file, and writes nothing. A bundle that was
+    applied is kept in gate/owner/bundles.json (id, date, quote, proposal path and its sha256, entries)."""
+    if os.path.basename(str(args.proposal)).startswith('-'):
+        raise GateError('a proposal path may not start with "-" (%s): rename the file; nothing was written' % args.proposal)
+    path = args.proposal if os.path.isabs(args.proposal) else os.path.join(os.getcwd(), args.proposal)
+    data = read_bundle(path)
+    dry = bool(getattr(args, 'dry_run', False))
+    quote = args.quote if args.quote and str(args.quote).strip() else ('<the owner\'s words: --quote at the apply>' if dry else None)
+    if quote is None:
+        raise GateError('an owner command needs --quote: the owner\'s own words for this decision; nothing was written')
+    with open(path, 'rb') as f:
+        sha = hashlib.sha256(f.read()).hexdigest()
+    funcs = {'param': _owner_param, 'target': _owner_target, 'waive': _owner_waive, 'decide': _owner_decide, 'adopt': _owner_adopt, 'mode': _owner_mode}
+    print('%s %s: %d entr%s%s' % ('DRY RUN of' if dry else 'bundle', gate_common.rel(root, path), len(data['entries']), 'y' if len(data['entries']) == 1 else 'ies',
+                                  (' - ' + data['title']) if data.get('title') else ''))
+    stage = _Stage()
+    with stage:
+        for i, e in enumerate(data['entries'], 1):
+            need, may = BUNDLE_KINDS[e['kind']]
+            ns = argparse.Namespace(quote=quote, **{k: e.get(k) for k in need + may})
+            if e['kind'] == 'param':
+                ns.value = e['value'] if isinstance(e['value'], str) else repr(e['value']) if isinstance(e['value'], float) else str(e['value'])
+            out = io.StringIO()
+            try:
+                with contextlib.redirect_stdout(out):
+                    funcs[e['kind']](root, ns)
+            except GateError as err:
+                raise GateError('entry %d (%s) refused: %s. Nothing of the bundle was written' % (i, e['kind'], err))
+            what = out.getvalue().strip().splitlines()
+            print('  %d. %s: %s' % (i, e['kind'], what[0] if what else 'done'))
+            for line in what[1:]:
+                print('       ' + line)
+            if e.get('why'):
+                print('       why: %s' % e['why'])
+        try:                                     # the end state as a whole: every declared target and every parameter
+            import gate_params, gate_registry
+            project = gate_common.load_project(root)
+            reg = gate_registry.load_default()
+            overrides = gate_params.load_overrides(root)
+            errors = []
+            for key, t in sorted((project.get('targets') or {}).items()):
+                errors += ['%s: %s' % (key, x) for x in gate_params.check(reg, overrides, t)]
+        except GateError as err:
+            errors = [str(err)]
+        if errors:
+            raise GateError('the bundle as a whole is refused, nothing was written:\n  ' + '\n  '.join(errors))
+        book = gate_common.read_json(_owner_file(root, 'bundles.json'), {})     # staged in a dry run too: it shows every file the apply writes
+        book = book if isinstance(book, dict) else {}
+        done = list(book.get('bundles') or [])
+        record = {'id': 'B-%d' % (len(done) + 1), 'date': datetime.date.today().isoformat(), 'quote': quote,
+                  'proposal': gate_common.rel(root, path), 'sha256': sha, 'title': data.get('title'),
+                  'entries': [{k: v for k, v in e.items() if k != 'why'} for e in data['entries']]}
+        ticket = getattr(args, '_ticket', None)
+        if isinstance(ticket, dict) and isinstance(ticket.get('turn'), dict):
+            record['turn'] = ticket['turn']              # the owner turn the hook found the quote in (uuid, time)
+        book['bundles'] = done + [record]
+        gate_common.write_json(_owner_file(root, 'bundles.json'), book)
+    changes = stage.diff(root)
+    for rel, text in changes:
+        print(text.rstrip('\n'))
+    if dry:
+        print('DRY RUN: nothing was written. %d file(s) would change: %s' % (len(changes), ', '.join(r for r, _ in changes) or 'none'))
+        return EXIT_PASS
+    stage.commit(root)
+    print('bundle applied: %d file(s) written: %s' % (len(changes), ', '.join(r for r, _ in changes)))
+    print('stored judgements were made with the old values: python3 gate/tools/gate.py run --offline judges them again')
+    return EXIT_PASS
 
 
 def _forked(root):
@@ -478,6 +798,8 @@ def main(argv=None):
     """Parse, find the project root, hand over to the function COMMANDS names, return its exit code.
     GateError -> the message on stderr, exit 4. A part of the gate that still raises NotImplementedError -> exit 4."""
     args = parser().parse_args(argv)
+    args._argv = list(sys.argv[1:] if argv is None else argv)
+    started = time.time()
     root = os.path.abspath(args.root) if args.root else find_root(os.getcwd())
     if root is not None and not os.path.isfile(os.path.join(root, 'gate', 'project.json')):
         sys.stderr.write('GATE ERROR  %s has no gate/project.json\n' % root)
@@ -495,15 +817,31 @@ def main(argv=None):
                 return EXIT_INFRA
         fn = cmd_owner if module == 'gate' else getattr(importlib.import_module(module), func)
         code = fn(root, args)
-        if root is not None and args.command in REFRESH_DIGEST and int(code or 0) != EXIT_MORE:
+        _checked(root, args, code, started)
+        dry = args.command == 'owner' and getattr(args, 'dry_run', False)       # a dry run changed nothing: the kept digest stays
+        if root is not None and args.command in REFRESH_DIGEST and int(code or 0) != EXIT_MORE and not dry:
             importlib.import_module('gate_report').refresh_digest(root)
     except NotImplementedError:
         sys.stderr.write('GATE ERROR  "%s" is not built yet (%s.%s)\n' % (args.command, module, func))
+        _checked(root, args, EXIT_INFRA, started)
         return EXIT_INFRA
     except GateError as e:
         sys.stderr.write('GATE ERROR  %s\n' % e)
+        _checked(root, args, EXIT_INFRA, started)
         return EXIT_INFRA
     return int(code or 0)
+
+
+def _checked(root, args, code, started=None):
+    """The end of a `run` goes to gate/run/checks.jsonl: the Stop hook (gate_watch.py) reads it to know whether the parts
+    changed in Fusion were checked (with the time the run started, whether it asked Fusion, and the session). Never raises."""
+    if root is None or getattr(args, 'command', None) != 'run':
+        return
+    try:
+        import gate_watch
+        gate_watch.record_check(root, args, int(code or 0), started)
+    except Exception:
+        pass
 
 
 if __name__ == '__main__':

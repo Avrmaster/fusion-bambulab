@@ -3,6 +3,7 @@ waivers, the audit, the owner commands, a document that is not open, a Fusion th
 
 No Fusion, no Bambu Studio: tests/fake_fusion.DemoProject wires the fake transport, its clock and the small demo registry."""
 import os, re, sys, unittest
+for _k in ('CLAUDECODE', 'CLAUDE_CODE_ENTRYPOINT', 'CLAUDE_CODE_SESSION_ID'): os.environ.pop(_k, None)      # gate.py owner from an agent session needs the hook's ticket: a test is no agent session
 from unittest import mock
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, 'tools', 'gate'))

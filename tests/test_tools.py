@@ -1,5 +1,6 @@
 """Run: python3 -m unittest discover tests. Needs neither Fusion nor Bambu Studio: the template is synthetic."""
 import json, math, os, re, shutil, struct, subprocess, sys, tempfile, unittest, zipfile
+os.environ.pop('CLAUDE_PROJECT_DIR', None)      # bambu3mf finds a gated root for a file outside it from this: never the session's project
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, 'tools', 'bambu'))
 import bambu3mf, sync3mf, slice_check

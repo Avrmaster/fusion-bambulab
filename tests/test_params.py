@@ -1,5 +1,6 @@
 """Parameters: registry default <- project file, tags, the looser-than-default rule, and the formula parser. No Fusion."""
 import contextlib, io, json, os, shutil, sys, tempfile, types, unittest
+for _k in ('CLAUDECODE', 'CLAUDE_CODE_ENTRYPOINT', 'CLAUDE_CODE_SESSION_ID'): os.environ.pop(_k, None)      # gate.py owner from an agent session needs the hook's ticket: a test is no agent session
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, 'tools', 'gate'))
 import gate_params, gate_registry

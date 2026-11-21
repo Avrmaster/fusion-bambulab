@@ -1,6 +1,8 @@
 """The vendored copy of the gate and its lock: intact, forked, stale, absent; what doctor says about each.
 No Fusion (the ping is a function the test hands in), no Bambu Studio."""
 import contextlib, io, json, os, shutil, sys, tempfile, unittest
+for _k in ('CLAUDECODE', 'CLAUDE_CODE_ENTRYPOINT', 'CLAUDE_CODE_SESSION_ID'): os.environ.pop(_k, None)      # gate.py owner from an agent session needs the hook's ticket: a test is no agent session
+os.environ.pop('CLAUDE_PROJECT_DIR', None)      # bambu3mf finds a gated root for a file outside it from this: never the session's project
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, 'tools', 'gate'))
 import gate_common, gate_render, gate_registry, gate_vendor

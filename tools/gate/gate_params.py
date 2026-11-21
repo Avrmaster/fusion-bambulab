@@ -359,10 +359,17 @@ def check(reg, overrides, target=None):
 
 def _target_errors(defs, target, where, nested=False):
     """Problems of one declared target. Besides the target parameters it may hold "objects": {"<object name>": {key:
-    value}}: the fit settings one object of the .3mf is MEANT to print with (an override the owner declares)."""
+    value}}: the fit settings one object of the .3mf is MEANT to print with (an override the owner declares), and
+    "print": {slicer setting: value}: the print settings (supports, wall order) project.settings_match compares, for the
+    project and, inside "objects", for one object."""
     errors = []
     known = sorted(n[7:] for n in defs if defs[n].get('from') == 'target')
     for k in sorted(target):
+        if k == 'print':                     # print settings the project prints with: {"enable_support": 1, "support_type": "tree(auto)", ...}
+            block = target[k]
+            if not isinstance(block, dict) or not all(isinstance(n, str) and n and isinstance(v, (str, int, float, bool)) and v is not None for n, v in block.items()):
+                errors.append('%s: "print" must be an object of slicer setting -> value (a number, a text, true or false)' % where)
+            continue
         if k == 'objects' and not nested:
             objects = target[k]
             if not isinstance(objects, dict) or not all(isinstance(n, str) and n and isinstance(v, dict) for n, v in objects.items()):

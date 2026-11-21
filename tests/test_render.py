@@ -1,6 +1,7 @@
 """Text generated from the registry: the rule blocks in the skills equal their render, --check fails when they do not,
 a project's RULES.md carries its own numbers. No Fusion, no Bambu Studio."""
 import contextlib, glob, io, json, os, shutil, subprocess, sys, tempfile, unittest
+for _k in ('CLAUDECODE', 'CLAUDE_CODE_ENTRYPOINT', 'CLAUDE_CODE_SESSION_ID'): os.environ.pop(_k, None)      # gate.py owner from an agent session needs the hook's ticket: a test is no agent session
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 GATE = os.path.join(ROOT, 'tools', 'gate')
 sys.path.insert(0, GATE)

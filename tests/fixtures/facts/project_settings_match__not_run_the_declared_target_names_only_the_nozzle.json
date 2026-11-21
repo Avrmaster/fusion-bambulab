@@ -8,7 +8,13 @@
   "target_declared": {
    "nozzle": 0.4,
    "line_width": 0.45,
-   "material": "PETG"
+   "material": "PETG",
+   "print": {
+    "enable_support": 1,
+    "support_type": "tree(auto)",
+    "support_remove_small_overhang": 0,
+    "wall_sequence": "inner wall/outer wall"
+   }
   },
   "fit_settings": {
    "keys": [
@@ -42,12 +48,40 @@
   "settings_write": null,
   "objects": [],
   "stls": [],
-  "build_table": null
+  "build_table": null,
+  "print_settings": {
+   "keys": [
+    "enable_support",
+    "support_type",
+    "support_remove_small_overhang",
+    "wall_sequence"
+   ],
+   "global": {
+    "enable_support": 1.0,
+    "support_type": "tree(auto)",
+    "support_remove_small_overhang": 0.0,
+    "wall_sequence": "inner wall/outer wall"
+   },
+   "listed": null,
+   "objects": [],
+   "objects_read": 3,
+   "objects_unread": 0,
+   "object_names": [
+    "lever",
+    "cap",
+    "base plate"
+   ],
+   "repeated": [],
+   "layer_members": []
+  }
  },
  "expect": [
   {
    "verdict": "NOT_RUN",
    "part": "main:Demo.3mf"
   }
- ]
+ ],
+ "params": {
+  "target.fit_settings": "nozzle_diameter line_width layer_height initial_layer_print_height xy_hole_compensation xy_contour_compensation elefant_foot_compensation wall_generator"
+ }
 }

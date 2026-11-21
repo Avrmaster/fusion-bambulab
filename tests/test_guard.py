@@ -2,6 +2,8 @@
 carried meshes pass, and a builder that saves the empty template first is not locked out. Also what bambu3mf.py itself
 gained: the STL notes, the reports of update_meshes(), the one call into the ledger. No Fusion, no Bambu Studio."""
 import contextlib, io, json, math, os, re, shutil, stat, sys, tempfile, types, unittest, zipfile
+for _k in ('CLAUDECODE', 'CLAUDE_CODE_ENTRYPOINT', 'CLAUDE_CODE_SESSION_ID'): os.environ.pop(_k, None)      # gate.py owner from an agent session needs the hook's ticket: a test is no agent session
+os.environ.pop('CLAUDE_PROJECT_DIR', None)      # bambu3mf finds a gated root for a file outside it from this: never the session's project
 from unittest import mock
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, 'tools', 'gate'))
@@ -20,7 +22,7 @@ PLATES = [('first plate', [('bracket', 'bracket.stl', False)]), ('second plate',
 
 def template(path):
     k = bambu3mf.FILAMENT_KEYS; ps = {key: ['0'] * stride for key, stride in k.items()}
-    ps.update(filament_settings_id=['Demo PLA'], filament_colour=['#FFFFFF'], flush_volumes_matrix=['0'], filament_self_index=['1'] * k['filament_self_index'],
+    ps.update(filament_settings_id=['Demo PETG'], filament_type=['PETG'], filament_colour=['#FFFFFF'], flush_volumes_matrix=['0'], filament_self_index=['1'] * k['filament_self_index'],
               printable_area=['0x0', '180x0', '180x180', '0x180'], different_settings_to_system=['', '', ''], brim_width='5')
     with zipfile.ZipFile(path, 'w') as z:
         z.writestr('[Content_Types].xml', '<Types/>'); z.writestr('_rels/.rels', '<Relationships/>'); z.writestr('Metadata/project_settings.config', json.dumps(ps))
@@ -48,9 +50,13 @@ class Guarded(S.Gated):
             bambu3mf.build(proj or self.proj, self.stls, plates)
         return quiet(run)[1]
 
+    def ungated(self, plates, proj):
+        """A build with no gate anywhere: the scratch file outside the root is not judged as one of its projects."""
+        with mock.patch.object(bambu3mf, '_gate_root', return_value=(None, None)): return self.build(plates, proj=proj)
+
     def adopt(self, plates=PLATES):
         """A project that was built before the gate existed: it lies on disk and no journal knows it."""
-        scratch = self.outside(); self.build(plates, proj=scratch); shutil.copyfile(scratch, self.proj); os.remove(scratch)
+        scratch = self.outside(); self.ungated(plates, scratch); shutil.copyfile(scratch, self.proj); os.remove(scratch)
 
     def outside(self):
         """A .3mf path OUTSIDE the gated project: under the root every .3mf is the guard's business."""
@@ -59,7 +65,7 @@ class Guarded(S.Gated):
 
     def meshes(self, plates=PLATES):
         """The meshes a build of these plates would hand to the guard, without touching the project."""
-        scratch = self.outside(); self.build(plates, proj=scratch)
+        scratch = self.outside(); self.ungated(plates, scratch)
         m = bambu3mf.project_meshes(bambu3mf.load(scratch)[1]); os.remove(scratch)
         return m
 
@@ -77,6 +83,10 @@ class Guarded(S.Gated):
         with open(p) as f: return f.read()
 
     def journal(self): return gate_common.read_jsonl(gate_common.events_path(self.d))
+
+    def ledger(self):
+        """Turn the print ledger on here: the write events the guard reads are recorded from now on."""
+        os.makedirs(os.path.join(self.d, 'bambulab', 'ledger'), exist_ok=True)
 
     def stamp_both(self):
         self.stamp('demo/bracket', SIG1, 'bracket'); self.stamp('demo/cover', SIG2, 'cover')
@@ -104,12 +114,14 @@ class Observe(Guarded):
         out = self.build()
         self.assertEqual(self.objects(), ['bracket', 'cover'])
         lines = [l for l in out.splitlines() if 'gate' in l]
-        self.assertEqual(len(lines), 1, out)                                # one summary line for the whole build
+        self.assertEqual(len(lines), 2, out)                                # one summary line for the whole build, and the line of what has no stamp
         self.assertRegex(lines[0], r'^gate guard \[observe\] bambulab/Demo.3mf: 2 mesh\(es\), 2 new, 2 without a stamp \(bracket, cover\) - written anyway')
+        self.assertEqual(lines[1], gate_guard.unchecked_line('bambulab/Demo.3mf', ['bracket', 'cover']))
+        self.assertIn('2 object(s) in bambulab/Demo.3mf have no stamp', lines[1])
         log = self.log().splitlines()
         self.assertEqual(len([l for l in log if ': bracket none: no stamp for the geometry of stl/bracket.stl' in l]), 1)
         self.assertEqual(len([l for l in log if ': cover none: no stamp for the geometry of stl/cover.stl' in l]), 1)
-        self.assertEqual(len(log), 3); self.assertRegex(log[0], r'^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ observe bambulab/Demo.3mf: ')
+        self.assertEqual(len(log), 4); self.assertRegex(log[0], r'^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ observe bambulab/Demo.3mf: ')
 
     def test_what_is_written_is_what_an_ungated_build_writes(self):
         self.build(); plain = os.path.join(tempfile.mkdtemp(), 'p.3mf'); self.addCleanup(shutil.rmtree, os.path.dirname(plain))
@@ -119,11 +131,20 @@ class Observe(Guarded):
         self.assertEqual(self.poses(), meshid.pose_hashes(meshid.read_project(plain)))
 
     def test_a_save_that_brings_nothing_new_says_nothing(self):
-        self.build(); before = self.log()
+        self.ledger(); self.stamp_both(); self.build(); before = self.log()
         hit, out = quiet(bambu3mf.set_settings, self.proj, 'bracket', [('brim_type', 'no_brim')])
         self.assertEqual((hit, out), (['bracket'], '')); self.assertEqual(self.log(), before)
-        self.assertNotIn('gate guard', self.build())                        # the same STLs again, template first: all carried
+        self.assertNotIn('gate', self.build())                              # the same stamped STLs again, template first: all carried
         self.assertEqual(self.log(), before)
+
+    def test_what_has_no_stamp_is_said_at_every_save_and_an_observe_write_is_never_carried(self):
+        self.ledger(); self.build()                                         # two unstamped parts, written in observe mode
+        hit, out = quiet(bambu3mf.set_settings, self.proj, 'bracket', [('brim_type', 'no_brim')])
+        self.assertEqual(out.strip(), gate_guard.unchecked_line('bambulab/Demo.3mf', ['bracket', 'cover']))   # passes, and says so
+        out = self.build()                                                  # template first: the observe write proves nothing, they are judged again
+        self.assertIn('2 new, 2 without a stamp (bracket, cover)', out)
+        writes = [e for e in self.journal() if e.get('kind') == 'write' and e.get('tool') == 'build']
+        self.assertTrue(writes); self.assertEqual({e.get('mode') for e in writes}, {'observe'}); self.assertTrue(all(e.get('unchecked') for e in writes))
 
     def test_a_stale_stamp_and_a_valid_one(self):
         self.stamp_both(); self.census('demo/cover', SIG3, prev_sig=SIG2)   # the cover changed in the model after its export
@@ -191,7 +212,8 @@ class Observe(Guarded):
         self.assertEqual(r['stamps'], {'bracket': 'demo/bracket@a1a1a1a1a1a1'})
         self.assertEqual([(x['object'], x['state'], x['part'], x['stl']) for x in r['rows']],
                          [('bracket', 'valid', 'demo/bracket', 'stl/bracket.stl'), ('cover', 'none', None, 'stl/cover.stl')])
-        self.assertEqual(out.strip(), r['line']); self.assertNotIn('error', r)
+        self.assertEqual(out.strip().splitlines(), [r['line'], gate_guard.unchecked_line('bambulab/Demo.3mf', ['cover'])]); self.assertNotIn('error', r)
+        self.assertEqual((r['unchecked'], r['mark']), (['cover'], None))                       # observe mode marks no plate unless the owner asks for it
         r, out = quiet(gate_guard.check, os.path.join(self.d, 'bambulab', 'Copy.3mf'), self.meshes())
         self.assertEqual((r['gated'], r['project'], r['new']), (True, None, []))                    # not a registered project: not judged in observe mode,
         self.assertIn('bambulab/Copy.3mf is not a registered project', out); self.assertIn('NOT guarded', out)     # and never written in silence
@@ -226,9 +248,11 @@ class Enforce(Guarded):
 
     def test_stamped_meshes_go_in(self):
         self.stamp_both()
-        self.assertNotIn('gate guard', self.build()); self.assertEqual(self.objects(), ['bracket', 'cover']); self.assertEqual(self.log(), '')
+        out = self.build()
+        self.assertEqual([l for l in out.splitlines() if 'gate guard' in l and 'NOT compared with the declared target' not in l], [])   # the target names 3 keys: the rest is said
+        self.assertEqual(self.objects(), ['bracket', 'cover']); self.assertNotIn('REFUSED', self.log()); self.assertNotIn('without a stamp', self.log())
         r, out = quiet(gate_guard.check, self.proj, self.meshes([('p', [('bracket', 'bracket.stl', '+x')])]), files=self.archive())      # again, on another face
-        self.assertEqual((r['new'], r['unstamped'], r['stale'], out), (['bracket'], [], [], ''))
+        self.assertEqual((r['new'], r['unstamped'], r['stale'], [l for l in out.splitlines() if 'NOT compared with the declared target' not in l]), (['bracket'], [], [], []))
 
     def test_a_stale_stamp_is_refused_with_the_reason(self):
         self.stamp_both(); self.census('demo/cover', SIG3, prev_sig=SIG2)
@@ -243,36 +267,60 @@ class Enforce(Guarded):
         self.stamp('demo/bracket', SIG1, 'bracket', target=TARGET)          # a second stamp of the same geometry
         self.build(PLATES[:1]); self.assertEqual(self.objects(), ['bracket'])
 
-    def test_carried_meshes_pass_and_settings_can_always_be_saved(self):
-        self.set_project('observe'); self.build(); self.set_project('enforce')      # two unstamped parts came in while the gate only watched
-        hit, out = quiet(bambu3mf.set_settings, self.proj, '', [('brim_type', 'no_brim')])
-        self.assertEqual((sorted(hit), out), (['bracket', 'cover'], ''))
-        infos, files = bambu3mf.load(self.proj); bambu3mf.save(self.proj, files, infos)             # a plain re-save
-        self.build(template_first=False); self.build()                      # rebuilt from the same STLs, either way
-        self.assertEqual(self.objects(), ['bracket', 'cover'])
+    def test_meshes_on_disk_without_a_stamp_pass_in_observe_and_are_refused_in_enforce(self):
+        self.ledger(); self.set_project('observe'); self.build(); self.set_project('enforce')      # two unstamped parts came in while the gate only watched
+        before = self.raw()
+        for save in (lambda: bambu3mf.set_settings(self.proj, '', [('brim_type', 'no_brim')]),     # a settings change, a plain re-save, a rebuild in place:
+                     lambda: bambu3mf.save(self.proj, *reversed(bambu3mf.load(self.proj))),        # nothing is let through because it was there before
+                     lambda: self.build(template_first=False)):
+            with self.assertRaises(GuardRefusal) as c: quiet(save)
+            self.assertEqual(sorted(r['object'] for r in c.exception.rows), ['bracket', 'cover'])
+            self.assertIn('lies in the file on disk and nothing on record backs it', str(c.exception)); self.assertEqual(self.raw(), before)
+        project = gate_common.read_json(gate_common.gate_path(self.d, 'project.json'))
+        gate_common.write_json(gate_common.gate_path(self.d, 'project.json'), dict(project, mode='observe', mark_unchecked=True))
+        hit, out = quiet(bambu3mf.set_settings, self.proj, '', [('brim_type', 'no_brim')])        # observe: they pass, said at every save
+        self.assertEqual(sorted(hit), ['bracket', 'cover']); self.assertIn(gate_guard.unchecked_line('bambulab/Demo.3mf', ['bracket', 'cover']), out)
+        quiet(self.build, template_first=False)
+        names = [n for n in re.findall(r'plater_name" value="([^"]*)"', bambu3mf.load(self.proj)[1]['Metadata/model_settings.config'].decode())]
+        self.assertEqual(names, ['[unchecked] first plate', '[unchecked] second plate'])        # marked where the owner prints (mark_unchecked)
+        self.assertEqual([p[0] for p in [(o, n) for o, _, n in bambu3mf.objects(bambu3mf.load(self.proj)[1]['Metadata/model_settings.config'].decode(), 'first plate')]], ['2'])   # scripts still find the plate by its name
 
-    def test_a_builder_that_saves_the_empty_template_first_is_not_locked_out(self):
+    def raw(self):
+        with open(self.proj, 'rb') as f: return f.read()
+
+    def test_observe_write_then_enforce_save_is_refused(self):
+        self.ledger(); self.set_project('observe'); self.build(); self.set_project('enforce')      # the journal holds both, written in observe mode without a stamp
+        with self.assertRaises(GuardRefusal) as c: self.build()             # the template first: neither is in the file any more, and the journal proves nothing
+        self.assertEqual(sorted(r['object'] for r in c.exception.rows), ['bracket', 'cover'])
+        self.stamp_both(); self.build(); self.assertEqual(self.objects(), ['bracket', 'cover'])
+        names = re.findall(r'plater_name" value="([^"]*)"', bambu3mf.load(self.proj)[1]['Metadata/model_settings.config'].decode())
+        self.assertEqual(names, ['first plate', 'second plate'])            # stamped: no mark
+
+    def test_a_builder_that_saves_the_empty_template_first_is_not_locked_out_with_stamped_parts(self):
         self.adopt()                                                        # on disk, unstamped, in no journal
         self.assertEqual(self.journal(), [])
         quiet(bambu3mf.new_project, self.tpl, self.proj)                    # save 1: the empty template over the project
         self.assertEqual(self.objects(), [])
-        carried = [e for e in self.journal() if e.get('tool') == 'carried']
-        self.assertEqual(sorted(e['object'] for e in carried), ['bracket', 'cover'])
-        e = carried[0]
-        self.assertEqual((e['v'], e['by'], e['kind'], e['project'], e['plate'], e['plate_index'], e['model'], e['stl'], e['stamp']),
-                         (1, 'tool', 'write', 'bambulab/Demo.3mf', 'first plate', 1, None, None, None))
+        found = [e for e in self.journal() if e.get('tool') == 'outside']
+        self.assertEqual(sorted(e['object'] for e in found), ['bracket', 'cover'])
+        e = found[0]
+        self.assertEqual((e['v'], e['by'], e['kind'], e['project'], e['plate'], e['plate_index'], e['model'], e['stl'], e['stamp'], e['mode']),
+                         (1, 'tool', 'write', 'bambulab/Demo.3mf', 'first plate', 1, None, None, None, 'enforce'))
         self.assertRegex(e['pose'], r'^[0-9a-f]{40}$'); self.assertRegex(e['t'], r'^\d{4}-\d\d-\d\dT')
-        quiet(bambu3mf.build, self.proj, self.stls, PLATES)                 # save 2: the parts; the file on disk holds none of them
+        with self.assertRaises(GuardRefusal) as c: quiet(bambu3mf.build, self.proj, self.stls, PLATES)       # what was found on disk is on record, never carried
+        self.assertIn('The file on disk holds no mesh now', str(c.exception))
+        self.stamp_both()
+        quiet(bambu3mf.build, self.proj, self.stls, PLATES)                 # save 2: the stamped parts
         self.assertEqual(self.objects(), ['bracket', 'cover'])
-        self.assertEqual(self.build(), self.build())                        # and again and again
-        self.assertEqual(len([e for e in self.journal() if e.get('tool') == 'carried']), 2)        # bound once, not at every save
+        self.assertEqual(self.build(), self.build())                        # and again and again: their stamped write events carry them
+        self.assertEqual(len([e for e in self.journal() if e.get('tool') == 'outside']), 2)        # bound once, not at every save
 
     def test_the_same_builder_is_still_stopped_for_a_part_that_changed(self):
-        self.adopt(); self.build()
+        self.adopt(); self.stamp_both(); self.build()
         self.stl('cover', d=6.5)                                            # a new export that never saw the gate
         with self.assertRaises(GuardRefusal) as c: self.build()
         self.assertEqual([r['object'] for r in c.exception.rows], ['cover'])
-        self.stamp('demo/cover', SIG2, 'cover'); self.build()
+        self.stamp('demo/cover', SIG3, 'cover'); self.build()
         self.assertEqual(self.objects(), ['bracket', 'cover'])
 
     def test_a_3mf_nobody_registered_is_judged_like_a_registered_one(self):
@@ -296,20 +344,45 @@ class Enforce(Guarded):
         self.assertEqual(gate_guard.known_poses(self.d, 'bambulab/Demo.3mf', self.proj), set())
         self.adopt(); on_disk = set(self.poses().values())
         self.assertEqual(gate_guard.known_poses(self.d, 'bambulab/Demo.3mf', self.proj), on_disk)
-        gate_common.append_jsonl(gate_common.events_path(self.d), {'v': 1, 'kind': 'write', 'project': 'bambulab/Demo.3mf', 'object': 'old', 'pose': 'a' * 40})
-        gate_common.append_jsonl(gate_common.events_path(self.d), {'v': 1, 'kind': 'write', 'project': 'bambulab/Other.3mf', 'object': 'x', 'pose': 'b' * 40})
+        for proof in ({}, {'mode': 'observe'}, {'stamp': 'demo/bracket@ffffffffffff'}, {'mode': 'enforce', 'tool': 'outside'}, {'mode': 'enforce', 'tool': 'carried'},
+                      {'mode': 'enforce', 'unchecked': True}):                # events that prove nothing: no stamp that verifies, not an enforce write
+            gate_common.append_jsonl(gate_common.events_path(self.d), dict({'v': 1, 'kind': 'write', 'project': 'bambulab/Demo.3mf', 'object': 'x', 'pose': 'd' * 40}, **proof))
+        self.assertNotIn('d' * 40, gate_guard.known_poses(self.d, 'bambulab/Demo.3mf', self.proj))
+        gate_common.append_jsonl(gate_common.events_path(self.d), {'v': 1, 'kind': 'write', 'project': 'bambulab/Demo.3mf', 'object': 'old', 'pose': 'a' * 40, 'mode': 'enforce'})
+        self.stamp('demo/bracket', SIG1, 'bracket'); model = meshid.stl_ids(os.path.join(self.stls, 'bracket.stl'))['geom_hash']
+        gate_common.append_jsonl(gate_common.events_path(self.d), {'v': 1, 'kind': 'write', 'project': 'bambulab/Demo.3mf', 'object': 'b', 'pose': 'f' * 40,
+                                                                   'model': model, 'stamp': 'demo/bracket@a1a1a1a1a1a1'})
+        gate_common.append_jsonl(gate_common.events_path(self.d), {'v': 1, 'kind': 'write', 'project': 'bambulab/Demo.3mf', 'object': 'b', 'pose': '9' * 40,
+                                                                   'model': 'e' * 40, 'stamp': 'demo/bracket@a1a1a1a1a1a1'})       # the stamp of another geometry
+        gate_common.append_jsonl(gate_common.events_path(self.d), {'v': 1, 'kind': 'write', 'project': 'bambulab/Other.3mf', 'object': 'x', 'pose': 'b' * 40,
+                                                                   'model': model, 'stamp': 'demo/bracket@a1a1a1a1a1a1'})
         gate_common.append_jsonl(gate_common.events_path(self.d), {'v': 1, 'kind': 'said', 'object': 'x', 'pose': 'c' * 40})
         os.remove(self.proj)
-        self.assertEqual(gate_guard.known_poses(self.d, 'bambulab/Demo.3mf', self.proj), {'a' * 40})
+        self.assertEqual(gate_guard.known_poses(self.d, 'bambulab/Demo.3mf', self.proj), {'f' * 40})       # an enforce write alone proves nothing
         with open(self.proj, 'w') as f: f.write('not a zip')
-        self.assertEqual(gate_guard.known_poses(self.d, 'bambulab/Demo.3mf', self.proj), {'a' * 40})
+        self.assertEqual(gate_guard.known_poses(self.d, 'bambulab/Demo.3mf', self.proj), {'f' * 40})
 
     def test_an_stl_the_journal_already_knows_for_this_project_is_carried_in_any_pose(self):
         model = meshid.stl_ids(os.path.join(self.stls, 'bracket.stl'))['geom_hash']
         with self.assertRaises(GuardRefusal): self.build(PLATES[:1])
-        gate_common.append_jsonl(gate_common.events_path(self.d), {'v': 1, 't': '2026-03-04T10:35:00Z', 'by': 'tool', 'kind': 'write', 'project': 'bambulab/Demo.3mf',
-                                                                  'object': 'bracket', 'pose': 'e' * 40, 'model': model, 'stl': 'stl/bracket.stl', 'tool': 'build'})
+        event = {'v': 1, 't': '2026-03-04T10:35:00Z', 'by': 'tool', 'kind': 'write', 'project': 'bambulab/Demo.3mf',
+                 'object': 'bracket', 'pose': 'e' * 40, 'model': model, 'stl': 'stl/bracket.stl', 'tool': 'build'}
+        gate_common.append_jsonl(gate_common.events_path(self.d), event)                   # written in observe mode, no stamp: proves nothing
+        with self.assertRaises(GuardRefusal): self.build([('p', [('bracket', 'bracket.stl', '+x,z26.6')])])
+        gate_common.append_jsonl(gate_common.events_path(self.d), dict(event, stamp='demo/bracket@a1a1a1a1a1a1'))     # a stamp that does not exist: nothing
+        with self.assertRaises(GuardRefusal): self.build([('p', [('bracket', 'bracket.stl', '+x,z26.6')])])
+        gate_common.append_jsonl(gate_common.events_path(self.d), dict(event, mode='enforce'))      # "written in enforce mode" is a line anyone can write: nothing
+        with self.assertRaises(GuardRefusal): self.build([('p', [('bracket', 'bracket.stl', '+x,z26.6')])])
+        self.stamp('demo/bracket', SIG1, 'bracket')
+        gate_common.append_jsonl(gate_common.events_path(self.d), dict(event, stamp='demo/bracket@a1a1a1a1a1a1'))     # a stamp of this geometry that verifies: carried
         self.build([('p', [('bracket', 'bracket.stl', '+x,z26.6')])]); self.assertEqual(self.objects(), ['bracket'])
+
+    def test_a_journal_stamp_carries_only_while_it_verifies(self):
+        self.ledger(); self.stamp('demo/bracket', SIG1, 'bracket'); self.build([('p', [('bracket', 'bracket.stl', False)])])
+        e = [x for x in self.journal() if x.get('tool') == 'build'][-1]
+        self.assertEqual((e['stamp'], e['mode']), ('demo/bracket@a1a1a1a1a1a1', 'enforce'))
+        self.build([('p', [('bracket', 'bracket.stl', '+x,z26.6')])])          # another pose: the stamped write carries it, its stamp goes on record
+        self.assertEqual([x for x in self.journal() if x.get('tool') == 'build'][-1]['stamp'], 'demo/bracket@a1a1a1a1a1a1')
 
     def test_a_quarter_turned_copy_of_a_stamped_stl_is_found_in_a_swap(self):
         turned = os.path.join(self.d, 'turned'); face = bambu3mf.ORIENT['+y']
@@ -369,13 +442,15 @@ class Enforce(Guarded):
 
     def test_a_weld_or_a_repair_of_a_mesh_that_is_in_the_file_is_carried(self):
         import weld_3mf; weld_3mf.GUARD = False
-        self.adopt(PLATES[:1])
+        self.ledger(); self.stamp('demo/bracket', SIG1, 'bracket'); self.build(PLATES[:1])     # a stamped write: its event holds the vertex set too
+        self.assertRegex([e for e in self.journal() if e.get('tool') == 'build'][-1]['vset'], r'^[0-9a-f]{40}$')
         infos, files = bambu3mf.load(self.proj); path = [n for n in files if n.startswith('3D/Objects/')][0]; om = files[path].decode()
         V = re.findall(r'<vertex [^>]+/>', om); t = re.search(r'<triangle v1="(\d+)" ', om)            # one vertex split in two: an open seam
         om = om[:t.start()] + '<triangle v1="%d" ' % len(V) + om[t.end():]
         files[path] = om.replace('     </vertices>', '      ' + V[int(t.group(1))] + '\n     </vertices>', 1).encode()
         bambu3mf.save(self.proj, files, infos)                               # the same vertex set and count: still the mesh that was there
         self.assertEqual(quiet(weld_3mf.run, self.proj)[0], 0); self.assertEqual(quiet(weld_3mf.run, self.proj, True)[0], 0)
+        bambu3mf._NOTES.clear()                                              # another process: nothing ties the mesh to its STL but the journal
         m = bambu3mf.project_meshes(bambu3mf.load(self.proj)[1])
         m[0]['triangles'] = m[0]['triangles'][:-2]                           # a repair that dropped two triangles and no vertex
         self.assertEqual(quiet(gate_guard.check, self.proj, m, files=self.archive())[0]['new'], [])
@@ -409,6 +484,93 @@ class Enforce(Guarded):
         m = self.meshes(); m[1].update(printable=False, plate=None, plate_index=None)
         with self.assertRaises(GuardRefusal) as c: gate_guard.check(self.proj, m)
         self.assertEqual(sorted(r['object'] for r in c.exception.rows), ['bracket', 'cover'])
+
+
+class OutsideTheTree(Guarded):
+    """A .3mf written outside the gated tree (a scratch folder, /tmp, a download folder) from a gated project's parts is
+    judged as an unregistered project of that project: the gate root is found from the source STLs of its meshes, the
+    working folder or CLAUDE_PROJECT_DIR."""
+
+    def scratch_build(self, plates=PLATES):
+        proj = self.outside()
+        return proj, self.build(plates, proj=proj)
+
+    def test_the_root_is_found_from_the_stls_the_working_folder_and_the_environment(self):
+        far = self.outside()
+        with mock.patch.dict(os.environ, {}, clear=False):
+            os.environ.pop('CLAUDE_PROJECT_DIR', None)
+            bambu3mf._NOTES.clear(); here = os.getcwd()
+            try:
+                os.chdir(os.path.dirname(far))
+                self.assertEqual(bambu3mf._gate_root(far), (None, None))
+                self.assertEqual(bambu3mf._gate_root(self.proj), (self.d, 'tree'))
+                bambu3mf.note_stl('bracket', os.path.join(self.stls, 'bracket.stl'))
+                self.assertEqual(bambu3mf._gate_root(far), (self.d, 'stl'))
+                bambu3mf._NOTES.clear()
+                os.environ['CLAUDE_PROJECT_DIR'] = self.d
+                self.assertEqual(bambu3mf._gate_root(far), (self.d, 'env'))
+                os.chdir(os.path.join(self.d, 'stl'))
+                self.assertEqual(bambu3mf._gate_root(far), (self.d, 'cwd'))
+            finally:
+                os.chdir(here); bambu3mf._NOTES.clear()
+
+    def test_a_scratch_copy_of_a_project_stl_still_finds_its_project(self):
+        far = self.outside(); scratch = os.path.dirname(far)
+        shutil.copyfile(os.path.join(self.stls, 'bracket.stl'), os.path.join(scratch, 'b.stl'))
+        index = os.path.join(scratch, 'roots.json'); gate_common.write_json(index, {'roots': [self.d]})
+        with mock.patch.dict(os.environ, {'FUSION_BAMBULAB_GATE_INDEX': index}, clear=False):
+            os.environ.pop('CLAUDE_PROJECT_DIR', None)
+            bambu3mf._NOTES.clear(); here = os.getcwd()
+            try:
+                os.chdir(scratch)
+                bambu3mf.note_stl('bracket', os.path.join(scratch, 'b.stl'))
+                self.assertEqual(bambu3mf._gate_root(far), (self.d, 'content'))      # the same bytes as stl/bracket.stl
+                self.set_project('enforce')
+                quiet(bambu3mf.new_project, self.tpl, far)
+                with self.assertRaises(GuardRefusal): quiet(bambu3mf.build, far, scratch, [('p', [('bracket', 'b.stl', False)])])
+                gate_common.write_json(index, {'roots': []})
+                bambu3mf._NOTES.clear(); bambu3mf.note_stl('bracket', os.path.join(scratch, 'b.stl'))
+                self.assertEqual(bambu3mf._gate_root(far), (None, None))
+            finally:
+                os.chdir(here); bambu3mf._NOTES.clear()
+
+    def test_observe_says_it_loudly_and_writes(self):
+        proj, out = self.scratch_build()
+        self.assertEqual(self.objects(proj), ['bracket', 'cover'])
+        self.assertIn('%s lies outside the gated project %s (the source STL of one of its meshes lies in it)' % (proj, self.d), out)
+        self.assertIn('NOT guarded, written as it is (observe mode', out)
+        self.assertFalse(os.path.exists(gate_guard.saves_path(self.d)))      # nothing of a file outside the tree is kept
+        self.assertEqual(self.journal(), [])
+
+    def test_enforce_refuses_what_has_no_stamp_and_carries_nothing(self):
+        self.set_project('enforce')
+        proj = self.outside()
+        with self.assertRaises(GuardRefusal) as c: self.build(proj=proj)
+        self.assertEqual(sorted(r['object'] for r in c.exception.rows), ['bracket', 'cover'])
+        self.assertFalse(os.path.exists(proj) and self.objects(proj))
+        self.stamp_both()
+        out = self.build(proj=proj)
+        self.assertEqual(self.objects(proj), ['bracket', 'cover']); self.assertIn('judged like a registered project, no declared target, nothing of it carried', out)
+        self.stl('cover', d=6.5); other = self.outside(); self.ungated(PLATES, other)     # a copy made with no gate, its cover unstamped
+        infos, files = bambu3mf.load(other)
+        with self.assertRaises(GuardRefusal) as c: quiet(bambu3mf.save, other, files, infos)   # saved again as it is: what lies there carries nothing
+        self.assertEqual([r['object'] for r in c.exception.rows], ['cover'])
+
+
+class ZipWriters(unittest.TestCase):
+    def test_scripts_that_write_a_3mf_past_bambu3mf_are_listed(self):
+        d = os.path.realpath(tempfile.mkdtemp()); self.addCleanup(shutil.rmtree, d)
+        files = {'tools/build.py': "import zipfile\nwith zipfile.ZipFile('out/p.3mf', 'w', zipfile.ZIP_DEFLATED) as z: pass\n",
+                 'tools/kw.py': "import zipfile\nzipfile.ZipFile(path + '.3mf', mode='w')\n",
+                 'tools/reads.py': "import zipfile\nzipfile.ZipFile('p.3mf')\n",
+                 'tools/zips.py': "import zipfile\nzipfile.ZipFile('backup.zip', 'w')\n",
+                 'bambulab/tools/bambu3mf.py': "zipfile.ZipFile(tmp, 'w', compress)  # .3mf\n",
+                 'gate/tools/x.py': "zipfile.ZipFile('a.3mf', 'w')\n", '.hidden/y.py': "zipfile.ZipFile('a.3mf', 'w')\n"}
+        for rel, text in files.items():
+            os.makedirs(os.path.dirname(os.path.join(d, rel)), exist_ok=True)
+            with open(os.path.join(d, rel), 'w', encoding='utf-8') as f: f.write(text)
+        self.assertEqual(gate_common.zip_writers(d), {'files': ['tools/build.py', 'tools/kw.py'], 'complete': True})
+        self.assertFalse(gate_common.zip_writers(d, limit=1)['complete'])
 
 
 class Library(Guarded):
@@ -459,7 +621,7 @@ class Library(Guarded):
             self.build(); quiet(bambu3mf.set_settings, self.proj, 'bracket', [('brim_type', 'no_brim')])
             self.assertEqual([c[3] for c in calls], ['new_project', 'build', 'set_settings'])
             self.assertEqual(calls[0][:3], ('Demo.3mf', [], {}))
-            self.assertEqual(calls[1][:3], ('Demo.3mf', [('bracket', 'bracket.stl'), ('cover', 'cover.stl')], {}))        # all carried by now: no stamp looked up
+            self.assertEqual(calls[1][:3], ('Demo.3mf', [('bracket', 'bracket.stl'), ('cover', 'cover.stl')], {'bracket': 'demo/bracket@a1a1a1a1a1a1'}))   # the fake ledger kept no event: judged again
             fake.record_writes = mock.Mock(side_effect=RuntimeError('disk full'))
             self.assertIn('ledger: the write was not recorded (RuntimeError: disk full)', self.build())
             self.assertEqual(self.objects(), ['bracket', 'cover'])

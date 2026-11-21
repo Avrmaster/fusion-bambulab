@@ -6,6 +6,8 @@ paths a review found broken: several parts in one export call, a project with se
 is withdrawn behind an answer, a vendored copy that was changed by hand; and the first adoption of a project (the audit,
 inherited parts, the questions that wait until a part changes or is exported). Every name and number is invented."""
 import json, os, re, sys, unittest
+for _k in ('CLAUDECODE', 'CLAUDE_CODE_ENTRYPOINT', 'CLAUDE_CODE_SESSION_ID'): os.environ.pop(_k, None)      # gate.py owner from an agent session needs the hook's ticket: a test is no agent session
+os.environ.pop('CLAUDE_PROJECT_DIR', None)      # bambu3mf finds a gated root for a file outside it from this: never the session's project
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, 'tools', 'gate'))
 for d in (os.path.join(ROOT, 'tools', 'bambu'), os.path.dirname(os.path.abspath(__file__))):
@@ -420,7 +422,7 @@ class Adoption(Walk):
         self.assertEqual((v['inherited_part'], v['state'], v['deferred_questions']), (False, 'unchanged', []))          # stamped: an ordinary part from now on
         self.assertEqual(gate_report.status(self.root)['inherited_parts'], 2)
 
-    def test_enforce_carries_the_mesh_of_an_inherited_part_and_refuses_a_new_one(self):
+    def test_enforce_refuses_the_unstamped_mesh_of_an_inherited_part_too(self):
         # the project existed before the gate: its .3mf already holds the foot and the turntable, exported by hand
         H.write_stl(os.path.join(self.stl_dir, 'lamp_foot.stl'), E.MESHES['foot v2']()); H.write_stl(os.path.join(self.stl_dir, 'turntable.stl'), E.MESHES['hub']())
         script = self.text('bambulab', 'build_3mf.py')
@@ -433,15 +435,11 @@ class Adoption(Walk):
         gate_common.write_json(self.path('gate', 'project.json'), dict(self.read('gate', 'project.json'), mode='enforce'))
         before = self.raw()
         infos, files = bambu3mf.load(self.proj)
-        G.quiet(bambu3mf.save, self.proj, files, infos)                                   # a save of what the file holds: carried, never judged
-        G.quiet(bambu3mf.build, self.proj, self.stl_dir, E.PLATES)                        # the same STLs placed again: the same parts, carried
-        self.assertEqual(self.objects(), ['Lamp foot', 'Turntable']); self.assertNotIn('REFUSED', self.guard_log())
-        H.write_stl(os.path.join(self.stl_dir, 'lamp_foot.stl'), E.MESHES['foot v3']())   # the foot is changed and exported around the gate
-        kept = self.raw()
-        with self.assertRaises(GuardRefusal) as c: G.quiet(bambu3mf.build, self.proj, self.stl_dir, E.PLATES)
-        self.assertEqual([(row['object'], row['state']) for row in c.exception.rows], [('Lamp foot', 'none')])       # a NEW mesh needs a stamp, inherited part or not
-        self.assertEqual(self.raw(), kept); self.assertIn('REFUSED', self.guard_log())
-        self.assertTrue(before)
+        for save in (lambda: bambu3mf.save(self.proj, files, infos), lambda: bambu3mf.build(self.proj, self.stl_dir, E.PLATES)):
+            with self.assertRaises(GuardRefusal) as c: G.quiet(save)              # in the file before, inherited, exported by hand: nothing is let through for it
+            self.assertEqual(sorted(row['object'] for row in c.exception.rows), ['Lamp foot', 'Turntable'])
+            self.assertEqual(self.raw(), before)
+        self.assertIn('REFUSED', self.guard_log())
 
     def test_a_first_scan_names_the_parts_that_look_bought(self):
         rows = [fake_fusion.scan_part('Lamp foot', fake_fusion.sig_of('foot'), faces=48), fake_fusion.scan_part('Steel pin', fake_fusion.sig_of('pin'), faces=3),

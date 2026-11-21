@@ -25,5 +25,8 @@
    "verdict": "NOT_RUN",
    "part": "main:Demo.3mf"
   }
- ]
+ ],
+ "params": {
+  "target.fit_settings": "nozzle_diameter line_width layer_height initial_layer_print_height xy_hole_compensation xy_contour_compensation elefant_foot_compensation wall_generator"
+ }
 }

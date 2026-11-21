@@ -310,6 +310,17 @@ def doctor_lines(root, pinger=None):
                 _line(out, 'warn', 'projects', 'the project tree is too large to look through for unregistered files')
         except Exception as e:
             _line(out, 'warn', 'projects', 'the tree was not searched for unregistered files (%s)' % e)
+        try:
+            zips = gate_common.zip_writers(root)
+            for f in zips['files']:
+                _line(out, 'warn', 'writers', '%s writes a .3mf with zipfile itself: no guard, no ledger, no fit-setting comparison. Write it with '
+                                              'bambu3mf.save(path, files, order) instead' % f)
+            if not zips['complete']:
+                _line(out, 'warn', 'writers', 'the project tree is too large to look through for .3mf writers that bypass bambu3mf.save')
+            elif not zips['files']:
+                _line(out, 'ok', 'writers', 'no script of the project writes a .3mf by itself: every write goes through bambu3mf.save')
+        except Exception as e:
+            _line(out, 'warn', 'writers', 'the tree was not searched for .3mf writers (%s)' % e)
         missing = gate_common.ask_rules_missing(root)
         if missing:
             _line(out, 'warn', 'settings', '.claude/settings.json lacks %s: `gate.py owner` refuses to write until the owner adds the rules of '

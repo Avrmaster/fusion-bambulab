@@ -30,17 +30,24 @@ def save(proj, files, order, compress=zipfile.ZIP_DEFLATED):
     A note lives for ONE guarded save: whatever the guard says, the notes are gone afterwards, so a setting named for
     one write never excuses a change in a later one. A note made for a project file (note_setting(..., project=))
     counts only at a save of that file.
-    After the write the meshes go to the print ledger (when a bambulab/ledger/ folder is above proj). With neither
-    above proj nothing of this runs."""
+    After the write the meshes go to the print ledger (when a bambulab/ledger/ folder is above proj), with the gate's
+    mode and the objects the guard let through unchecked. With neither above proj nothing of the ledger runs; the guard
+    still runs when _gate_root() finds a gated project for a file outside it (a scratch copy of a gated project's parts).
+    The guard may mark plates: in enforce mode the name of every plate that holds a mesh without a stamp gets the prefix
+    "[unchecked] " in what is written (gate_guard: "mark")."""
     try: state = _before_save(proj, files)
     finally:
-        if _roots(proj)[0]: del _SETTING_NOTES[:]          # asked for this save, not for the next one
+        if _gate_root(proj)[0]: del _SETTING_NOTES[:]      # asked for this save, not for the next one
     fd, tmp = tempfile.mkstemp(suffix='.tmp', dir=os.path.dirname(os.path.abspath(proj))); os.close(fd)   # same folder: the rename is atomic
     with zipfile.ZipFile(tmp, 'w', compress) as zo:
         for i in order: zo.writestr(i, files[i if isinstance(i, str) else i.filename])
     os.chmod(tmp, os.stat(proj).st_mode & 0o777 if os.path.exists(proj) else 0o644)
     os.replace(tmp, proj)
-    if state: record_writes(proj, state['meshes'], state['stamps'], _caller())
+    if state:
+        if state.get('guard') is not None and hasattr(state['guard'], 'saved'):
+            try: state['guard'].saved(state['gate'], proj, state.get('result'))
+            except Exception: pass
+        record_writes(proj, state['meshes'], state['stamps'], _caller(), mode=state.get('mode'), unchecked=state.get('unchecked'))
 
 # ---- the gate and the print ledger: nothing below runs unless gate/project.json or bambulab/ledger/ lies above the .3mf ----
 
@@ -87,6 +94,81 @@ def note_stl(name, stl, orient=None, model_stl=None, tool=None):
         notes.append({'stl': os.path.abspath(stl), 'orient': orient, 'model_stl': os.path.abspath(model_stl) if model_stl else None, 'tool': tool})
         del notes[:-8]
     except Exception: pass
+
+def _gated_above(path):
+    """The nearest folder at or above `path` with gate/project.json, or None."""
+    try:
+        d = os.path.abspath(path)
+        if not os.path.isdir(d): d = os.path.dirname(d)
+        while True:
+            if os.path.isfile(os.path.join(d, 'gate', 'project.json')): return d
+            up = os.path.dirname(d)
+            if up == d: return None
+            d = up
+    except Exception: return None
+
+def _gate_root(proj):
+    """(gated root, how it was found) for a save of proj: the nearest folder above proj with gate/project.json ("tree");
+    for a file outside every gated tree (a scratch folder, /tmp, a download folder) the gated project of the source STL
+    of a mesh this process placed ("stl", note_stl), else of the working folder ("cwd"), else of CLAUDE_PROJECT_DIR
+    ("env"), else of the gated root on the hooks' list whose STL folders hold a file with the bytes of a source STL of
+    this process (a copy of a project's STL in a scratch folder: "content", _root_by_content). (None, None) when none of
+    them is gated: the file is no gated project's business."""
+    g = _roots(proj)[0]
+    if g: return g, 'tree'
+    for notes in list(_NOTES.values()):
+        for n in notes:
+            for p in (n.get('model_stl'), n.get('stl')):
+                g = _gated_above(p) if p else None
+                if g: return g, 'stl'
+    try: g = _gated_above(os.getcwd())
+    except Exception: g = None
+    if g: return g, 'cwd'
+    env = os.environ.get('CLAUDE_PROJECT_DIR')
+    g = _gated_above(env) if env else None
+    if g: return g, 'env'
+    g = _root_by_content()
+    return (g, 'content') if g else (None, None)
+
+def _index_path():
+    """The list of gated roots the hooks of the gate keep (gate_watch.index_path), or None."""
+    if os.environ.get('FUSION_BAMBULAB_GATE_INDEX'): return os.environ['FUSION_BAMBULAB_GATE_INDEX']
+    home = os.environ.get('HOME')
+    return os.path.join(home, '.claude', 'plugins', 'data', 'fusion-bambulab-gate', 'roots.json') if home else None
+
+def _root_by_content():
+    """The gated root (from the hooks' list) one of whose STL folders holds a file with the same bytes as a source STL
+    this process placed: same size first, then sha256. None when there is no list or no such file. Never raises."""
+    import hashlib
+    try:
+        p = _index_path()
+        if not p or not os.path.isfile(p): return None
+        with open(p, encoding='utf-8') as f: roots = [r for r in (json.load(f).get('roots') or []) if isinstance(r, str)]
+        stls = {os.path.abspath(x) for notes in _NOTES.values() for n in notes for x in (n.get('stl'), n.get('model_stl')) if x}
+        mine = {}
+        for x in stls:
+            try: mine.setdefault(os.path.getsize(x), []).append(x)
+            except OSError: pass
+        if not mine: return None
+        def sha(x):
+            with open(x, 'rb') as f: return hashlib.sha256(f.read()).hexdigest()
+        for root in roots:
+            lay = os.path.join(root, 'gate', 'layout.json')
+            if not os.path.isfile(lay): continue
+            with open(lay, encoding='utf-8') as f: layout = json.load(f)
+            dirs = {e.get('stl_dir') for k in ('documents', 'projects') for e in layout.get(k) or [] if isinstance(e, dict) and e.get('stl_dir')}
+            for d in sorted(dirs):
+                full = os.path.join(root, d)
+                if not os.path.isdir(full): continue
+                for name in os.listdir(full):
+                    q = os.path.join(full, name)
+                    if not name.lower().endswith('.stl'): continue
+                    try: size = os.path.getsize(q)
+                    except OSError: continue
+                    if size in mine and any(sha(q) == sha(x) for x in mine[size]): return root
+    except Exception:
+        return None
+    return None
 
 def _roots(proj):
     """(folder with gate/project.json, folder with bambulab/ledger/): the nearest ones above proj, or None."""
@@ -156,9 +238,10 @@ def _before_save(proj, files):
     gated project nor above a ledger; else {"meshes", "stamps"} for record_writes(). Only a GuardRefusal gets out of
     here (the guard's own, or the one of this file when the guard cannot be loaded in enforce mode): any other trouble
     is one printed line and the save goes on."""
-    gate, ledger = _roots(proj)
+    ledger = _roots(proj)[1]
+    gate, via = _gate_root(proj)
     if not gate and not ledger: return None
-    meshes, result = None, {}
+    meshes, result, guard = None, {}, None
     try: meshes = project_meshes(files)
     except Exception as e: print('gate: the meshes of %s could not be read (%s: %s)' % (os.path.basename(proj), type(e).__name__, e))
     if gate:
@@ -177,18 +260,49 @@ def _before_save(proj, files):
         try:
             here = os.path.realpath(proj)
             asked = [n for n in _SETTING_NOTES if n.get('project') in (None, here)]
-            try: knows = 'files' in inspect.signature(guard.check).parameters
-            except (TypeError, ValueError): knows = False
-            if knows: result = guard.check(proj, meshes, gate, files=files, asked=asked) or {}
+            try: params = inspect.signature(guard.check).parameters
+            except (TypeError, ValueError): params = {}
+            if 'files' in params:
+                more = {'via': via} if 'via' in params and via != 'tree' else {}
+                result = guard.check(proj, meshes, gate, files=files, asked=asked, **more) or {}
             else:
                 print('gate: gate/tools/gate_guard.py is older than this bambu3mf.py: the fit settings of this save are NOT compared (setup_project.py --update-tools)')
                 result = guard.check(proj, meshes, gate) or {}
         except Exception as e:
             if type(e).__name__ == 'GuardRefusal': raise
             print('gate guard: %s: %s (the save goes on)' % (type(e).__name__, e))
-    return {'meshes': meshes, 'stamps': result.get('stamps') if isinstance(result, dict) else None}
+        if isinstance(result, dict) and isinstance(result.get('mark'), list):
+            try: mark_plates(files, result['mark'])
+            except Exception as e: print('gate: the plates without a stamp could not be marked (%s: %s)' % (type(e).__name__, e))
+    r = result if isinstance(result, dict) else {}
+    return {'meshes': meshes, 'stamps': r.get('stamps'), 'mode': r.get('mode'), 'unchecked': r.get('unchecked'), 'guard': guard, 'gate': gate, 'result': r}
 
-def record_writes(proj, meshes, stamps=None, tool=None):
+UNCHECKED_MARK = '[unchecked] '
+
+def plate_name(name):
+    """A plate name without the gate's "[unchecked] " mark: what scripts match plates by."""
+    while name.startswith(UNCHECKED_MARK): name = name[len(UNCHECKED_MARK):]
+    return name
+
+def mark_plates(files, indices):
+    """Put the gate's "[unchecked] " mark in front of the name of every plate whose plater_id is in `indices`, and take
+    it off every other plate, in the archive `files` (Metadata/model_settings.config). Returns the plate names changed."""
+    cfg = files.get('Metadata/model_settings.config')
+    if cfg is None: return []
+    text = cfg.decode('utf-8') if isinstance(cfg, (bytes, bytearray)) else str(cfg); want = set(indices or ()); changed = []
+    def one(m):
+        block = m.group(0); pid = re.search(r'key="plater_id" value="(\d+)"', block)
+        n = re.search(r'(key="plater_name" value=")([^"]*)(")', block)
+        if not pid or not n: return block
+        new = (UNCHECKED_MARK if int(pid.group(1)) in want else '') + plate_name(n.group(2))
+        if new == n.group(2): return block
+        changed.append(new)
+        return block[:n.start(2)] + new + block[n.end(2):]
+    text = re.sub(r'<plate>.*?</plate>', one, text, flags=re.S)
+    if changed: files['Metadata/model_settings.config'] = text.encode('utf-8') if isinstance(cfg, (bytes, bytearray)) else text
+    return changed
+
+def record_writes(proj, meshes, stamps=None, tool=None, mode=None, unchecked=None):
     """The one place a .3mf writer tells the print ledger what it wrote: ledger.record_writes(proj, meshes, stamps, tool)
     appends one `write` event per object whose mesh changed to bambulab/ledger/events.jsonl. save() calls it after every
     write; a script that writes a .3mf by other means calls it with project_meshes(files). Does nothing when no
@@ -197,7 +311,12 @@ def record_writes(proj, meshes, stamps=None, tool=None):
         if meshes is None or not _roots(proj)[1]: return []
         ledger = _tool('ledger', os.path.join(_HERE, 'ledger.py'), os.path.join(_HERE, '..', 'ledger', 'ledger.py'))
         if ledger is None: return []
-        return ledger.record_writes(proj, meshes, stamps=stamps, tool=tool) or []
+        more = {}
+        if mode is not None or unchecked:
+            try: params = inspect.signature(ledger.record_writes).parameters
+            except (TypeError, ValueError): params = {}
+            more = {k: v for k, v in (('mode', mode), ('unchecked', unchecked)) if k in params and v is not None}
+        return ledger.record_writes(proj, meshes, stamps=stamps, tool=tool, **more) or []
     except NotImplementedError: return []
     except Exception as e:
         print('ledger: the write was not recorded (%s: %s)' % (type(e).__name__, e)); return []
@@ -255,7 +374,7 @@ def mesh_xml(V, F):   # %.9g: 6 digits made non-manifold edges
 
 def plates(cfg, prefix, exact=False):
     """<plate> blocks whose plater_name starts with prefix ('' = every plate), or equals it when exact."""
-    pat = r'plater_name" value="%s%s"' % (re.escape(prefix), '' if exact else '[^"]*')
+    pat = r'plater_name" value="(?:%s)?%s%s"' % (re.escape(UNCHECKED_MARK), re.escape(prefix), '' if exact else '[^"]*')     # the gate's mark is no part of the name
     return [p for p in re.findall(r'<plate>(.*?)</plate>', cfg, re.S) if re.search(pat, p)]
 
 def objects(cfg, plate_prefix='', exact=False):
@@ -457,6 +576,7 @@ def set_filament(ps, slot, values):
         if not isinstance(ps.get(k), list) or len(ps[k]) < slot:
             raise KeyError('%s: not a filament list key with slot %d' % (k, slot))
         note_setting(k, v, 'global', 'set_filament')
+        if k == 'filament_type': note_setting('filament', v, '*', 'set_filament')       # every object on that slot prints with it
         if ps[k][slot - 1] != v:
             ps[k][slot - 1] = v; changed.append(k)
     d = ps.get('different_settings_to_system') or ['']
@@ -553,7 +673,7 @@ def plate_positions(sizes, lay, bed):
         y -= h + gap
     return pos
 
-def build(proj, stl_dir, plate_list, settings=None, extra=None, filament=1, title='', bed=None, project=None):
+def build(proj, stl_dir, plate_list, settings=None, extra=None, filament=1, title='', bed=None, project=None, write=True):
     """Rebuild every object and plate of proj from STLs; printer / process / filament presets stay as they are in proj.
     plate_list: [(plate name, [(object name, stl file, orient[, {per-object settings, '_filament': slot}])])];
     settings: per-object for all, extra: {object name: {more settings}}; the optional 4th item of an object wins over both.
@@ -565,7 +685,9 @@ def build(proj, stl_dir, plate_list, settings=None, extra=None, filament=1, titl
     (default 1, a single column along Y) or {'rows': [2, 3]} for objects per row, gap between objects (default 10).
     Per-object dict keys starting with '_': '_filament': slot, '_blockers': [((x0, y0, z0), (x1, y1, z1)), …] support-blocker boxes
     (model coordinates; a third element (origin, (ux, uy, uz)) gives the box in a rotated frame, e.g. along a tilted bore)
-    in the STL's coordinates."""
+    in the STL's coordinates.
+    write=False: nothing is saved; returns (files, order), the archive a save would write (a caller that changes it
+    further and saves it once, as sync3mf's rebuild does: the guard sees one write, not a half-way state)."""
     _, keep = load(proj)
     ps0 = json.loads(keep['Metadata/project_settings.config']); bed = bed or bed_size(ps0)
     height = float(ps0.get('printable_height', 1e9))     # Bambu stores numbers as strings
@@ -607,6 +729,8 @@ def build(proj, stl_dir, plate_list, settings=None, extra=None, filament=1, titl
                        ''.join('    <component p:path="/%s" objectid="%d" p:UUID="%s" transform="1 0 0 0 1 0 0 0 1 0 0 0"/>\n' % (path, mid, uuid.uuid4()) for mid in [mesh_id] + sub_ids)))
             items.append('  <item objectid="%d" p:UUID="%s" transform="%s" printable="1"/>\n' % (obj_id, uuid.uuid4(), tr))
             for k, v in {**settings, **extra.get(name, {}), **per}.items(): note_setting(k, v, name, 'build', proj)
+            kinds = ps0.get('filament_type') if isinstance(ps0.get('filament_type'), list) else []
+            if isinstance(fil, int) and 0 < fil <= len(kinds): note_setting('filament', kinds[fil - 1], name, 'build', proj)
             opts = ''.join('    <metadata key="%s" value="%s"/>\n' % kv for kv in {**settings, **extra.get(name, {}), **per}.items())
             objcfg.append('  <object id="%d">\n    <metadata key="name" value="%s"/>\n' % (obj_id, name) + opts +
                           '    <metadata key="extruder" value="%d"/>\n    <metadata face_count="%d"/>\n    <part id="%d" subtype="normal_part">\n      <metadata key="name" value="%s"/>\n      <metadata key="matrix" value="1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 1"/>\n      <mesh_stat face_count="%d" edges_fixed="0" degenerate_facets="0" facets_removed="0" facets_reversed="0" backwards_edges="0"/>\n    </part>\n%s  </object>\n' % (fil, len(F) + 12 * len(bl), mesh_id, name, len(F),
@@ -622,4 +746,5 @@ def build(proj, stl_dir, plate_list, settings=None, extra=None, filament=1, titl
     files['3D/_rels/3dmodel.model.rels'] = ('<?xml version="1.0" encoding="UTF-8"?>\n<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">\n%s</Relationships>\n' % ''.join(rels)).encode()
     files['Metadata/model_settings.config'] = ('<?xml version="1.0" encoding="UTF-8"?>\n<config>\n%s%s  <assemble>\n%s  </assemble>\n</config>\n' % (''.join(objcfg), ''.join(platecfg), ''.join(asm))).encode()
     order = ['[Content_Types].xml', '_rels/.rels', '3D/3dmodel.model', '3D/_rels/3dmodel.model.rels'] + sorted(k for k in files if k.startswith('3D/Objects/')) + sorted(k for k in files if k.startswith('Metadata/'))
+    if not write: return files, order
     save(proj, files, order); print('wrote', proj)

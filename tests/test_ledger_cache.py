@@ -2,6 +2,7 @@
 and nothing that identifies an account or a printer in any output or stored file.
 The cache database is synthetic and built here with sqlite3 and plistlib; every "secret" in it is invented."""
 import contextlib, hashlib, io, json, os, plistlib, shutil, sqlite3, stat, subprocess, sys, tempfile, unittest
+for _k in ('CLAUDECODE', 'CLAUDE_CODE_ENTRYPOINT', 'CLAUDE_CODE_SESSION_ID'): os.environ.pop(_k, None)      # gate.py owner from an agent session needs the hook's ticket: a test is no agent session
 from unittest import mock
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, 'tools', 'gate'))

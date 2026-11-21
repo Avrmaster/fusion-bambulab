@@ -1,5 +1,6 @@
 """meshid: the one identity of a mesh for the gate and the ledger. Synthetic meshes only: a plate with a square hole."""
 import hashlib, math, os, random, re, shutil, struct, sys, tempfile, unittest, zipfile
+os.environ.pop('CLAUDE_PROJECT_DIR', None)      # bambu3mf finds a gated root for a file outside it from this: never the session's project
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, 'tools', 'gate'))
 for d in (os.path.join(ROOT, 'tools', 'bambu'), os.path.dirname(os.path.abspath(__file__))):

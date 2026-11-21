@@ -41,8 +41,15 @@ _MODEL_SETTINGS = 'Metadata/model_settings.config'
 # the slicer settings every fit is measured under, by their keys in the project settings: the default of the parameter
 # target.fit_settings, used when no registry can be read
 FIT_SETTINGS = ('nozzle_diameter', 'line_width', 'layer_height', 'initial_layer_print_height', 'xy_hole_compensation',
-                'xy_contour_compensation', 'elefant_foot_compensation', 'wall_generator')
-TARGET_KEYS = {'nozzle_diameter': 'nozzle'}       # how a setting is called in the declared target when not by its own key
+                'xy_contour_compensation', 'elefant_foot_compensation', 'wall_generator', 'filament')
+# "filament" is no key of the project settings: it is the filament type an object prints with. Its global value is the
+# type of the first filament slot (an object without an "extruder" of its own prints with that one), an object's or a
+# part's override is the type of the slot its "extruder" names. A fit printed in another material is another fit.
+FILAMENT = 'filament'
+TARGET_KEYS = {'nozzle_diameter': 'nozzle', FILAMENT: 'material'}       # how a setting is called in the declared target when not by its own key
+# the print settings a declared target may hold under "print" (project.settings_match compares them like the fit
+# settings: the value every object prints with). Supports decide whether an overhang prints at all.
+PRINT_SETTINGS = ('enable_support', 'support_type', 'support_remove_small_overhang', 'wall_sequence')
 _OVERRIDE_LIST = 'different_settings_to_system'   # project settings: the keys that differ from the system presets, ';' joined, one text per preset
 # archive members that give single objects their own layer heights (a height-range modifier, a variable layer profile).
 # The names are the ones the slicer's source uses; no project file was at hand that holds one.
@@ -159,15 +166,33 @@ def _attrs(text):
     return {m.group(1): _unescape(m.group(2) if m.group(2) is not None else m.group(3)) for m in _ATTR.finditer(text or '')}
 
 
-def _metas(text, want, nozzle, where, repeated):
+def _slot_type(filaments, slot):
+    """The filament type of a 1-based slot, as a setting value; a text that says so when the project has no such slot."""
+    try:
+        i = int(str(slot).strip())
+    except (TypeError, ValueError):
+        return 'extruder %s (not a slot number)' % slot
+    if not filaments or i < 1 or i > len(filaments):
+        return 'slot %d (the project has no such filament)' % i
+    return setting_value(filaments[i - 1])
+
+
+def _metas(text, want, nozzle, where, repeated, filaments=None):
     """(name, {key: value}) out of the <metadata key=... value=.../> tags of one object head or one part body. A fit key
     that is written twice with two values goes to `repeated`: the reader keeps the last one, what the slicer takes is
-    not known."""
+    not known. With FILAMENT wanted, an "extruder" tag gives the override FILAMENT: the type of that slot."""
     name, over, seen = None, {}, {}
     for m in _META.finditer(text):
         a = _attrs(m.group(1))
         k = a.get('key')
-        if k == 'name':
+        if k == 'extruder' and FILAMENT in want and 'value' in a:
+            k, v = FILAMENT, _slot_type(filaments, a['value'])
+            if filaments and same_value(v, setting_value(filaments[0])):
+                continue                                 # the type of slot 1: what it prints with anyway, no override
+            if k in seen and not same_value(seen[k], v):
+                repeated.append({'scope': where, 'key': k, 'values': [seen[k], v]})
+            seen[k] = over[k] = v
+        elif k == 'name':
             name = a.get('value', '')
         elif k in want and 'value' in a:
             v = setting_value(a['value'], _of(k, nozzle))
@@ -213,30 +238,38 @@ def read_fit_settings(source, keys=None):
         ps = json.loads(ps_text) if ps_text is not None else None
     except ValueError:
         ps = None
-    nozzle = None
+    nozzle, filaments = None, None
     if isinstance(ps, dict):
         nozzle = _number(ps.get('nozzle_diameter'))
+        kinds = ps.get('filament_type')
+        filaments = [kinds] if isinstance(kinds, str) else [str(x) for x in kinds] if isinstance(kinds, list) else None
         out['global'] = {k: setting_value(ps.get(k), _of(k, nozzle)) for k in keys}
+        if FILAMENT in keys:
+            out['global'][FILAMENT] = setting_value(filaments[0]) if filaments else None
         lists = ps.get(_OVERRIDE_LIST)
         lists = [lists] if isinstance(lists, str) else lists
         if isinstance(lists, list):
             named = {k.strip() for text in lists if isinstance(text, str) for k in text.split(';') if k.strip()}
-            out['listed'] = {k: k in named for k in keys}
+            out['listed'] = {k: k in named for k in keys if k != FILAMENT}      # the filament is no setting of that list
     if ms_text is not None:
         want, n, out['object_names'] = set(keys), 0, []
         for attrs, body in _OBJECT.findall(ms_text):
             n += 1
             oid = _attrs(attrs).get('id', '')
             head = body.split('<part', 1)[0]
-            name, over = _metas(head, want, nozzle, None, [])
+            name, over = _metas(head, want, nozzle, None, [], filaments)
             name = name or ''
-            _metas(head, want, nozzle, 'object %s' % name, out['repeated'])
+            _metas(head, want, nozzle, 'object %s' % name, out['repeated'], filaments)
             row = {'name': name, 'id': oid, 'parts': [], 'overrides': over}
             for pattrs, pbody in _PART.findall(body):
                 pa = _attrs(pattrs)
-                pname, _ = _metas(pbody, want, nozzle, None, [])
+                pname, _ = _metas(pbody, want, nozzle, None, [], filaments)
                 pname = pname if pname is not None else 'part %s' % pa.get('id', '')
-                _, pover = _metas(pbody, want, nozzle, 'part %s of object %s' % (pname, name), out['repeated'])
+                if FILAMENT in want and pa.get('subtype', 'normal_part') != 'normal_part':
+                    pwant = want - {FILAMENT}               # a modifier or blocker prints no filament of its own
+                else:
+                    pwant = want
+                _, pover = _metas(pbody, pwant, nozzle, 'part %s of object %s' % (pname, name), out['repeated'], filaments)
                 if pover:
                     row['parts'].append({'name': pname, 'subtype': pa.get('subtype'), 'overrides': pover})
             out['object_names'].append(row['name'])
@@ -272,7 +305,53 @@ def _asked(notes, key, scope_name, value):
     return None
 
 
-def settings_diff(before, after, asked=None):
+def print_keys(target=None):
+    """The print settings to read for a declared target: PRINT_SETTINGS and whatever else its "print" blocks name."""
+    keys = list(PRINT_SETTINGS)
+    blocks = [target.get('print')] if isinstance(target, dict) else []
+    objects = target.get('objects') if isinstance(target, dict) and isinstance(target.get('objects'), dict) else {}
+    blocks += [o.get('print') for o in objects.values() if isinstance(o, dict)]
+    for b in blocks:
+        if isinstance(b, dict):
+            keys += [k for k in b if isinstance(k, str) and k not in keys]
+    return keys
+
+
+def declared_value(target, key, name=None):
+    """The value a declared target gives a setting, for one object (`name`: its own value under "objects" first) or
+    for the project (name None). The nozzle diameter is "nozzle", the filament is "material". None when it says none."""
+    if not isinstance(target, dict):
+        return None
+    objects = target.get('objects') if isinstance(target.get('objects'), dict) else {}
+    own = objects.get(name) if isinstance(name, str) else None
+    if isinstance(own, dict) and own.get(target_key(key)) is not None:
+        return own.get(target_key(key))
+    return target.get(target_key(key))
+
+
+def _declares_object(target, name, key):
+    objects = target.get('objects') if isinstance(target, dict) else None
+    own = objects.get(name) if isinstance(objects, dict) else None
+    return isinstance(own, dict) and own.get(target_key(key)) is not None
+
+
+def meets(value, declared):
+    """Does a setting value equal the declared one? Numbers to 0.0005, texts without regard to case (a declared
+    true/false is 1/0), a list when every item does. None never does."""
+    if declared is None or value is None:
+        return False
+    if isinstance(declared, bool):
+        declared = 1.0 if declared else 0.0
+    declared = setting_value(declared)
+    if isinstance(value, list):
+        return bool(value) and all(meets(v, declared) for v in value)
+    num = lambda x: isinstance(x, (int, float)) and not isinstance(x, bool)
+    if num(value) and num(declared):
+        return abs(value - declared) <= 5e-4
+    return str(value).strip().lower() == str(declared).strip().lower()
+
+
+def settings_diff(before, after, asked=None, target=False):
     """What a write changes in the fit settings: `before` and `after` are read_fit_settings() of the file on disk and of
     the archive about to be written; `asked` the notes of the settings the caller means to change (bambu3mf.note_setting).
 
@@ -290,7 +369,11 @@ def settings_diff(before, after, asked=None):
     a removed object, not a changed setting. One case apart: an archive that holds NO object while the file on disk
     holds some (the empty template laid over a project before a rebuild) drops every override with them, and each is
     a row: the rebuild that follows knows only its plate table. A file on disk without project settings has no global value to lose:
-    nothing is compared there. Pure: no file is read here."""
+    nothing is compared there.
+    target: the declared target of the project ({} = none), or False (not given: a note covers whatever it names). With
+    a target a note covers a change only when the value the object then prints with (the new override, else the new
+    global value) equals the declared one (declared_value): the row of a noted change away from it, or of a key the
+    target does not say, has "asked" False and "off_target" (why). Pure: no file is read here."""
     keys = list((after or {}).get('keys') or (before or {}).get('keys') or FIT_SETTINGS)
     out = {'keys': keys, 'compared': False, 'why': None, 'changed': []}
     if not isinstance(before, dict) or not isinstance(after, dict):
@@ -298,12 +381,25 @@ def settings_diff(before, after, asked=None):
         return out
     out['compared'] = True
 
+    g0, g1 = before.get('global'), after.get('global')
+
     def row(key, scope, name, a, b):
         by = _asked(asked, key, name, b)
-        out['changed'].append({'key': key, 'scope': scope, 'before': a, 'after': b, 'asked': by is not None, 'by': by})
-        return out['changed'][-1]
+        r = {'key': key, 'scope': scope, 'before': a, 'after': b, 'asked': by is not None, 'by': by}
+        if by is not None and target is not False:
+            obj = None if name == 'global' else name
+            want = declared_value(target, key, obj)
+            prints = b if b is not None or obj is None else (g1 or {}).get(key) if isinstance(g1, dict) else None
+            if want is None:
+                r.update(asked=False, off_target='the declared target of this project says nothing about %s%s, so no note can cover the change'
+                                                 % (target_key(key), '' if target else ' (the project has no declared target)'))
+            elif not meets(prints, want):
+                r.update(asked=False, off_target='the declared target says %s = %s%s and the %s would print with %s'
+                                                 % (target_key(key), want, ' for this object' if obj and _declares_object(target, obj, key) else '',
+                                                    'object' if obj else 'project', prints))
+        out['changed'].append(r)
+        return r
 
-    g0, g1 = before.get('global'), after.get('global')
     if isinstance(g0, dict):                         # an archive without project settings drops every one of them
         g1 = g1 if isinstance(g1, dict) else {}
         l0, l1 = before.get('listed'), after.get('listed')
@@ -639,6 +735,8 @@ def measure(root, project_entry, layout, census, declared_target=None, reg=None,
       "objects": [{"name", "id", "overrides": {key: value}, "parts": [...]}] (only those that override a fit setting),
       "objects_read", "objects_unread", "object_names", "repeated", "layer_members"}; each object row also has "part"
       (its part id, when the object is tied to one). None when the file does not exist. "settings_write": None here (no write is under way: the guard fills it at a save).
+      "print_settings": read_fit_settings() of the file for print_keys(declared_target) (supports, wall order): what the
+      "print" block of the declared target is compared with. None when the file does not exist.
     When the project file does not exist: "exists" False, no objects, the STL folder is still listed."""
     import gate_stamp
     key = project_entry.get('key')
@@ -836,7 +934,13 @@ def measure(root, project_entry, layout, census, declared_target=None, reg=None,
         by_name_part = {r['name']: r['part'] for r in objects}
         for o in settings['objects']:
             o['part'] = part_of.get(str(o['id'])) or by_name_part.get(o['name'])
+    printing = None
+    if exists:
+        printing = read_fit_settings(path, print_keys(declared_target))
+        for o in printing['objects']:
+            o['part'] = part_of.get(str(o['id'])) or by_name_part.get(o['name'])
     return {'project': key, 'file': rel_file, 'exists': exists, 'target_declared': declared_target, 'fit_settings': settings, 'settings_write': None,
+            'print_settings': printing,
             'target_file': _target_of_settings(mine['settings']) if exists else None,
             'objects': [{k: r[k] for k in public} for r in objects], 'stls': stls, 'build_table': table,
             'stl_dir': project_entry.get('stl_dir'), 'writes': len(writes.get(rel_file, {})), 'unread_projects': unread}

@@ -1,6 +1,7 @@
 """Stamps: how one is built and stored, every way one dies, and the export that earns one. No Fusion: the Fusion unit,
 the host probes and the plan are played by fakes; the registry is the shipped one."""
 import contextlib, copy, io, os, shutil, struct, sys, tempfile, types, unittest
+for _k in ('CLAUDECODE', 'CLAUDE_CODE_ENTRYPOINT', 'CLAUDE_CODE_SESSION_ID'): os.environ.pop(_k, None)      # gate.py owner from an agent session needs the hook's ticket: a test is no agent session
 from unittest import mock
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, 'tools', 'gate'))

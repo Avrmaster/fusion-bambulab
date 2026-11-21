@@ -5,6 +5,7 @@ questions of an inherited part that wait.
 No Fusion (tests/fake_fusion.py). The small demo registry wherever a project is walked; the fact tests and the "auto"
 entries are held against the SHIPPED registry and its tables."""
 import json, os, re, sys, time, unittest
+for _k in ('CLAUDECODE', 'CLAUDE_CODE_ENTRYPOINT', 'CLAUDE_CODE_SESSION_ID'): os.environ.pop(_k, None)      # gate.py owner from an agent session needs the hook's ticket: a test is no agent session
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, 'tools', 'gate'))
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
