@@ -1,0 +1,49 @@
+{
+ "test": "only_table_parts_near",
+ "case": "a plate whose screws sit in a component named for the motor they hold: still screws",
+ "probes": {
+  "fusion_near": {
+   "margin": 10.0,
+   "bodies": [
+    {
+     "name": "ref drive screws: cover + motor screws / M3x12 DIN 912 (cover to base)",
+     "kind": "hardware",
+     "path": "ref drive screws: cover + motor screws",
+     "gap": 0.0
+    },
+    {
+     "name": "ref hardware / washer M3 DIN 125 (1)",
+     "kind": "hardware",
+     "path": "ref hardware",
+     "gap": 0.0
+    }
+   ]
+  },
+  "fusion_census": {
+   "holes": [],
+   "bores": [],
+   "openings": [],
+   "partial": []
+  },
+  "fusion_screws": {
+   "screws": [
+    {
+     "ref": "ref drive screws: cover + motor screws / M3x12 DIN 912 (cover to base)",
+     "size": "M3"
+    }
+   ],
+   "washers": [],
+   "passing": [],
+   "n_screws": 1,
+   "rejected": [],
+   "fastener_holes": []
+  },
+  "fusion_bearings": {
+   "bearings": [],
+   "seats_without_bearing": [],
+   "near_bearings": []
+  }
+ },
+ "expect": true,
+ "says": "every one of the 2 body(ies) within 10 mm"
+}

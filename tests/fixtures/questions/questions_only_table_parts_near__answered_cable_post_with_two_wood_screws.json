@@ -1,0 +1,79 @@
+{
+ "test": "only_table_parts_near",
+ "case": "a cable post held by two wood screws and nothing else near: standard parts drawn to their tables",
+ "probes": {
+  "fusion_near": {
+   "margin": 10.0,
+   "bodies": [
+    {
+     "name": "ref ties / wood screw 4x30 countersunk (1)",
+     "kind": "hardware",
+     "path": "ref ties",
+     "gap": 0.0
+    },
+    {
+     "name": "ref ties / wood screw 4x30 countersunk (2)",
+     "kind": "hardware",
+     "path": "ref ties",
+     "gap": 0.0
+    }
+   ]
+  },
+  "fusion_census": {
+   "holes": [
+    {
+     "id": "h1",
+     "anchor": {
+      "kind": "hole",
+      "axis": [
+       0,
+       0,
+       1
+      ],
+      "point": [
+       0,
+       0,
+       0
+      ]
+     },
+     "segments": [
+      {
+       "d": 4.4,
+       "len": 5.0
+      }
+     ],
+     "through": true,
+     "class": null,
+     "coaxial": [
+      {
+       "name": "ref ties / wood screw 4x30 countersunk (1)",
+       "kind": "hardware",
+       "span": [
+        2,
+        -28
+       ]
+      }
+     ]
+    }
+   ],
+   "bores": [],
+   "openings": [],
+   "partial": []
+  },
+  "fusion_screws": {
+   "screws": [],
+   "washers": [],
+   "passing": [],
+   "n_screws": 0,
+   "rejected": [],
+   "fastener_holes": []
+  },
+  "fusion_bearings": {
+   "bearings": [],
+   "seats_without_bearing": [],
+   "near_bearings": []
+  }
+ },
+ "expect": true,
+ "says": "is a screw, washer, nut, insert, pin or dowel by its name"
+}

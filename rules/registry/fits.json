@@ -168,6 +168,15 @@
       "class": "fit",
       "formula": "fits.nut_m3_af + fits.nut_slot_extra",
       "description": "width of a slot an M3 nut slides into from the side"
+    },
+    "fits.pass_room_min": {
+      "default": 0.15,
+      "unit": "mm",
+      "looser": "lower",
+      "measured_on": "decided: more than a slip fit clearance on the radius; not measured",
+      "class": "geometry",
+      "formula": null,
+      "description": "a bought body on the axis of a hole whose radius comes within this of the hole wall is fitted in the hole, not passing through it"
     }
   },
   "rules": [
@@ -273,7 +282,9 @@
       "title": "What goes in this pocket",
       "statement": "A blind hole that fits no row of the tables and no declared pocket parameter is named once: what goes in. A bought part goes in only with a fit parameter that is measured (M) or owner-set (U) for this project, and the pocket has that parameter's size.",
       "why": "A pocket cut from a typed number has no parameter the gate could hold it against. The gate cannot tell a magnet pocket from a vent by its shape.",
-      "params": [],
+      "params": [
+        "fits.pass_room_min"
+      ],
       "check": null,
       "level": "attest",
       "stage": "design",
@@ -287,7 +298,9 @@
         ],
         "per": "finding",
         "labels": [
-          "no bought part goes in: a printed part, a cable, a tool or air"
+          "no bought part goes in: a printed part, a cable, a tool or air",
+          "the bought part on its axis is not fitted in this hole: it passes with room, sits around it, or is held by a printed part in it",
+          "a screw head seat: the head of the screw on its axis sits in it"
         ],
         "param": {
           "class": "fit",
@@ -296,10 +309,16 @@
         "held": {
           "no bought part goes in: a printed part, a cable, a tool or air": {
             "by": "none"
+          },
+          "the bought part on its axis is not fitted in this hole: it passes with room, sits around it, or is held by a printed part in it": {
+            "coaxial_room": "fits.pass_room_min"
+          },
+          "a screw head seat: the head of the screw on its axis sits in it": {
+            "screw_seat": true
           }
         }
       },
-      "note": "Asked through the findings of fits.bought_part_pocket. The parameter named with --param must be of class fit, tagged M or U in this project (a D value is refused), and its value must be the diameter of the pocket at its floor, within the tolerance of the pockets table: a pocket cut from a typed number is not covered by naming some parameter. One hole gets one question: a hole this rule asks about (a blind hole of no table, or a hole of no table with a bought or hardware body on its axis) is not asked by census.unknown_hole as well. A counterbore that goes on behind a bridge layer into its clearance hole is a screw hole, and a short cylinder that is only a piece of another hole is that hole: neither is asked. The label \"no bought part goes in\" is refused while a bought or hardware body stands on the axis of the hole (the finding names it): a pin, a magnet or a shaft goes in, so its fit parameter is the answer."
+      "note": "Asked through the findings of fits.bought_part_pocket. The parameter named with --param must be of class fit, tagged M or U in this project (a D value is refused), and its value must be the diameter of the pocket at its floor, within the tolerance of the pockets table: a pocket cut from a typed number is not covered by naming some parameter. One hole gets one question: a hole this rule asks about (a blind hole of no table, or a hole of no table with a bought or hardware body that reaches into it on its axis) is not asked by census.unknown_hole as well. A body on the axis that lies beyond the hole's ends (census \"coaxial\" span) does not go in: it is named in the text, not in \"by\", and a through hole with only such bodies is census.unknown_hole's question. A counterbore that goes on behind a bridge layer into its clearance hole is a screw hole, and a short cylinder that is only a piece of another hole is that hole: neither is asked. The label \"no bought part goes in\" is refused while a bought or hardware body reaches into the hole (the finding names it). \"Not fitted in this hole\" is refused while a cylinder of such a body lies within fits.pass_room_min of the hole wall where they overlap (the census measures the radii since 0.3.2; facts without them refuse nothing). \"A screw head seat\" is refused unless a screw by its name reaches into the hole and the hole's widest diameter seats a head of the screws table of that thread (from the head diameter to its counterbore or seat diameter + 1 mm). A real press or slip fit is answered with its fit parameter."
     },
     {
       "id": "fits.per_material",

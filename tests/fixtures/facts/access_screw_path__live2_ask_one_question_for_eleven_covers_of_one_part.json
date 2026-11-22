@@ -388,7 +388,8 @@
   "access.reach": 60.0,
   "access.tool_clearance": 1.0,
   "access.min_blocked_share": 0.02,
-  "access.seal_gap": 0.2
+  "access.seal_gap": 0.2,
+  "assembly.cover_reach": 1000.0
  },
  "ctx": {
   "part": "demo/base"

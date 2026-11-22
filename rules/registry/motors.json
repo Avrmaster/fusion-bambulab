@@ -39,10 +39,10 @@
       "description": "least width of the channel the plug travels in"
     },
     "motors.ref_pattern": {
-      "default": "(?i)motor|nema|stepper|servo|connector|plug",
+      "default": "(?i)motor|nema|stepper|servo|connector|plug|stator|rotor|\\b\\d{2}hs\\d",
       "unit": "regex",
       "looser": null,
-      "measured_on": "naming habit, decided and not measured on any project; set it to how motors, their connectors and plugs are named. A body the pattern does not match is not taken for a motor",
+      "measured_on": "naming habit, decided and not measured on any project; set it to how motors, their connectors and plugs are named. The default also knows the parts of a motor model (stator, rotor) and stepper designations such as 17HS4401. A body the pattern does not match is not taken for a motor",
       "class": "geometry",
       "formula": null,
       "description": "a bought or mesh body whose name, or the name of a component above it, matches is a motor or a connector"
@@ -88,7 +88,8 @@
         "per": "part",
         "labels": [
           "no motor and no connector in or beside this part",
-          "the channel passes the measured plug and the first bend of its leads along the whole insertion path; no fastener in it"
+          "the channel passes the measured plug and the first bend of its leads along the whole insertion path; no fastener in it",
+          "a motor is beside this part, and its plug and leads leave away from it: the insertion and lead paths do not cross this part"
         ],
         "auto": [
           {
@@ -99,7 +100,7 @@
           }
         ]
       },
-      "note": "Asked once per changed part, and only where a motor or a connector is near: the unit fusion_near lists the bought and mesh bodies whose bounding box comes within process.near_margin of the part's box. A name can only make the question asked. When none of them matches motors.ref_pattern (the body, its component or a component above it) AND every one of them is a fastener by its name, the gate answers \"no motor and no connector\" itself and the report lists that under \"answered by facts\". A bought or mesh body under any other name (the \"Rotor\" of a motor model, a servo named by its type) leaves the question asked. With no facts of that unit the question is asked.",
+      "note": "Asked once per changed part, and only where a motor or a connector is near: the unit fusion_near lists the bought and mesh bodies whose bounding box comes within process.near_margin of the part's box. A name can only make the question asked. A body that is a fastener by its own name (a screw, washer, insert, nut, pin or wood screw) or a row of the screw unit is never a motor, and a hardware body is held against its own name and component only, not a component above it: a screw in a component \"motor screws\" is a screw. When none of the others matches motors.ref_pattern (the body, its component or, for a bought or mesh body, a component above it) AND every one of them is a fastener by its name, the gate answers \"no motor and no connector\" itself and the report lists that under \"answered by facts\". A bought or mesh body under any other name (the \"Rotor\" of a motor model, a servo named by its type) leaves the question asked. With no facts of that unit the question is asked.",
       "x_see": [
         "motors.real_model",
         "motors.plug_path",

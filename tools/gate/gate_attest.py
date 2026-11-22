@@ -51,7 +51,11 @@ from gate_common import GateError, EXIT_PASS, EXIT_ATTEST, read_json, write_json
 
 KINDS = ('label', 'shot', 'param', 'na', 'waiver')         # what `attest answer` and `owner waive` can give
 FACTS = 'facts'                                             # the kind of an answer the gate gives itself (fact_answer)
-FACT_PARAMS = ('motors.ref_pattern', 'bearings.ref_pattern', 'screws.any_hole_d_max')    # the parameters the fact tests read
+# the name patterns of the standard parts: a body whose own name matches one is a fastener by its name
+FASTENER_PATTERNS = ('screws.ref_pattern', 'washers.ref_pattern', 'inserts.ref_pattern', 'screws.nut_ref_pattern', 'fits.pin_ref_pattern',
+                     'screws.wood_pattern')
+# the parameters the fact tests and the held labels read
+FACT_PARAMS = ('motors.ref_pattern', 'bearings.ref_pattern', 'screws.any_hole_d_max', 'fits.pass_room_min') + FASTENER_PATTERNS
 PICTURES = ('.png', '.jpg', '.jpeg', '.webp', '.gif')
 
 
@@ -405,9 +409,102 @@ def _bought_shown(get, params, tables):
     return '; '.join(found) or None
 
 
+def _non_table_shown(get, params, tables):
+    """What the facts SHOW at this part that is no standard part drawn to its table, as a list of texts: bearings of
+    the bearing unit (at the part, near it, a seat with no bearing, a ring it refused), bodies a hardware name picked
+    and the shape refused, bodies on the axis of a screw hole or insert pocket that nothing recognised, bought or mesh
+    bodies on the axis of a hole, hardware on an axis that is no fastener by its own name, and bodies near or on an
+    axis that match motors.ref_pattern."""
+    s, b, c = get('fusion_screws') or {}, get('fusion_bearings') or {}, get('fusion_census') or {}
+    found = []
+    n = _n(b.get('bearings')) + _n(b.get('near_bearings'))
+    if n:
+        found.append('%d bearing(s) at or near this part: a bearing is asked' % n)
+    if _n(b.get('seats_without_bearing')):
+        found.append('%d bearing seat(s) with no bearing in it' % _n(b.get('seats_without_bearing')))
+    refused = _n(b.get('rejected')) or _n(b.get('not_bearings'))
+    if refused:
+        found.append('%d body(ies) near that a bearing name picked and the shape refused' % refused)
+    if _n(s.get('rejected')):
+        found.append('%d body(ies) near the part that a hardware name picked and the shape refused (%s): it is not known what they are'
+                     % (_n(s.get('rejected')), _some(_leaf(r.get('name')) for r in _rows(s, 'rejected'))))
+    blind = [r for r in _rows(s, 'fastener_holes') if r.get('bodies')]
+    if blind:
+        found.append('%d screw hole(s) or insert pocket(s) with a body on the axis that nothing recognised (%s)'
+                     % (len(blind), _some(_leaf(x) for r in blind for x in r.get('bodies') or [])))
+    other = [x.get('name') for x in _coaxial(_rows(c, 'holes') + _rows(c, 'bores'), ('bought', 'hardware', 'mesh'))
+             if x.get('kind') != 'hardware' or not _fastener_name(x.get('name'), params)]
+    if other:
+        found.append('%d body(ies) on the axis of a hole that are no standard part by their name (%s)' % (len(other), _some(_leaf(x) for x in other)))
+    got = _motor_hits(get, params)
+    if got and got[0]:
+        found.append('%d body(ies) near or on an axis match motors.ref_pattern (%s)' % (len(got[0]), _some(_leaf(h) for h in got[0])))
+    return found
+
+
+def _only_table_parts(get, params, tables):
+    """Reads fusion_near: "bodies"[] "kind", "name". fusion_census: "holes"[] and "bores"[] "coaxial"[]. fusion_screws:
+    "screws", "washers", "passing", "rejected", "fastener_holes". fusion_bearings: "bearings", "near_bearings",
+    "seats_without_bearing", "rejected", "not_bearings". Parameters: FASTENER_PATTERNS, motors.ref_pattern.
+    True when the four units have facts, at least one standard part is there, nothing of _non_table_shown is shown,
+    and every body within the near margin is a fastener by its own name (kind "hardware" and _fastener_name): a bought
+    or mesh body there, or a hardware body that is no fastener by its name (a bearing), can be what the question is
+    about. A screw, washer, nut, insert, pin or dowel is drawn to the size of its table: it has no STEP file to come from."""
+    units = {k: get(k) for k in ('fusion_near', 'fusion_census', 'fusion_screws', 'fusion_bearings')}
+    missing = [k for k in ('fusion_near', 'fusion_census', 'fusion_screws', 'fusion_bearings') if units[k] is None]
+    if missing:
+        return None, 'the unit %s has no facts for this geometry' % missing[0]
+    near, s = units['fusion_near'], units['fusion_screws']
+    found = _non_table_shown(get, params, tables)
+    bodies = _rows(near, 'bodies')
+    loose = [x.get('name') for x in bodies if x.get('kind') != 'hardware' or not _fastener_name(x.get('name'), params)]
+    if loose:
+        found.append('%d body(ies) within %g mm that are no fastener by their name (%s): not proven that none is a bought part with a STEP file'
+                     % (len(loose), near.get('margin') or 0, _some(_leaf(x) for x in loose)))
+    if found:
+        return False, '; '.join(found)
+    standard = len(bodies) + _n(s.get('screws')) + _n(s.get('washers')) + _n(s.get('passing'))
+    if not standard:
+        return False, 'no standard part at or near this part either: nothing is drawn to a table here'
+    return True, ('every one of the %d body(ies) within %g mm of this part is a screw, washer, nut, insert, pin or dowel by its name, no unit lists a bearing, '
+                  'a refused body or an unrecognised body on a screw axis, and nothing on an axis or near matches motors.ref_pattern'
+                  % (len(bodies), near.get('margin') or 0))
+
+
+def _only_table_shown(get, params, tables):
+    """What the facts SHOW against "only standard parts", or None (_non_table_shown)."""
+    return '; '.join(_non_table_shown(get, params, tables)) or None
+
+
+def _fastener_name(name, params):
+    """Is a body a standard fastener by its own name: the body's name, without its component (the text after the last
+    " / ") and without what stands in parentheses, matches one of FASTENER_PATTERNS (a screw, washer, insert, nut, pin,
+    dowel or wood screw) and not motors.ref_pattern? A component "Gearbox HW: lid + motor screws" says nothing about its
+    bodies; "M3x12 DIN 912 (lid to base)" does, and so does "M3x10 (motor frame to hub)"."""
+    bare = re.sub(r'\([^)]*\)', ' ', _leaf(name))                  # "(motor to plate)" says where it goes, not what it is
+    if _matches(params.get('motors.ref_pattern'), bare):
+        return False                                                  # "JST connector 4 pin" is a connector, whatever its pins
+    return any(_matches(params.get(p), bare) for p in FASTENER_PATTERNS)
+
+
+def _screw_unit_names(get):
+    """The names of the bodies the screw unit lists as screws, washers or screws that pass the part."""
+    s = get('fusion_screws') or {}
+    out = set()
+    for key in ('screws', 'washers', 'passing'):
+        for r in _rows(s, key):
+            for k in ('ref', 'name', 'head', 'shank'):
+                if isinstance(r.get(k), str) and r[k]:
+                    out.add(r[k])
+    return out
+
+
 def _motor_hits(get, params):
     """(names of the bodies near or on an axis that match motors.ref_pattern, the near facts, the pattern), or None
-    when the near unit has no facts or the pattern cannot be read."""
+    when the near unit has no facts or the pattern cannot be read.
+    A body that is a fastener by its own name (_fastener_name) or a row of the screw unit is never a hit: a screw "M3x12
+    (motor to plate)" in a component "motor screws" is a screw. A body of kind "hardware" (named as a fastener or a
+    bearing) is held against its own name and component only, not against the components above it."""
     near = get('fusion_near')
     pattern = params.get('motors.ref_pattern')
     try:
@@ -417,10 +514,12 @@ def _motor_hits(get, params):
     if near is None:
         return None
     c = get('fusion_census') or {}
+    skip = _screw_unit_names(get)
     # the pattern is held against the whole path: the bodies of a motor model are named "Rotor", the motor is named above them
-    named = [('%s %s' % (x.get('path') or '', x.get('name') or ''), x.get('name')) for x in _rows(near, 'bodies')]
+    named = [(('%s %s' % (x.get('path') or '', x.get('name') or '')) if x.get('kind') != 'hardware' else str(x.get('name') or ''), x.get('name'))
+             for x in _rows(near, 'bodies')]
     named += [(str(x.get('name') or ''), x.get('name')) for x in _coaxial(_rows(c, 'holes') + _rows(c, 'bores'), ('bought', 'hardware', 'mesh'))]
-    return [name for text, name in named if _matches(pattern, text)], near, pattern
+    return [name for text, name in named if name not in skip and not _fastener_name(name, params) and _matches(pattern, text)], near, pattern
 
 
 def _no_motor_near(get, params, tables):
@@ -487,16 +586,16 @@ def _bed_face_shown(get, params, tables):
 
 
 FACT_TESTS = {'no_screw_feature': _no_screw_feature, 'no_bearing_here': _no_bearing_here, 'no_bought_near': _no_bought_near,
-              'no_motor_near': _no_motor_near, 'bed_face_measured': _bed_face_measured}
+              'no_motor_near': _no_motor_near, 'bed_face_measured': _bed_face_measured, 'only_table_parts_near': _only_table_parts}
 # What the facts SHOW, per test: a text, or None. A fact test is False both for "the facts show it" and for "it could be
 # there and nothing proves that it is not". Only the first makes an answer false: an answer that says the question does
 # not apply is refused, and a stored one is asked again, while the function here gives a text (answer_contradicted).
 FACT_SHOWN = {'no_screw_feature': _screws_shown, 'no_bearing_here': _bearing_shown, 'no_bought_near': _bought_shown,
-              'no_motor_near': _motor_shown, 'bed_face_measured': _bed_face_shown}
+              'no_motor_near': _motor_shown, 'bed_face_measured': _bed_face_shown, 'only_table_parts_near': _only_table_shown}
 # the probes each test reads. gate_plan plans a unit for every one of them on a part that a question with "auto" is asked for
 TEST_PROBES = {'no_screw_feature': ('fusion_screws', 'fusion_census'), 'no_bearing_here': ('fusion_bearings', 'fusion_census', 'fusion_near'),
                'no_bought_near': ('fusion_near', 'fusion_census', 'fusion_screws', 'fusion_bearings'), 'no_motor_near': ('fusion_near', 'fusion_census'),
-               'bed_face_measured': ()}
+               'bed_face_measured': (), 'only_table_parts_near': ('fusion_near', 'fusion_census', 'fusion_screws', 'fusion_bearings')}
 _PARAMS_CACHE = {}
 
 
@@ -655,7 +754,8 @@ def _question(rule, part, anchor, context, text, finding=None):
     return {'q': question_id(rule['id'], part, anchor, context), 'rule': rule['id'], 'part': part, 'anchor': anchor, 'context': context,
             'question': text, 'evidence': list(a.get('evidence') or []), 'labels': list(a.get('labels') or []), 'stage': rule.get('stage'),
             'finding': (finding or {}).get('id') or (gate_features.finding_id(finding) if finding else None),
-            'finding_rule': (finding or {}).get('rule'), 'by': list((finding or {}).get('by') or []), 'answer': None}
+            'finding_rule': (finding or {}).get('rule'), 'by': list((finding or {}).get('by') or []),
+            'finding_text': (finding or {}).get('text') if finding else None, 'answer': None}
 
 
 def questions_for_part(root, reg, part, sig, findings, stages=('design',)):
@@ -825,6 +925,12 @@ def label_contradicted(root, reg, question, label, sig=None):
         if names:
             return 'the label says there is none, the finding names %d: %s%s' % (len(names), ', '.join(names[:3]), ' and %d more' % (len(names) - 3) if len(names) > 3 else '')
         return None
+    if isinstance(claim.get('text'), dict):          # a question of a finding: the label fits only a finding of this kind
+        return _text_refuses(claim['text'], question.get('finding_text'))
+    if isinstance(claim.get('coaxial_room'), str):
+        return _fitted_on_axis(root, reg, question, claim['coaxial_room'], sig)
+    if claim.get('screw_seat') is True:
+        return _no_head_seat(root, reg, question, sig)
     for path in claim.get('none') or []:
         n = _count(root, question['part'], path, sig)
         if n:
@@ -833,6 +939,97 @@ def label_contradicted(root, reg, question, label, sig=None):
     if some and all(n == 0 for _, n in some):
         return 'the label speaks of what this part has, the facts list none (%s)' % ', '.join(p.replace('.', ': ', 1) for p, _ in some)
     return None
+
+
+def _text_refuses(want, text):
+    """Why the text of the finding a question is about does not fit a label of attest.held {"text": {"has": regex,
+    "not": regex}}, or None. A question with no finding text (an older stored question) is refused: the label is
+    only for a finding of the kind the regex says."""
+    text = text if isinstance(text, str) else ''
+    if want.get('has') and not _matches(want['has'], text):
+        return 'the label is only for a finding that says %s; this one says: %s' % (want.get('says') or 'what the label names', text[:200] or 'nothing')
+    if want.get('not') and _matches(want['not'], text):
+        return 'the label is not for a finding that says %s; this one says: %s' % (want.get('says_not') or 'that', text[:200])
+    return None
+
+
+def _question_hole(root, question, sig):
+    """(the census hole the question is about, the census facts), or (None, facts) when it is not in the census."""
+    facts = _facts_of(root, question['part'], 'fusion_census', sig) or {}
+    holes = [h for h in (facts.get('holes') or []) if isinstance(h, dict)]
+    hole = gate_features.find(question['anchor'], holes) if isinstance(question.get('anchor'), dict) and question['anchor'].get('kind') != 'part' else None
+    return hole, facts
+
+
+def _hole_segments(hole):
+    """[(radius, from, to)] of the hole's segments along its axis: 0 at the mouth, negative inwards (the "span" frame
+    of the census "coaxial" rows)."""
+    out, t = [], 0.0
+    for seg in hole.get('segments') or []:
+        if not isinstance(seg, dict) or not isinstance(seg.get('d'), (int, float)) or not isinstance(seg.get('len'), (int, float)):
+            return []
+        r = max(seg['d'], seg.get('d2') or seg['d']) / 2.0 if isinstance(seg.get('d2'), (int, float)) else seg['d'] / 2.0
+        out.append((r, -(t + seg['len']), -t))
+        t += seg['len']
+    return out
+
+
+ENTER_MIN = gate_features.ENTER_MIN
+enters = gate_features.coaxial_enters
+
+
+def _fitted_on_axis(root, reg, question, room_param, sig):
+    """Why "nothing bought is fitted in this hole" does not hold, or None: a bought or hardware body on the hole's axis
+    reaches into it with a cylinder whose radius is within the parameter `room_param` of the hole wall where they
+    overlap (census "coaxial"[]."r": [[radius, from, to]], measured since 0.3.2). Rows without radii contradict
+    nothing: the label is then the agent's word."""
+    hole, _ = _question_hole(root, question, sig)
+    if not isinstance(hole, dict):
+        return None
+    room = _fact_params(root, reg).get(room_param)
+    room = room if isinstance(room, (int, float)) and not isinstance(room, bool) else 0.15
+    segs = _hole_segments(hole)
+    depth = hole.get('depth') if isinstance(hole.get('depth'), (int, float)) else (-segs[-1][1] if segs else None)
+    for x in _coaxial([hole]):
+        if not enters(x.get('span'), depth):
+            continue
+        for row in x.get('r') or []:
+            if not (isinstance(row, (list, tuple)) and len(row) == 3 and all(isinstance(v, (int, float)) for v in row)):
+                continue
+            r, lo, hi = row[0], min(row[1], row[2]), max(row[1], row[2])
+            for R, a, b in segs:
+                if min(hi, b) - max(lo, a) > ENTER_MIN and abs(r - R) <= room + 1e-9:
+                    return ('%s has a cylinder of D%g on the axis of this hole where the hole is D%g: within %s = %g of its wall, so it is fitted in it. '
+                            'Name the fit parameter its size comes from' % (_leaf(x.get('name')), round(2 * r, 3), round(2 * R, 3), room_param, room))
+    return None
+
+
+def _no_head_seat(root, reg, question, sig):
+    """Why "a screw head seat" does not hold, or None: no screw by its name (screws.ref_pattern) reaches into the hole
+    on its axis, or the widest diameter of the hole is no seat for a head of the screws table of that thread (at least
+    the head, at most its counterbore or seat diameter + 1 mm)."""
+    hole, _ = _question_hole(root, question, sig)
+    if not isinstance(hole, dict):
+        return 'the hole of this question is not in the census of the part: no screw can be found on its axis'
+    pattern = _fact_params(root, reg).get('screws.ref_pattern')
+    segs = _hole_segments(hole)
+    depth = hole.get('depth') if isinstance(hole.get('depth'), (int, float)) else (-segs[-1][1] if segs else None)
+    screws = [str(x.get('name') or '') for x in _coaxial([hole]) if _matches(pattern, _leaf(x.get('name'))) and enters(x.get('span'), depth)]
+    if not screws:
+        return 'no screw (screws.ref_pattern) reaches into this hole on its axis: it is no head seat'
+    widest = max([2 * r for r, _, _ in segs] or [0.0])
+    sizes = ((reg.get('tables') or {}).get('screws') or {}).get('sizes') or {}
+    threads = {m.group(0).upper() for n in screws for m in [re.search(r'(?i)\bM\d+(?:\.\d+)?', _leaf(n))] if m}
+    rows = [sizes[k] for k in sizes if not threads or k.upper() in threads]
+    heads = [h for row in rows if isinstance(row, dict) for h in (row.get('heads') or {}).values() if isinstance(h, dict) and isinstance(h.get('d'), (int, float))]
+    if not heads:
+        return None
+    for h in heads:
+        top = max([h['d']] + [h[k] for k in ('counterbore_d', 'seat_d') if isinstance(h.get(k), (int, float))]) + 1.0
+        if h['d'] - 0.05 <= widest <= top + 1e-9:
+            return None
+    return ('the hole is D%g at its widest: no head of the screws table for %s seats in it (%s)'
+            % (widest, ', '.join(sorted(threads)) or 'any thread', ', '.join(sorted({'D%g' % h['d'] for h in heads}))))
 
 
 def _param_fits(root, reg, resolved, question, name):

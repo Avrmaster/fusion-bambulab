@@ -912,11 +912,12 @@ class Census(Units):
         self.assertEqual(below['anchor'], {'kind': 'hole', 'axis': [0.0, 0.0, -1.0], 'point': [80.0, 4.0, 0.0]})
 
     def test_coaxial_bodies_and_the_insert_that_keeps_a_through_hole_in_the_band(self):
-        bare = lambda rows: [{k: v for k, v in r.items() if k != 'span'} for r in rows]
+        bare = lambda rows: [{k: v for k, v in r.items() if k not in ('span', 'r')} for r in rows]
         self.assertEqual(bare(self.holes['p1']['coaxial']), [{'name': 'HW (ref) / insert M3x4x5 (1)', 'kind': 'hardware', 'part': None}])
         self.assertEqual(bare(self.holes['p2']['coaxial']), [{'name': 'Cover', 'kind': 'printed', 'part': 'demo/cover'}])
         self.assertEqual(bare(self.holes['s1']['coaxial']), [{'name': 'HW (ref) / M3x10 screw (1)', 'kind': 'hardware', 'part': None}])
         self.assertEqual(self.holes['p4']['coaxial'], [])
+        self.assertEqual([r[0] for r in self.holes['p1']['coaxial'][0]['r']], [2.5])     # the radius of its cylinder: it is fitted, it does not pass
         sp = self.holes['p1']['coaxial'][0]['span']                                   # the insert lies in its pocket: inside the hole
         self.assertTrue(-self.holes['p1']['depth'] - 0.1 <= sp[0] < sp[1] <= 0.1, sp)
         t1 = self.holes['t1']

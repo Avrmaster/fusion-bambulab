@@ -2071,7 +2071,8 @@ class Probes(unittest.TestCase):
         import gate_judges, gate_registry, gate_params
         reg = gate_registry.load_default()
         rule = reg['rules'][rule_id]
-        return gate_judges.run_judge(rule, facts, gate_params.values(gate_params.resolve(reg)), {'part': part, 'rule': rule['id'], 'tables': reg['tables'], 'census': census})
+        params = dict(gate_params.values(gate_params.resolve(reg)), **{'assembly.cover_reach': 1000.0})      # every body over a head is a cover here
+        return gate_judges.run_judge(rule, facts, params, {'part': part, 'rule': rule['id'], 'tables': reg['tables'], 'census': census})
 
     def test_a_screw_drawn_as_a_head_body_and_a_shank_body_is_one_screw(self):
         facts = self.unit('fusion_screws', self.plate_scene(), part='Plate', features=self.plate_holes(), params=SHIPPED)['facts']

@@ -144,6 +144,21 @@ def _rounded(x, step):
     raise TypeError('a context holds numbers, text, lists and objects, not %s' % type(x).__name__)
 
 
+ENTER_MIN = 0.1      # mm: a body on a hole's axis whose span reaches less than this into the hole lies beyond its end
+
+
+def coaxial_enters(span, depth, tol=ENTER_MIN):
+    """Does a body on the axis of a hole reach into it? span [from, to] in mm from the mouth (negative inside, -depth
+    at the far end), as the census "coaxial" rows hold it. A row without a span, or a hole without a depth, is taken
+    to enter."""
+    if not (isinstance(span, (list, tuple)) and len(span) == 2 and all(isinstance(x, (int, float)) and not isinstance(x, bool) for x in span)):
+        return True
+    if not isinstance(depth, (int, float)) or isinstance(depth, bool):
+        return True
+    lo, hi = min(span), max(span)
+    return min(hi, 0.0) - max(lo, -depth) > tol
+
+
 def context_hash(data, step=GRID):
     """16 hex characters over `data` (the facts a verdict was computed from) with every number rounded to `step`.
     Key order does not matter; list order does (sort a list first when its order is not a fact)."""

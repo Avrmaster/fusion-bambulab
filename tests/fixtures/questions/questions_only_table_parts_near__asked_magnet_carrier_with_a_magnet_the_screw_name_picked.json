@@ -1,0 +1,42 @@
+{
+ "test": "only_table_parts_near",
+ "case": "a carrier: a magnet in a component 'screws and magnets' that the screw unit refused by its shape",
+ "probes": {
+  "fusion_near": {
+   "margin": 10.0,
+   "bodies": [
+    {
+     "name": "ref hardware / M3x12 DIN 912 (plate to base)",
+     "kind": "hardware",
+     "path": "ref hardware",
+     "gap": 0.0
+    }
+   ]
+  },
+  "fusion_census": {
+   "holes": [],
+   "bores": [],
+   "openings": [],
+   "partial": []
+  },
+  "fusion_screws": {
+   "screws": [],
+   "washers": [],
+   "passing": [],
+   "n_screws": 0,
+   "rejected": [
+    {
+     "name": "ref screws and magnets / magnet D6x3"
+    }
+   ],
+   "fastener_holes": []
+  },
+  "fusion_bearings": {
+   "bearings": [],
+   "seats_without_bearing": [],
+   "near_bearings": []
+  }
+ },
+ "expect": false,
+ "says": "a hardware name picked and the shape refused"
+}

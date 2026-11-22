@@ -44,7 +44,7 @@
     {
       "id": "regression.intended",
       "title": "A lost feature was removed on purpose",
-      "statement": "Every feature that vanished from a part is acknowledged one by one.",
+      "statement": "Every feature that vanished from a part, or changed at its place, is acknowledged one by one.",
       "why": "The agent that lost a feature is the one asked: the question makes it look at each one.",
       "params": [],
       "check": null,
@@ -52,7 +52,7 @@
       "stage": "design",
       "fix_order": [],
       "attest": {
-        "question": "Feature {feature} is gone from this part. Was that meant?",
+        "question": "Feature {feature} is gone from this part or changed. Was that meant?",
         "evidence": [
           "label",
           "waiver"
@@ -61,9 +61,21 @@
         "labels": [
           "removed on purpose: the function is gone",
           "replaced by another feature at another place",
-          "moved on purpose together with its mating part"
-        ]
-      }
+          "moved on purpose together with its mating part",
+          "changed on purpose in place: the new size or shape serves the same function, and its mate was changed with it or still fits"
+        ],
+        "held": {
+          "changed on purpose in place: the new size or shape serves the same function, and its mate was changed with it or still fits": {
+            "text": {
+              "has": "\\bchanged\\b|is blind now|goes through the part now",
+              "not": "\\bis gone\\b|, gone\\b",
+              "says": "the feature changed in place",
+              "says_not": "a feature is gone"
+            }
+          }
+        }
+      },
+      "note": "The label \"changed on purpose in place\" is taken only for a finding that says the feature changed at its place (a new size, through to blind or blind to through, a new profile on the same line) and names nothing that is gone. A feature that vanished needs one of the other three. The new shape is judged by the fits, inserts, walls and screws rules as before."
     }
   ]
 }

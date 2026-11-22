@@ -1,13 +1,25 @@
 {
   "category": "assembly",
-  "params": {},
+  "params": {
+    "assembly.cover_reach": {
+      "default": null,
+      "unit": "mm",
+      "looser": "lower",
+      "measured_on": "decided: the free height an L key needs over a head to go in and turn (access.free_height_over_head); the owner sets the reach of his own key",
+      "class": "geometry",
+      "formula": "access.free_height_over_head",
+      "description": "a body farther out than this over a screw head is not named as a cover of that head: an L key reaches the head under it"
+    }
+  },
   "rules": [
     {
       "id": "assembly.order",
       "title": "What is mounted later may cover an opening",
       "statement": "An opening or a screw head with another part in front of it is allowed only as a named exception: that part is mounted later and comes off first, and the order is written in the build notes. One question per part and rule, for all the parts that stand in front of its openings or of its screw heads; it is asked again when another part joins them.",
       "why": "Heads ended up under parts fitted later and nobody had written the removal order.",
-      "params": [],
+      "params": [
+        "assembly.cover_reach"
+      ],
       "check": null,
       "level": "attest",
       "stage": "design",
@@ -16,16 +28,19 @@
         "question": "These bodies stand in front of openings or screw heads of this part (the finding says how far out each one is and what the nearest cover): {by}. Is each of them mounted after what it covers, and does it come off first?",
         "evidence": [
           "label",
+          "shot",
           "waiver"
         ],
         "per": "finding",
         "labels": [
-          "every cover named is mounted later and comes off first: the order is in the build notes"
+          "every cover named is mounted later and comes off first: the order is in the build notes",
+          "each cover named is mounted later and comes off first, or goes on earlier and has a key way the head is reached through: both are in the build notes"
         ]
       },
       "x_see": [
         "assembly.written_order"
-      ]
+      ],
+      "note": "Over a screw head only bodies within assembly.cover_reach of the head top are named as covers (access.screw_path); the bodies farther out are one INFO row: an L key reaches the head under them, and access.key_swing judges the swing of its long arm. A cover that goes on before the part is answered with the second label when the key reaches the head through a way in it that is named in the build notes, or with a picture of that way."
     },
     {
       "id": "assembly.written_order",

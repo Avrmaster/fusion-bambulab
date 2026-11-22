@@ -64,7 +64,13 @@ CHECK_OPTIONAL = ('budget_s',)
 ATTEST_KEYS = ('question', 'evidence', 'per')
 ATTEST_OPTIONAL = ('labels', 'held', 'param', 'auto')
 # what gate_attest can prove from the facts of a part, for attest.auto (the functions are gate_attest.FACT_TESTS)
-FACT_TESTS = ('no_screw_feature', 'no_bearing_here', 'no_bought_near', 'no_motor_near', 'bed_face_measured')
+FACT_TESTS = ('no_screw_feature', 'no_bearing_here', 'no_bought_near', 'no_motor_near', 'bed_face_measured', 'only_table_parts_near')
+# attest.held claims a label of a rule asked per finding can make (gate_attest.label_contradicted):
+#   {"by": "none"}                                  refused while the finding names bodies
+#   {"text": {"has": regex, "not": regex, ...}}     refused unless the finding's text matches "has" and not "not"
+#   {"coaxial_room": "<parameter>"}                 refused while a body on the hole's axis is fitted in it
+#   {"screw_seat": true}                            refused unless a screw on the hole's axis has its head seat there
+HELD_FINDING = ('by', 'text', 'coaxial_room', 'screw_seat')
 
 
 class RegistryError(GateError):
@@ -168,6 +174,16 @@ def _check_check(c, where, errors):
         errors.append('%s: budget_s must be between 0 and 30' % where)
 
 
+def _compiles(text_claim):
+    try:
+        for k in ('has', 'not'):
+            if text_claim.get(k) is not None:
+                re.compile(text_claim[k])
+        return True
+    except (re.error, TypeError):
+        return False
+
+
 def _check_attest(a, where, errors):
     if not isinstance(a, dict):
         errors.append('%s: an attest rule needs an "attest" object' % where); return
@@ -194,9 +210,16 @@ def _check_attest(a, where, errors):
         for label, claim in sorted(held.items()):
             if not isinstance(labels, list) or label not in labels:
                 errors.append('%s: attest.held names %r, which is not one of its labels' % (where, label))
-            if isinstance(claim, dict) and claim == {'by': 'none'}:
+            if isinstance(claim, dict) and claim and set(claim) <= set(HELD_FINDING):
                 if a.get('per') != 'finding':
-                    errors.append('%s: attest.held[%r] = {"by": "none"} refuses a label while its finding names bodies: only for a rule asked per finding' % (where, label))
+                    errors.append('%s: attest.held[%r] = %s holds a label against its finding: only for a rule asked per finding' % (where, label, sorted(claim)))
+                ok = len(claim) == 1 and (claim.get('by') == 'none' if 'by' in claim else
+                                          claim.get('screw_seat') is True if 'screw_seat' in claim else
+                                          isinstance(claim.get('coaxial_room'), str) and NAME_RE.match(claim['coaxial_room']) if 'coaxial_room' in claim else
+                                          isinstance(claim.get('text'), dict) and set(claim['text']) <= {'has', 'not', 'says', 'says_not'}
+                                          and any(isinstance(claim['text'].get(k), str) for k in ('has', 'not')) and _compiles(claim['text']))
+                if not ok:
+                    errors.append('%s: attest.held[%r] must be one of {"by": "none"}, {"text": {"has", "not"}}, {"coaxial_room": "<parameter>"}, {"screw_seat": true}' % (where, label))
                 continue
             paths = [p for k in ('none', 'some') for p in (claim.get(k) or [])] if isinstance(claim, dict) and set(claim) <= {'none', 'some'} else None
             if not paths or any(not isinstance(p, str) or p.split('.')[0] not in PROBES or not 2 <= len(p.split('.')) <= 3 for p in paths):

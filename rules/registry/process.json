@@ -86,7 +86,10 @@
         "labels": [
           "made by the registered generator; every size is measured or from a fit ladder",
           "made by the registered generator; at least one size is decided, never printed"
-        ]
+        ],
+        "param": {
+          "class": "fit"
+        }
       },
       "applies": "generated"
     },

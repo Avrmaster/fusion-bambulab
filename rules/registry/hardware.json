@@ -15,7 +15,7 @@
     {
       "id": "hardware.bought_from_step",
       "title": "Bought parts come from their real model",
-      "statement": "Every bought part this part touches is modelled from its STEP file with the owner's measurements applied, not as a box. Thread sizes, hole patterns, connectors and the room a plug needs are read from the model and measured on the part.",
+      "statement": "Every bought part this part touches that has a model of its own (a motor, a gearbox, a board, a connector, a magnet, a belt or pulley, a mesh) is modelled from its STEP file with the owner's measurements applied, not as a box. Thread sizes, hole patterns, connectors and the room a plug needs are read from the model and measured on the part. A standard part (a screw, washer, nut, heat-set insert, pin, dowel or bearing) is drawn to the size of its table: it has nothing a STEP file would add.",
       "why": "A motor drawn as a plain box hid its connector: a large printed part was scrapped. A magnet pocket was cut for a magnet the owner never had, and a board mount was guessed from a photo.",
       "params": [],
       "check": null,
@@ -26,12 +26,13 @@
         "question": "Which bought parts does this part touch, and is each one from its STEP file with measured sizes?",
         "evidence": [
           "label",
-          "param",
-          "na"
+          "na",
+          "waiver"
         ],
         "per": "part",
         "labels": [
-          "every bought part it touches is from its STEP file, measured sizes applied",
+          "every bought part it touches is from its STEP file, or drawn from the owner's measurements where it has none; its standard parts (screws, washers, nuts, inserts, pins, bearings) are drawn to their table sizes",
+          "it touches only standard parts drawn to their tables (screws, washers, nuts, inserts, pins): no motor, board, magnet, bearing, connector, gearbox or mesh",
           "it touches no bought part"
         ],
         "auto": [
@@ -40,9 +41,16 @@
               "no_bought_near"
             ],
             "label": "it touches no bought part"
+          },
+          {
+            "when": [
+              "only_table_parts_near"
+            ],
+            "label": "it touches only standard parts drawn to their tables (screws, washers, nuts, inserts, pins): no motor, board, magnet, bearing, connector, gearbox or mesh"
           }
         ]
-      }
+      },
+      "note": "Answered by the gate when nothing bought is near (no_bought_near), or when every body near and on an axis is a screw, washer, nut, insert, pin or dowel by its own name and no unit lists a bearing, a refused body or an unrecognised body on a screw axis (only_table_parts_near). The label of standard parts only is refused while the facts show a bearing, a body no unit recognised on an axis, or a motor by motors.ref_pattern. Motors, boards, magnets, belts, pulleys, gearboxes, bearings and meshes stay asked: the first label is the agent's word that each one comes from its STEP file or from measurements. A simplified board or magnet is accepted by the owner alone (a waiver of the question). No parameter is evidence here: a size the agent can name says nothing about the source of a model."
     },
     {
       "id": "hardware.refs_present",

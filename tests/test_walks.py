@@ -6,6 +6,7 @@ paths a review found broken: several parts in one export call, a project with se
 is withdrawn behind an answer, a vendored copy that was changed by hand; and the first adoption of a project (the audit,
 inherited parts, the questions that wait until a part changes or is exported). Every name and number is invented."""
 import json, os, re, subprocess, sys, unittest
+from unittest import mock
 for _k in ('CLAUDECODE', 'CLAUDE_CODE_ENTRYPOINT', 'CLAUDE_CODE_SESSION_ID'): os.environ.pop(_k, None)      # gate.py owner from an agent session needs the hook's ticket: a test is no agent session
 os.environ.pop('CLAUDE_PROJECT_DIR', None)      # bambu3mf finds a gated root for a file outside it from this: never the session's project
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -92,10 +93,10 @@ class TwoParts(Walk):
         answered = {q['rule'] for q in report['questions'] if q['part'] == FOOT and q.get('answer')}
         for rule in ('access.hole_supports', 'print.bed_face'): self.assertIn(rule, answered)       # asked at export, and now on record
         row = next(p for p in report['parts'] if p['part'] == FOOT)
-        facts = self.by_facts(FOOT, report)                                      # no bearing and no motor at the foot: the gate said so itself
-        self.assertEqual(facts, ['motors.lead_path'])
+        facts = self.by_facts(FOOT, report)                                      # no bearing and no motor at the foot, only its insert: the gate said so itself
+        self.assertEqual(facts, ['hardware.bought_from_step', 'motors.lead_path'])
         mine = self.n_asked - len(facts)                                         # an answer by facts is no statement of the agent: not "attested"
-        self.assertEqual((row['verdict'], row['attested'], row['by_facts']), ('pass_attested', mine, 1)); self.assertEqual(self.stamp(FOOT)['attested'], mine)
+        self.assertEqual((row['verdict'], row['attested'], row['by_facts']), ('pass_attested', mine, 2)); self.assertEqual(self.stamp(FOOT)['attested'], mine)
         self.assertEqual({p['part'] for p in report['parts']}, {FOOT, HUB, CLIP})       # the parts of the report before it stay listed
         text = self.gate('report', '--last')[1]
         self.assertIn('access.hole_supports', text); self.assertIn('pass_attested(%d)' % mine, text); self.assertIn('### Answered by facts', text)
@@ -315,8 +316,16 @@ class SeveralTargets(Walk):
         self.assertEqual(self.gate('export', FOOT, '--for', 'coarse')[0], 0); self.assertEqual(len(self.stamps(FOOT)), 2)     # stamped already: nothing new is written
 
     def test_a_parameter_as_evidence_names_its_project(self):
+        real = gate_registry.load_default
+
+        def with_param(root=None):                                               # no shipped rule of a part takes a parameter since 0.3.2: one is lent one
+            reg = real(root)
+            reg['rules']['process.visual_check']['attest']['evidence'] = ['shot', 'param']
+            return reg
+        patch = mock.patch.object(gate_registry, 'load_default', with_param)
+        patch.start(); self.addCleanup(patch.stop)
         self.ready(answer=False, target=PROJ_KEY)
-        qid = next(q for q, part, rule in self.questions() if rule == 'hardware.bought_from_step' and part == FOOT)
+        qid = next(q for q, part, rule in self.questions() if rule == 'process.visual_check' and part == FOOT)
         code, out, err = self.gate('attest', 'answer', qid, '--param', 'inserts.wall_target')
         self.assertEqual(code, 4); self.assertIn('name the .3mf project with --for KEY', err)
         code, out, err = self.gate('attest', 'answer', qid, '--param', 'target.nozzle', '--for', PROJ_KEY)
@@ -380,7 +389,7 @@ class Adoption(Walk):
     def test_what_the_facts_prove_is_answered_and_the_rest_waits(self):
         self.audited(**{CLIP: [MOTOR]})                                                   # a motor stands 6.5 mm from the clip, named two levels up
         self.assertEqual(self.by_facts(HUB), ['hardware.bought_from_step', 'motors.lead_path', 'screws.count_load_joint'])       # a plain ring: no hole, nothing near
-        self.assertEqual(self.by_facts(FOOT), ['motors.lead_path'])                                  # it has an insert pocket: the screw questions stay
+        self.assertEqual(self.by_facts(FOOT), ['hardware.bought_from_step', 'motors.lead_path'])     # an insert pocket with its insert: a standard part, the screw questions stay
         # the motor model beside the clip is a bought body named "Rotor": no unit read its shape, so "no bearing here" is not proven either
         self.assertEqual(self.by_facts(CLIP), ['screws.count_load_joint'])
         waiting = self.gate('attest', 'list', '--part', CLIP)[1]

@@ -4086,13 +4086,16 @@ def access_screw_path(facts, params, ctx):
         not a ledge. One hit stands for the whole part, so a ledge higher up the same recess shows in the "own" path.
       another solid body in the tool path, measured: ONE FAIL row for the part with ask = "assembly.order" that lists
         every covering component nearest first (_acc_grouped), whatever the bodies are (a printed part, a motor):
-        whether they are in the way depends on the assembly order. One question, answered once.
+        whether they are in the way depends on the assembly order. One question, answered once. Only a body within
+        assembly.cover_reach of the head top is a cover; the bodies farther out are ONE INFO row (_acc_far_covers).
+        Without that parameter every body is a cover.
       a mesh or a body whose cut failed: one NOT_RUN row per body. A body of access.overlay_pattern: not counted.
     No tool path, a free path followed for less than the reach: NOT_RUN. With no "own" path the tool path stands for it."""
     reach, share, gap = pv(params, 'access.reach'), pv(params, 'access.min_blocked_share'), pv(params, 'access.seal_gap')
+    cover = params.get('assembly.cover_reach')
     openings, out = _rows(facts, 'openings', ctx)
     overlay = _acc_overlay(params, ctx, out)
-    groups = {'body': {}, 'approx': {}, 'overlay': {}}
+    groups, far = {'body': {}, 'approx': {}, 'overlay': {}}, {'body': {}}
     for o in openings:
         if o.get('of') != 'screw_head':
             continue
@@ -4123,9 +4126,28 @@ def access_screw_path(facts, params, ctx):
             if short:
                 out.append(_not_run(ctx, short, a))
             continue
-        _acc_note(groups, 'body', s['body'], label)
+        near = [h for h in s['body'] if not (_num(cover) and _num(h.get('at')) and h['at'] > cover + _EPS)]
+        _acc_note(groups, 'body', near, label)
+        _acc_note(far, 'body', [h for h in s['body'] if h not in near], label)
         _acc_note(groups, 'approx', approx, label)
-    return out + _acc_grouped(ctx, groups, reach, 'screw heads')
+    return out + _acc_grouped(ctx, groups, reach, 'screw heads') + _acc_far_covers(ctx, far, cover)
+
+
+def _acc_far_covers(ctx, far, cover):
+    """ONE INFO row for the measured bodies that stand over screw heads of the part only farther out than
+    assembly.cover_reach: they are not named as covers (an L key reaches a head under them; access.key_swing judges the
+    swing of its long arm), and they are said. No row when there are none."""
+    if not far['body']:
+        return []
+    covers = sorted(((min([r[1] for r in rows if _num(r[1])] or [0.0]), name, sorted({r[0] for r in rows})) for name, rows in far['body'].items()),
+                    key=lambda c: (c[0], c[1]))
+    n_heads = len({label for c in covers for label in c[2]})
+    return [finding(ctx['rule'], ctx['part'], 'INFO',
+                    '%d bod%s stand%s over %d screw head%s of this part only farther out than assembly.cover_reach (%s mm): %s. Not named as covers: an L key '
+                    'reaches a head under them, and access.key_swing judges the swing of its long arm. A straight key, or a screw longer than that, needs them off'
+                    % (len(covers), 'y' if len(covers) == 1 else 'ies', 's' if len(covers) == 1 else '', n_heads, '' if n_heads == 1 else 's', _g(cover),
+                       '; '.join('%s %s mm out' % (c[1], _g(c[0])) for c in covers[:6]) + ('; and %d more' % (len(covers) - 6) if len(covers) > 6 else '')),
+                    by=[c[1] for c in covers], context={'far_covers': sorted([c[1], c[2]] for c in covers), 'reach': cover})]
 
 
 @judge
@@ -4492,14 +4514,26 @@ def _some_names(names, n=3):
     return ', '.join(names[:n]) + (' and %d more' % (len(names) - n) if len(names) > n else '')
 
 
+def _coaxial_split(hole):
+    """(names of the bought and hardware bodies on the hole's axis that reach into it, names of those that lie beyond
+    its ends): the census "coaxial" span of a body tells (gate_features.coaxial_enters). A row without a span reaches in."""
+    depth = hole.get('depth') if _num(hole.get('depth')) else sum(s['len'] for s in _segments(hole) or [])
+    inside, beyond = set(), set()
+    for x in _list(hole.get('coaxial')):
+        if isinstance(x, dict) and x.get('kind') in ('bought', 'hardware') and x.get('name'):
+            (inside if gate_features.coaxial_enters(x.get('span'), depth) else beyond).add(str(x['name']))
+    return sorted(inside), sorted(beyond - inside)
+
+
 def _content_asked(hole, c):
     """Does fits.bought_part_pocket ask "what goes in" about this hole? Then the names of the bought and hardware bodies
-    on its axis (a list, empty for none), else None. It asks about a hole of no table (class None or role "unknown")
-    that is blind, or that has such a body on its axis. A through hole of no table with nothing bought in it is asked
-    by census.unknown_hole ("what is this hole"). One hole gets one question, never both."""
+    that reach into it on its axis (a list, empty for none), else None. It asks about a hole of no table (class None or
+    role "unknown") that is blind, or that has such a body reaching into it. A body on the axis beyond the hole's ends
+    (_coaxial_split) goes in nowhere here. A through hole of no table with nothing bought in it is asked by
+    census.unknown_hole ("what is this hole"). One hole gets one question, never both."""
     if c is not None and c.get('role') != 'unknown':
         return None
-    bought = sorted({str(x.get('name')) for x in _list(hole.get('coaxial')) if isinstance(x, dict) and x.get('kind') in ('bought', 'hardware') and x.get('name')})
+    bought = _coaxial_split(hole)[0]
     if not _segments(hole) or (hole.get('through') and not bought):
         return None
     return bought
@@ -4872,10 +4906,14 @@ def fits_bought_pocket(facts, params, ctx):
         if bought is None or _piece_of(h, holes):    # known by a table; or a through hole with nothing bought in it; or the same surface as another hole
             continue
         text = '%s hole %s at %s fits no row of the tables and no declared pocket parameter' % ('through' if h.get('through') else 'blind', _shape(segs), _at(a))
+        beyond = _coaxial_split(h)[1]
         if bought:
             text += '; on its axis: %s' % _some_names(bought)
+        if beyond:
+            text += '; on its axis beyond its ends (not in it): %s' % _some_names(beyond)
+        # the context keeps every body on the axis, as before: an answer holds while the same bodies stand there
         out.append(finding(ctx['rule'], ctx['part'], 'INFO', text + ': what goes in this pocket?', anchor=a, ask='fits.pocket_content', by=bought,
-                           context={'segments': [[s['d'], s['len']] for s in segs], 'through': bool(h.get('through')), 'coaxial': bought}))
+                           context={'segments': [[s['d'], s['len']] for s in segs], 'through': bool(h.get('through')), 'coaxial': sorted(set(bought) | set(beyond))}))
     for comp in sorted(unnamed):
         rows = unnamed[comp]
         a = _anchor(rows[0][0].get('anchor'))
@@ -7208,7 +7246,7 @@ def regression_feature_lost(facts, params, ctx):
     hole. So a hole that is still at its place under the other kind is looked at again:
       - its segments changed (_same_segments: any diameter or length off by more than 0.05), or it ends another way
         (_same_ends: through became blind or blind became through, or the material left under it moved by more than
-        0.05): the feature is lost, FAIL as above ("a hole is still at that place, it is no longer ...");
+        0.05): the feature is lost, FAIL as above ("changed: a hole is still at that place, it is no longer ...");
       - its segments and its ends are the same: the geometry did not change, only its class did (a corrected table row, a newer
         classifier, another ref on its axis). Nothing is lost. ONE INFO row for the part counts these holes and names
         the first of them, because the class decides which rules judge a hole and which anchor a waiver or an answer
@@ -7218,7 +7256,10 @@ def regression_feature_lost(facts, params, ctx):
     A through opening that moved or changed size a little (_moved_opening: the same shape, a parallel axis, its old
     centre inside the new one) is not called gone: FAIL with the same ask, the text says what it is now and how far it
     moved (in its context too). Whether the change was meant, only the designer knows.
-    Today's census without its "holes" or "openings" list: NOT_RUN, and nothing is called lost."""
+    Today's census without its "holes" or "openings" list: NOT_RUN, and nothing is called lost.
+    The words of a row tell regression.intended what it may be answered with: a feature still at its place says
+    "changed", "is blind now" or "goes through the part now"; one that vanished says "is gone" (", gone" for an opening
+    taken along). Only the first kind takes the label "changed on purpose in place"."""
     prev = ctx.get('prev')
     if prev is None:
         return []
@@ -7254,7 +7295,8 @@ def regression_feature_lost(facts, params, ctx):
                 text = ('%s %s at %s is classed differently now and the material under it changed: %s mm were left under it, now %s'
                         % (what, _shape(segs), _at(a), _g(old.get('floor')), _g(other.get('floor'))))
             elif other is not None:
-                text += ': a hole is still at that place (%s), it is no longer %s' % (_shape(_segments(other)), 'an insert pocket' if what == 'insert pocket' else 'a plain hole')
+                text = '%s %s at %s changed: a hole is still at that place (%s), it is no longer %s' % (
+                    what, _shape(segs), _at(a), _shape(_segments(other)), 'an insert pocket' if what == 'insert pocket' else 'a plain hole')
             else:
                 union = _same_line_holes(old, holes)
                 moved = None if union else _moved_hole(old, holes)

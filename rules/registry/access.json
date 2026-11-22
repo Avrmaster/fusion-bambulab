@@ -142,14 +142,15 @@
     {
       "id": "access.screw_path",
       "title": "Every screw can be put in and turned",
-      "statement": "In front of every screw head a straight path is free for {access.reach}, for the screw and the key behind it. The part itself must not stand in the section of the head, nor farther out than {access.seal_gap} anywhere in the path as wide as the head plus {access.tool_clearance}: not even a thin ledge over the edge of a head seat. The part itself in the ring of the tool clearance right at the top of the head is the wall of the recess the head sits in, not a ledge. Other solid bodies in the paths of a part are ONE row and one question for the part, whatever they are: every covering part nearest first, with its distance and the heads it covers; free only if each is fitted later and comes off first, with its removal order named. A body inside a bought or linked assembly is named with the assembly it belongs to. A mesh in the path leaves the check open. Every fastener exists as a ref body before this check runs; a screw that is only a hole is tested as a hole. A hit under {access.min_blocked_share} of the section is noise; a body the owner named an overlay (access.overlay_pattern) is not counted.",
+      "statement": "In front of every screw head a straight path is free for {access.reach}, for the screw and the key behind it. The part itself must not stand in the section of the head, nor farther out than {access.seal_gap} anywhere in the path as wide as the head plus {access.tool_clearance}: not even a thin ledge over the edge of a head seat. The part itself in the ring of the tool clearance right at the top of the head is the wall of the recess the head sits in, not a ledge. Other solid bodies in the paths of a part are ONE row and one question for the part, whatever they are: every covering part nearest first, with its distance and the heads it covers; free only if each is fitted later and comes off first, with its removal order named. A body is a cover of a head only within {assembly.cover_reach} of the head top: the bodies farther out are said in one row, not asked, because an L key reaches the head under them (access.key_swing judges its swing). A body inside a bought or linked assembly is named with the assembly it belongs to. A mesh in the path leaves the check open. Every fastener exists as a ref body before this check runs; a screw that is only a hole is tested as a hole. A hit under {access.min_blocked_share} of the section is noise; a body the owner named an overlay (access.overlay_pattern) is not counted.",
       "why": "A printed ledge over the edge of a head seat passed every hole, wall and sliver check on the biggest part of a build: two screws could not go in. Later two heads sat under parts fitted afterwards, by design, and were named nowhere but in a design log.",
       "params": [
         "access.reach",
         "access.tool_clearance",
         "access.min_blocked_share",
         "access.seal_gap",
-        "access.overlay_pattern"
+        "access.overlay_pattern",
+        "assembly.cover_reach"
       ],
       "check": {
         "probe": "fusion_openings",

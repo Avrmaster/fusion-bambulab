@@ -441,15 +441,16 @@ def coaxial_cylinders(point, axis, depth, cylinders, tol=0.25, reach=10.0):
     """Which cylinders of other bodies lie on the axis of a hole.
 
     point, axis, depth  the hole: centre of its mouth, unit axis out of the material, total depth (part frame, mm)
-    cylinders           [{"name", "kind", "part", "origin", "axis", "s0", "s1"}] in the same frame; s0..s1 is the extent of
-                        the cylinder along its own axis from its origin
+    cylinders           [{"name", "kind", "part", "origin", "axis", "s0", "s1", "r"}] in the same frame; s0..s1 is the extent of
+                        the cylinder along its own axis from its origin; "r" (optional) its radius
     tol                 mm the other axis may be off the hole's axis, at both ends of the hole
     reach               mm in front of the mouth and behind the bottom that still count
 
     Returns [{"name", "kind", "part", "span"}], one per name, sorted by name. "span" [from, to] is where the body's
     cylinders lie along the hole's axis, in mm from the mouth: positive in front of it, negative inside, -depth at the
     bottom (the far mouth of a through hole). It tells an insert pressed into the hole from an insert of another part
-    beyond its far end."""
+    beyond its far end. When the cylinders carry "r", the row also has "r": [[radius, from, to]] per radius (rounded to
+    0.01 mm), sorted: whether the body is fitted in the hole or passes it with room."""
     bottom = v_sub(point, v_scale(axis, depth))
     seen = {}
     for c in cylinders or []:
@@ -464,7 +465,19 @@ def coaxial_cylinders(point, axis, depth, cylinders, tol=0.25, reach=10.0):
             continue
         row = seen.setdefault(c['name'], {'name': c['name'], 'kind': c.get('kind'), 'part': c.get('part'), 'span': [round(min(e0, e1), 2), round(max(e0, e1), 2)]})
         row['span'] = [min(row['span'][0], round(min(e0, e1), 2)), max(row['span'][1], round(max(e0, e1), 2))]
-    return [seen[k] for k in sorted(seen)]
+        if isinstance(c.get('r'), (int, float)):
+            radii = row.setdefault('_r', {})
+            key, lo, hi = round(float(c['r']), 2), round(min(e0, e1), 2), round(max(e0, e1), 2)
+            got = radii.get(key)
+            radii[key] = [min(got[0], lo), max(got[1], hi)] if got else [lo, hi]
+    out = []
+    for k in sorted(seen):
+        row = seen[k]
+        radii = row.pop('_r', None)
+        if radii:
+            row['r'] = [[r, radii[r][0], radii[r][1]] for r in sorted(radii)]
+        out.append(row)
+    return out
 
 
 def pocket_profile(kind_row):

@@ -345,7 +345,8 @@
         "held": {
           "every load joint of this part has at least the minimum count, on the largest circle the parts allow": {
             "some": [
-              "fusion_screws.screws"
+              "fusion_screws.screws",
+              "fusion_screws.passing"
             ]
           }
         }

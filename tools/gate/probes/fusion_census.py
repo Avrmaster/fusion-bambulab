@@ -436,7 +436,8 @@ def probe(job):
                  "floor": 2.1          mm of plastic behind a blind end along the axis; None for a through hole
                  "exit": anchor of the other open end of a through hole (kind "hole", axis opposite), else None
                  "class": classify_stack(segments, through, tables) -> {"table", "kind", "role", "match"} or None
-                 "coaxial": [{"name": "ref insert M3x4x5", "kind": "hardware" | "bought" | "printed", "part": part id or None}]
+                 "coaxial": [{"name": "ref insert M3x4x5", "kind": "hardware" | "bought" | "printed", "part": part id or None,
+                              "span": [from, to], "r": [[radius, from, to], ...] (since 0.3.2: the radii of its cylinders on the axis)}]
                            bodies of OTHER components with a cylinder on the same axis (document frame compared)}]
       "openings": [{"id": "o1", "anchor": {"kind": "face", "axis": outward normal of the face the opening is in,
                     "point": centre of the opening}, "shape": "slot" | "window", "size": [w, h], "through": bool}]
@@ -815,7 +816,8 @@ def _cen_probe(job):
                             flo, fhi = gate_bbox(fc)
                             ss = [along((x, y, z), o_, a_) for x in (flo[0], fhi[0]) for y in (flo[1], fhi[1]) for z in (flo[2], fhi[2])]
                             nbs['cyls'].append({'name': c['name'], 'kind': c['kind'], 'part': c['part'], 'origin': list(origin),
-                                                'axis': list(axis), 's0': min(ss), 's1': max(ss)})
+                                                'axis': list(axis), 's0': min(ss), 's1': max(ss), 'r': round(float(g.radius) * 10.0, 4)})
+                            _cen_n(1)
                     f += 1
                     work[0] += 1
                 i += 1

@@ -1,0 +1,48 @@
+{
+ "test": "only_table_parts_near",
+ "case": "a ring that holds a bearing drawn to its table: a bearing stays asked",
+ "probes": {
+  "fusion_near": {
+   "margin": 10.0,
+   "bodies": [
+    {
+     "name": "ref hardware / M3x12 DIN 912 (plate to base)",
+     "kind": "hardware",
+     "path": "ref hardware",
+     "gap": 0.0
+    },
+    {
+     "name": "ref 6808 (1)",
+     "kind": "hardware",
+     "path": "ref 6808",
+     "gap": 0.0
+    }
+   ]
+  },
+  "fusion_census": {
+   "holes": [],
+   "bores": [],
+   "openings": [],
+   "partial": []
+  },
+  "fusion_screws": {
+   "screws": [],
+   "washers": [],
+   "passing": [],
+   "n_screws": 0,
+   "rejected": [],
+   "fastener_holes": []
+  },
+  "fusion_bearings": {
+   "bearings": [
+    {
+     "designation": "6808"
+    }
+   ],
+   "seats_without_bearing": [],
+   "near_bearings": []
+  }
+ },
+ "expect": false,
+ "says": "1 bearing(s) at or near this part"
+}

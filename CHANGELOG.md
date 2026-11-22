@@ -2,6 +2,50 @@
 
 What each version of the plugin changes. Skills update with the plugin; the tools copied into a project do not. Read the section of a version before you refresh a project with `python3 <plugin>/tools/setup_project.py <dir> --update-tools`, and review `git diff` afterwards.
 
+## 0.3.2
+
+Attest questions every ordinary part can answer honestly. In the first project under enforce, six questions had no true answer for almost every part, so nothing could be exported: only an owner waiver was left. Each fix below gives the ordinary case an honest label or an answer by facts, and keeps the case the rule is for without a passing answer. Each has tests in `tests/test_attest_honest.py` and fact fixtures in `tests/fixtures/questions`. One change is in a probe and takes effect when the part is measured again in Fusion: it is marked **re-measure**.
+
+### hardware.bought_from_step
+
+- Standard parts are outside the rule: screws, wood screws, washers, nuts, heat-set inserts, pins and dowels are drawn to their table sizes and have no STEP file to come from. New label "it touches only standard parts drawn to their tables (...)", answered by the gate itself with the new fact test `only_table_parts_near`: every body near or on an axis is a fastener by its own name, and no unit lists a bearing, a body it refused or an unrecognised body on a screw axis.
+- The first label now covers the usual mix: "every bought part it touches is from its STEP file, or drawn from the owner's measurements where it has none; its standard parts (screws, washers, nuts, inserts, pins, bearings) are drawn to their table sizes". Motors, boards, magnets, belts, pulleys, gearboxes, bearings and meshes stay asked.
+- The standard-parts label is refused while the facts show a bearing, a refused or unrecognised body, or a motor. "Not applicable" is still refused while screws are shown.
+- `param` is no evidence here any more (any measured parameter was accepted). `waiver` is: the owner alone accepts a simplified board or magnet.
+
+### fits.pocket_content
+
+- A body on a hole's axis that lies beyond the hole's ends (census span) goes in nowhere: it is named in the text, not in `by`. A through hole with only such bodies is census.unknown_hole's question. The finding keeps its context, so its id does not change.
+- New label "the bought part on its axis is not fitted in this hole: it passes with room, sits around it, or is held by a printed part in it". It is refused while a cylinder of that body lies within the new parameter `fits.pass_room_min` (0.15 mm, tag D) of the hole wall. The census now stores the radii of the coaxial cylinders ("coaxial"[]."r") (**re-measure**); facts without them refuse nothing.
+- New label "a screw head seat: the head of the screw on its axis sits in it". It is refused unless a screw reaches into the hole and the hole's widest diameter seats a head of the screws table of that thread.
+- A press or slip fit still needs its fit parameter.
+
+### regression.intended
+
+- New label "changed on purpose in place: ...". It is taken only for a finding that says the feature changed at its place ("changed", "is blind now", "goes through the part now") and names nothing that is gone. A hole still at its place under another class now says "changed: a hole is still at that place", not "is gone".
+- `attest.held` takes `{"text": {"has", "not"}}` for a rule asked per finding. A question carries `finding_text`.
+
+### assembly.order
+
+- New parameter `assembly.cover_reach` (default: access.free_height_over_head; the owner sets the reach of his key). In access.screw_path only a body within that reach of the head top is a cover; the farther bodies are one INFO row (an L key reaches the head under them, access.key_swing judges the swing).
+- New label for a cover that goes on earlier: "each cover named is mounted later and comes off first, or goes on earlier and has a key way the head is reached through: both are in the build notes". A picture is evidence too.
+
+### motors.lead_path
+
+- A body that is a fastener by its own name (without what stands in parentheses) or a row of the screw unit is never a motor, and a hardware body is held against its own name and component, not a component above it: "M3x12 DIN 912 (cover to base)" in a component "cover + motor screws" is a screw. A connector named "JST connector 4 pin" stays a connector.
+- New label "a motor is beside this part, and its plug and leads leave away from it: ...".
+- The default `motors.ref_pattern` also matches stator, rotor and stepper designations like 17HS4401. Other names of bought motors and gearboxes go into the project's own value of the parameter.
+
+### screws.count_load_joint
+
+- "Every load joint has at least the minimum count" is refused only when the part has neither its own screws nor screws that pass it (held `some` of `fusion_screws.screws` and `fusion_screws.passing`).
+
+### Other
+
+- `generated.source`: a parameter given as evidence must be of class fit.
+- `gate_registry`: the held claims of a finding (`by`, `text`, `coaxial_room`, `screw_seat`) are checked.
+- `tests/test_walks.py`: the parameter-as-evidence walk lends a rule the `param` kind, since no shipped part-level rule takes it now.
+
 ## 0.3.1
 
 False classes found in the first full run of 0.3.0 on a real project, closed. Each change keeps the real case of its rule failing, and each has a fixture for the false case and one for the real case. Some fixes are in the probes and only take effect when the part is measured again in Fusion: they are marked **re-measure**. Until then the judges read the stored facts as described.

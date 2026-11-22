@@ -1,0 +1,19 @@
+{
+ "test": "no_motor_near",
+ "case": "a housing beside a stepper named only by its designation: the default pattern knows it",
+ "probes": {
+  "fusion_near": {
+   "margin": 10.0,
+   "bodies": [
+    {
+     "name": "ref drive / 17HS4401S",
+     "kind": "bought",
+     "path": "ref drive",
+     "gap": 0.0
+    }
+   ]
+  }
+ },
+ "expect": false,
+ "says": "match motors.ref_pattern (17HS4401S)"
+}
