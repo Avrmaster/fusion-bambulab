@@ -62,6 +62,9 @@ import adsk.core, adsk.fusion, json, os, re, sys, time, traceback
 _GATE_STARTED = time.time()
 _GATE_NOTES = []
 _GATE_SIG_STEP = 50                         # faces added to a signature between two looks at the clock
+# hardware by name that has no pattern parameter of its own. Only a word: a connector "4 pin" or a "Pin header" is
+# "hardware" here too, so gate_attest never takes the kind "hardware" as proof of a standard part (_standard_part
+# reads the designation in the body's own name). A narrower pattern here measures every unit again (gate_deps.code).
 _GATE_HW = r'(?i)dowel|\bpin\b'             # hardware by name that has no pattern parameter of its own
 
 

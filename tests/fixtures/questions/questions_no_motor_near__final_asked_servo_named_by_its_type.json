@@ -1,6 +1,6 @@
 {
  "test": "no_motor_near",
- "case": "a horn mount: the servo is named by its type and its plug by the connector family, no word of the pattern is in either name",
+ "case": "a horn mount: the servo is named by its type and its plug by the connector family, no word of the pattern is in either name; the plug's family (XH) is a connector by its own name",
  "probes": {
   "fusion_near": {
    "margin": 10.0,
@@ -24,5 +24,5 @@
   "motors.ref_pattern": "(?i)motor|nema|stepper|servo|connector|plug"
  },
  "expect": false,
- "says": "2 bought or mesh body(ies) within 10 mm whose name does not say what they are"
+ "says": "1 body(ies) near or on an axis are a connector by their own name (XH 3p)"
 }

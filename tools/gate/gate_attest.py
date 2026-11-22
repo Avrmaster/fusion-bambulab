@@ -51,9 +51,9 @@ from gate_common import GateError, EXIT_PASS, EXIT_ATTEST, read_json, write_json
 
 KINDS = ('label', 'shot', 'param', 'na', 'waiver')         # what `attest answer` and `owner waive` can give
 FACTS = 'facts'                                             # the kind of an answer the gate gives itself (fact_answer)
-# the name patterns of the standard parts: a body whose own name matches one is a fastener by its name
-FASTENER_PATTERNS = ('screws.ref_pattern', 'washers.ref_pattern', 'inserts.ref_pattern', 'screws.nut_ref_pattern', 'fits.pin_ref_pattern',
-                     'screws.wood_pattern')
+# the name patterns of the kinds of standard parts. A pattern alone makes no body a standard part: _standard_part()
+# also wants the designation of the part in its own name (a thread of the tables, a DIN or ISO number, a size)
+FASTENER_PATTERNS = ('screws.ref_pattern', 'washers.ref_pattern', 'inserts.ref_pattern', 'screws.nut_ref_pattern', 'screws.wood_pattern')
 # the parameters the fact tests and the held labels read
 FACT_PARAMS = ('motors.ref_pattern', 'bearings.ref_pattern', 'screws.any_hole_d_max', 'fits.pass_room_min') + FASTENER_PATTERNS
 PICTURES = ('.png', '.jpg', '.jpeg', '.webp', '.gif')
@@ -433,12 +433,12 @@ def _non_table_shown(get, params, tables):
         found.append('%d screw hole(s) or insert pocket(s) with a body on the axis that nothing recognised (%s)'
                      % (len(blind), _some(_leaf(x) for r in blind for x in r.get('bodies') or [])))
     other = [x.get('name') for x in _coaxial(_rows(c, 'holes') + _rows(c, 'bores'), ('bought', 'hardware', 'mesh'))
-             if x.get('kind') != 'hardware' or not _fastener_name(x.get('name'), params)]
+             if not _standard_body(x, params, tables)]
     if other:
         found.append('%d body(ies) on the axis of a hole that are no standard part by their name (%s)' % (len(other), _some(_leaf(x) for x in other)))
-    got = _motor_hits(get, params)
+    got = _motor_hits(get, params, tables)
     if got and got[0]:
-        found.append('%d body(ies) near or on an axis match motors.ref_pattern (%s)' % (len(got[0]), _some(_leaf(h) for h in got[0])))
+        found.append(_motor_text(got[0], got[2]))
     return found
 
 
@@ -447,9 +447,11 @@ def _only_table_parts(get, params, tables):
     "screws", "washers", "passing", "rejected", "fastener_holes". fusion_bearings: "bearings", "near_bearings",
     "seats_without_bearing", "rejected", "not_bearings". Parameters: FASTENER_PATTERNS, motors.ref_pattern.
     True when the four units have facts, at least one standard part is there, nothing of _non_table_shown is shown,
-    and every body within the near margin is a fastener by its own name (kind "hardware" and _fastener_name): a bought
-    or mesh body there, or a hardware body that is no fastener by its name (a bearing), can be what the question is
-    about. A screw, washer, nut, insert, pin or dowel is drawn to the size of its table: it has no STEP file to come from."""
+    and every body within the near margin is a standard part by its own name (_standard_body: kind "hardware" and a
+    designation of its table in its name): a bought or mesh body there, or a hardware body that is no standard part by
+    its name (a bearing, a magnet in a component of screws, a connector "4 pin"), can be what the question is about.
+    The kind the probes gave is not enough: a probe calls a body hardware for a word of its component or for "pin".
+    A screw, washer, nut, insert or dowel is drawn to the size of its table: it has no STEP file to come from."""
     units = {k: get(k) for k in ('fusion_near', 'fusion_census', 'fusion_screws', 'fusion_bearings')}
     missing = [k for k in ('fusion_near', 'fusion_census', 'fusion_screws', 'fusion_bearings') if units[k] is None]
     if missing:
@@ -457,7 +459,7 @@ def _only_table_parts(get, params, tables):
     near, s = units['fusion_near'], units['fusion_screws']
     found = _non_table_shown(get, params, tables)
     bodies = _rows(near, 'bodies')
-    loose = [x.get('name') for x in bodies if x.get('kind') != 'hardware' or not _fastener_name(x.get('name'), params)]
+    loose = [x.get('name') for x in bodies if not _standard_body(x, params, tables)]
     if loose:
         found.append('%d body(ies) within %g mm that are no fastener by their name (%s): not proven that none is a bought part with a STEP file'
                      % (len(loose), near.get('margin') or 0, _some(_leaf(x) for x in loose)))
@@ -471,20 +473,126 @@ def _only_table_parts(get, params, tables):
                   % (len(bodies), near.get('margin') or 0))
 
 
+TOUCH_GAP = 0.05     # mm between two bounding boxes that count as touching (fusion_near "gap": 0.0 = the boxes touch or overlap)
+
+
 def _only_table_shown(get, params, tables):
-    """What the facts SHOW against "only standard parts", or None (_non_table_shown)."""
-    return '; '.join(_non_table_shown(get, params, tables)) or None
+    """What the facts SHOW against "only standard parts", or None: _non_table_shown, and every body of the near unit
+    whose box touches the part's box (gap up to TOUCH_GAP) and that is no standard part by its own name (a board, a
+    magnet, a belt, a switch). A body farther off within the margin makes the question asked, not the label false."""
+    found = _non_table_shown(get, params, tables)
+    near = get('fusion_near') or {}
+    touch = [x.get('name') for x in _rows(near, 'bodies') if not _standard_body(x, params, tables)
+             and not (isinstance(x.get('gap'), (int, float)) and not isinstance(x.get('gap'), bool) and x['gap'] > TOUCH_GAP)]
+    if touch:
+        found.append('%d body(ies) whose box touches this part that are no standard part by their name (%s)' % (len(touch), _some(_leaf(x) for x in touch)))
+    return '; '.join(found) or None
 
 
-def _fastener_name(name, params):
-    """Is a body a standard fastener by its own name: the body's name, without its component (the text after the last
-    " / ") and without what stands in parentheses, matches one of FASTENER_PATTERNS (a screw, washer, insert, nut, pin,
-    dowel or wood screw) and not motors.ref_pattern? A component "Gearbox HW: lid + motor screws" says nothing about its
-    bodies; "M3x12 DIN 912 (lid to base)" does, and so does "M3x10 (motor frame to hub)"."""
-    bare = re.sub(r'\([^)]*\)', ' ', _leaf(name))                  # "(motor to plate)" says where it goes, not what it is
-    if _matches(params.get('motors.ref_pattern'), bare):
-        return False                                                  # "JST connector 4 pin" is a connector, whatever its pins
-    return any(_matches(params.get(p), bare) for p in FASTENER_PATTERNS)
+def _standard_body(x, params, tables):
+    """Is a body of the near unit or a census "coaxial" row a standard part: kind "hardware" and a standard part by its
+    own name (_standard_part). A kind alone is not: the probes call a body hardware for a word of its component."""
+    return isinstance(x, dict) and x.get('kind') == 'hardware' and _standard_part(x.get('name'), params, tables) is not None
+
+
+# Words that make a name no standard part, whatever designation stands next to them: a magnet "D4x10", a pin header
+# "1x4", a connector with "4 pin", a lead screw "T8x8", a standoff "M3x10" are bought parts with a model of their own.
+_NOT_STANDARD = re.compile(r'(?i)magnet|belt|\bgt\d|\d\s*gt\b|pulley|switch|board|header|\bpcb|sensor|encoder|connector|\bjst\b|dupont|terminal|'
+                           r'lead\s*screw|ball\s*screw|trapez|\btr\d|spring|gear|bearing|cable|wire|standoff|spacer|sleeve|bushing|shaft|axle|'
+                           r'\brods?\b|tube|profile|extrusion|\bleds?\b|module|battery|\bfans?\b|motor|stepper|servo|plug|socket(?!\s*(?:head|cap))')
+# DIN and ISO numbers of screws, washers, nuts, wood screws and pins, beside the ones the tables name in their texts
+_STANDARD_NUMBERS = {'DIN': {'7', '84', '85', '95', '96', '97', '125', '127', '433', '439', '571', '557', '562', '912', '913', '914', '915', '916', '931',
+                             '933', '934', '936', '963', '965', '985', '6325', '6912', '6921', '6923', '6798', '7349', '7380', '7981', '7982',
+                             '7983', '7984', '7985', '7991', '7997', '9021'},
+                     'ISO': {'1207', '1580', '2009', '2010', '2338', '4014', '4017', '4026', '4027', '4028', '4029', '4032', '4033', '4035', '4762',
+                             '7040', '7045', '7046', '7047', '7049', '7050', '7051', '7089', '7090', '7092', '7093', '7380', '8734', '8735',
+                             '10511', '10642', '14579', '14580', '14583'}}
+_PIN_NUMBERS = {('DIN', '7'), ('DIN', '6325'), ('ISO', '2338'), ('ISO', '8734'), ('ISO', '8735')}
+_THREAD = re.compile(r'(?<![A-Za-z0-9.])[Mm](\d+(?:\.\d+)?)(?![\d.])')
+_SIZE = re.compile(r'(?<![A-Za-z0-9.])[DdØ]?(\d+(?:\.\d+)?)\s*(?:[a-zA-Z]{1,2}\d{1,2})?\s*[xX×]\s*\d')
+_NUMBER = re.compile(r'(?i)\b(DIN|ISO)\s*-?\s*(\d+)\b')
+_TABLE_NUMBERS = {}
+
+
+def _standard_numbers(tables):
+    """{(DIN|ISO, number)} of the standard parts: the built-in ones and every DIN or ISO number the screws, washers,
+    pins and inserts tables name in their texts."""
+    key = id(tables)
+    if key not in _TABLE_NUMBERS:
+        out = {(k, n) for k, ns in _STANDARD_NUMBERS.items() for n in ns}
+        stack = [(tables or {}).get(t) for t in ('screws', 'washers', 'pins', 'inserts')]
+        while stack:
+            x = stack.pop()
+            if isinstance(x, dict):
+                stack.extend(x.values())
+            elif isinstance(x, list):
+                stack.extend(x)
+            elif isinstance(x, str):
+                out |= {(m.group(1).upper(), m.group(2)) for m in _NUMBER.finditer(x)}
+        _TABLE_NUMBERS.clear()
+        _TABLE_NUMBERS[key] = out
+    return _TABLE_NUMBERS[key]
+
+
+def _table_threads(tables):
+    """The threads ("M3") the screws, washers and inserts tables hold, or None with no table at all (then any thread)."""
+    t = tables or {}
+    out = {str(k).upper() for name in ('screws', 'washers') for k in ((t.get(name) or {}).get('sizes') or {})}
+    out |= {str(v.get('thread')).upper() for v in ((t.get('inserts') or {}).get('kinds') or {}).values() if isinstance(v, dict) and v.get('thread')}
+    return out or None
+
+
+def _pin_sizes(tables):
+    return {float(v['d']) for v in (((tables or {}).get('pins') or {}).get('sizes') or {}).values() if isinstance(v, dict) and isinstance(v.get('d'), (int, float))}
+
+
+def _standard_part(name, params, tables):
+    """What standard part a body is by its own name: "screw", "washer", "nut", "insert", "wood screw" or "dowel", or
+    None. Read is the body's name without its component (the text after the last " / ") and without what stands in
+    parentheses ("(motor to plate)" says where it goes, not what it is). A name is a standard part only with its
+    designation: a thread the screws, washers or inserts table holds ("M3x12", "insert M3x4x5", "washer M3"), a DIN
+    or ISO number of a screw, washer, nut or pin ("DIN 912", "ISO 8734 4x20"), or for a wood screw or a dowel its size
+    ("wood screw 4x30", "dowel 8x60" of a diameter of the pins table). A loose word is never enough: "pin", "rod",
+    "shaft" or "screw" alone say nothing, and a name that matches motors.ref_pattern or speaks of a magnet, board,
+    header, connector, belt, switch, bearing, lead screw, standoff or the like (_NOT_STANDARD) is none at all."""
+    bare = re.sub(r'\([^)]*\)', ' ', _leaf(name)).strip()
+    if not bare or _matches(params.get('motors.ref_pattern'), bare) or _NOT_STANDARD.search(bare) or _matches(params.get('bearings.ref_pattern'), bare):
+        return None
+    known = _table_threads(tables)
+    thread = any(known is None or ('M' + m.group(1)).upper() in known for m in _THREAD.finditer(bare))
+    numbers = {(m.group(1).upper(), m.group(2)) for m in _NUMBER.finditer(bare)} & _standard_numbers(tables)
+    size = _SIZE.search(bare)
+    if _matches(params.get('inserts.ref_pattern'), bare):
+        return 'insert' if thread else None
+    if _matches(params.get('washers.ref_pattern'), bare):
+        return 'washer' if thread or numbers else None
+    if _matches(params.get('screws.nut_ref_pattern'), bare):
+        return 'nut' if thread or numbers else None
+    if numbers & _PIN_NUMBERS or re.search(r'(?i)(?<![a-z])dowels?(?![a-z])', bare):
+        pins = _pin_sizes(tables)
+        d = float(size.group(1)) if size else None
+        return 'dowel' if (numbers & _PIN_NUMBERS and size) or (d is not None and (not pins or any(abs(d - p) < 1e-6 for p in pins))) else None
+    if _matches(params.get('screws.wood_pattern'), bare):
+        return 'wood screw' if size or numbers else None
+    if thread and (_matches(params.get('screws.ref_pattern'), bare) or numbers):
+        return 'screw'
+    return None
+
+
+def _fastener_name(name, params, tables=None):
+    """Is a body a standard part by its own name (_standard_part)? `tables` None: the shipped tables are not at hand,
+    any thread counts and a dowel of any diameter."""
+    return _standard_part(name, params, tables) is not None
+
+
+def _bearing_body(x, params, tables):
+    """Is a body near a bearing by its name: of kind "hardware", its own name (or its component) speaks of a bearing
+    (_bearing_name) and nothing in its own name says it is anything else (_NOT_STANDARD, motors.ref_pattern)."""
+    if x.get('kind') != 'hardware':
+        return False
+    bare = re.sub(r'\([^)]*\)', ' ', _leaf(x.get('name')))
+    other = _NOT_STANDARD.search(re.sub(r'(?i)bearings?', ' ', bare))
+    return not other and not _matches(params.get('motors.ref_pattern'), bare) and _bearing_name(x.get('name'), params, _bearing_names(tables))
 
 
 def _screw_unit_names(get):
@@ -499,12 +607,13 @@ def _screw_unit_names(get):
     return out
 
 
-def _motor_hits(get, params):
+def _motor_hits(get, params, tables=None):
     """(names of the bodies near or on an axis that match motors.ref_pattern, the near facts, the pattern), or None
     when the near unit has no facts or the pattern cannot be read.
-    A body that is a fastener by its own name (_fastener_name) or a row of the screw unit is never a hit: a screw "M3x12
-    (motor to plate)" in a component "motor screws" is a screw. A body of kind "hardware" (named as a fastener or a
-    bearing) is held against its own name and component only, not against the components above it."""
+    A body of kind "hardware" that is a standard part by its own name (_standard_body) or a row of the screw unit is
+    never a hit: a screw "M3x12 (motor to plate)" in a component "motor screws" is a screw. A body of another kind is a
+    hit by its path whatever its own name says: the "Shaft" or the "M3 screw" of a stepper model is that stepper. A
+    body of kind "hardware" is held against its own name and component only, not against the components above it."""
     near = get('fusion_near')
     pattern = params.get('motors.ref_pattern')
     try:
@@ -519,37 +628,58 @@ def _motor_hits(get, params):
     named = [(('%s %s' % (x.get('path') or '', x.get('name') or '')) if x.get('kind') != 'hardware' else str(x.get('name') or ''), x.get('name'))
              for x in _rows(near, 'bodies')]
     named += [(str(x.get('name') or ''), x.get('name')) for x in _coaxial(_rows(c, 'holes') + _rows(c, 'bores'), ('bought', 'hardware', 'mesh'))]
-    return [name for text, name in named if name not in skip and not _fastener_name(name, params) and _matches(pattern, text)], near, pattern
+    rows = [x for x in _rows(near, 'bodies')] + [x for x in _coaxial(_rows(c, 'holes') + _rows(c, 'bores'), ('bought', 'hardware', 'mesh'))]
+    return [name for (text, name), x in zip(named, rows) if name not in skip and not _standard_body(x, params, tables)
+            and (_matches(pattern, text) or _CONNECTOR.search(re.sub(r'\([^)]*\)', ' ', _leaf(name))))], near, pattern
+
+
+def _motor_text(hits, pattern):
+    """The text of the hits of _motor_hits(): the ones the pattern found, then the connectors by their own name."""
+    plug = [h for h in hits if not _matches(pattern, str(h or '')) and _CONNECTOR.search(re.sub(r'\([^)]*\)', ' ', _leaf(h)))]
+    named = [h for h in hits if h not in plug]
+    out = []
+    if named or not plug:
+        out.append('%d body(ies) near or on an axis match motors.ref_pattern (%s)' % (len(named), _some(_leaf(h) for h in named)))
+    if plug:
+        out.append('%d body(ies) near or on an axis are a connector by their own name (%s)' % (len(plug), _some(_leaf(h) for h in plug)))
+    return '; '.join(out)
+
+
+# a connector by its own name, whatever motors.ref_pattern says: "JST XH 4 pin", "Pin header 1x4", "Dupont 2.54"
+_CONNECTOR = re.compile(r'(?i)connector|\bjst\b|dupont|\bheaders?\b|terminal|molex|\bplugs?\b|\b(?:xh|ph|zh|sh|gh)\s*\d|\bgx\s*\d|\bdc\s*jack|\busb\b')
 
 
 def _no_motor_near(get, params, tables):
     """Reads fusion_near: "bodies"[] "name", "path", "kind", "margin". fusion_census (when it has facts): "holes"[] and
     "bores"[] "coaxial"[]."name". The parameter motors.ref_pattern decides what a motor or a connector is.
-    A name can only make this test False. It is True when no body near matches the pattern and every body near is a
-    fastener by its name: a bought or mesh body under another name (the "Rotor" of a motor model, a servo named by
-    its type) can be a motor, and no unit reads that from its shape."""
+    A name can only make this test False. It is True when no body near matches the pattern or is a connector by its
+    own name (_CONNECTOR), and every body near is a standard part by its designation (_standard_body) or a bearing by
+    its name (_bearing_body): any other body (the "Rotor" of a motor model, a servo named by its type, a "Shaft" of a
+    stepper, a magnet in a component of screws) can be a motor or a connector, and no unit reads that from its shape.
+    The kind a probe gave a body ("hardware" for a word of its component, or for "pin") is not enough."""
     if get('fusion_near') is None:
         return None, 'the unit fusion_near has no facts for this geometry'
-    got = _motor_hits(get, params)
+    got = _motor_hits(get, params, tables)
     if got is None:
         return None, 'the parameter motors.ref_pattern is not a pattern that can be read'
     hits, near, _ = got
     if hits:
-        return False, '%d body(ies) near or on an axis match motors.ref_pattern (%s)' % (len(hits), _some(_leaf(h) for h in hits))
-    unknown = [x for x in _rows(near, 'bodies') if x.get('kind') in ('bought', 'mesh')]
+        return False, _motor_text(hits, got[2])
+    unknown = [x for x in _rows(near, 'bodies') if not _standard_body(x, params, tables) and not _bearing_body(x, params, tables)]
     if unknown:
-        return False, ('%d bought or mesh body(ies) within %g mm whose name does not say what they are (%s): not proven that none is a motor or a connector'
+        return False, ('%d body(ies) within %g mm that are no standard part and no bearing by their name (%s): not proven that none is a motor or a connector'
                        % (len(unknown), near.get('margin') or 0, _some(x.get('name') for x in unknown)))
-    return True, 'none of the %d bodies within %g mm of this part matches motors.ref_pattern, and each of them is a fastener by its name' % (len(_rows(near, 'bodies')), near.get('margin') or 0)
+    return True, ('none of the %d bodies within %g mm of this part matches motors.ref_pattern, and each of them is a standard part or a bearing by its name'
+                  % (len(_rows(near, 'bodies')), near.get('margin') or 0))
 
 
 def _motor_shown(get, params, tables):
     """What the facts SHOW of a motor or connector at this part, or None: bodies near or on an axis whose name or
-    component matches motors.ref_pattern."""
-    got = _motor_hits(get, params)
+    component matches motors.ref_pattern, or whose own name is that of a connector (_CONNECTOR)."""
+    got = _motor_hits(get, params, tables)
     if not got or not got[0]:
         return None
-    return '%d body(ies) near or on an axis match motors.ref_pattern (%s)' % (len(got[0]), _some(_leaf(h) for h in got[0]))
+    return _motor_text(got[0], got[2])
 
 
 PRINT_FRAME = 'print_frame'     # no probe: gate_plan.print_frame() of the part, for the fact tests that need its bed face
@@ -978,24 +1108,49 @@ ENTER_MIN = gate_features.ENTER_MIN
 enters = gate_features.coaxial_enters
 
 
+# a fit class after a diameter in a name: "D25h7", "pilot D25 h7", "4m6x32", "8H7"; x, y and z are no fit letters (sizes)
+_FIT = re.compile(r'(?<![A-Za-z0-9.])[DdØ]?\s*(\d+(?:\.\d+)?)\s*(js|JS|[a-hj-nprstuA-HJ-NPRSTU])(\d{1,2})(?![\d.]|[A-Za-z]{2})')
+FIT_NAME_TOL = 0.5      # mm: a fit diameter in a name this close to the hole's diameter is the fit of that hole
+
+
+def _named_fits(name):
+    """[diameter] of the fit classes a body's own name carries (_FIT), without what stands in parentheses."""
+    bare = re.sub(r'\([^)]*\)', ' ', _leaf(name))
+    return [float(m.group(1)) for m in _FIT.finditer(bare)]
+
+
 def _fitted_on_axis(root, reg, question, room_param, sig):
-    """Why "nothing bought is fitted in this hole" does not hold, or None: a bought or hardware body on the hole's axis
-    reaches into it with a cylinder whose radius is within the parameter `room_param` of the hole wall where they
-    overlap (census "coaxial"[]."r": [[radius, from, to]], measured since 0.3.2). Rows without radii contradict
-    nothing: the label is then the agent's word."""
+    """Why "nothing bought is fitted in this hole" does not hold, or None. It holds only on measured facts; refused:
+      - the hole is not in the census of the part (nothing can be held against it);
+      - a bought or hardware body that reaches into the hole on its axis carries a fit class on the diameter of the
+        hole in its name ("pilot D25h7" in a D25 step, "4m6x32" in a D4.02 hole): a named fit is a fit;
+      - such a body has no measured radii (census "coaxial"[]."r": [[radius, from, to]], measured since 0.3.2): stored
+        facts of an older census cannot show that it passes with room, so a re-measure (gate.py run) or another label;
+      - such a body has a cylinder whose radius is within the parameter `room_param` of the hole wall where they
+        overlap."""
     hole, _ = _question_hole(root, question, sig)
     if not isinstance(hole, dict):
-        return None
+        return 'the hole of this question is not in the census of the part: nothing shows that the body on its axis passes with room'
     room = _fact_params(root, reg).get(room_param)
     room = room if isinstance(room, (int, float)) and not isinstance(room, bool) else 0.15
     segs = _hole_segments(hole)
     depth = hole.get('depth') if isinstance(hole.get('depth'), (int, float)) else (-segs[-1][1] if segs else None)
+    diameters = sorted({round(2 * R, 4) for R, _, _ in segs} | {round(h, 4) for h in [_narrowest(hole)] if isinstance(h, (int, float))})
     for x in _coaxial([hole]):
         if not enters(x.get('span'), depth):
             continue
-        for row in x.get('r') or []:
-            if not (isinstance(row, (list, tuple)) and len(row) == 3 and all(isinstance(v, (int, float)) for v in row)):
-                continue
+        named = [d for d in _named_fits(x.get('name')) if any(abs(d - D) <= FIT_NAME_TOL + 1e-9 for D in diameters)]
+        if named:
+            return ('%s carries the fit class of D%g in its name and the hole is D%s: a named fit is fitted in this hole. Name the fit parameter its size comes from'
+                    % (_leaf(x.get('name')), named[0], ', D'.join('%g' % d for d in diameters)))
+        rows = [row for row in (x.get('r') or []) if isinstance(row, (list, tuple)) and len(row) == 3
+                and all(isinstance(v, (int, float)) and not isinstance(v, bool) for v in row)]
+        if not rows:
+            return ('the census of this part stores no radii of %s on the axis of this hole (measured since 0.3.2): nothing shows that it passes with room. '
+                    'Measure the part again (gate.py run), or give the label or fit parameter that is true' % _leaf(x.get('name')))
+        if not segs:
+            return 'the census does not give the segments of this hole: the radii of %s cannot be held against its wall' % _leaf(x.get('name'))
+        for row in rows:
             r, lo, hi = row[0], min(row[1], row[2]), max(row[1], row[2])
             for R, a, b in segs:
                 if min(hi, b) - max(lo, a) > ENTER_MIN and abs(r - R) <= room + 1e-9:
@@ -1005,18 +1160,18 @@ def _fitted_on_axis(root, reg, question, room_param, sig):
 
 
 def _no_head_seat(root, reg, question, sig):
-    """Why "a screw head seat" does not hold, or None: no screw by its name (screws.ref_pattern) reaches into the hole
+    """Why "a screw head seat" does not hold, or None: no screw by its own name (_standard_part) reaches into the hole
     on its axis, or the widest diameter of the hole is no seat for a head of the screws table of that thread (at least
     the head, at most its counterbore or seat diameter + 1 mm)."""
     hole, _ = _question_hole(root, question, sig)
     if not isinstance(hole, dict):
         return 'the hole of this question is not in the census of the part: no screw can be found on its axis'
-    pattern = _fact_params(root, reg).get('screws.ref_pattern')
+    params = _fact_params(root, reg)
     segs = _hole_segments(hole)
     depth = hole.get('depth') if isinstance(hole.get('depth'), (int, float)) else (-segs[-1][1] if segs else None)
-    screws = [str(x.get('name') or '') for x in _coaxial([hole]) if _matches(pattern, _leaf(x.get('name'))) and enters(x.get('span'), depth)]
+    screws = [str(x.get('name') or '') for x in _coaxial([hole]) if _standard_part(x.get('name'), params, reg.get('tables')) == 'screw' and enters(x.get('span'), depth)]
     if not screws:
-        return 'no screw (screws.ref_pattern) reaches into this hole on its axis: it is no head seat'
+        return 'no screw (a thread of the screws table by its own name) reaches into this hole on its axis: it is no head seat'
     widest = max([2 * r for r, _, _ in segs] or [0.0])
     sizes = ((reg.get('tables') or {}).get('screws') or {}).get('sizes') or {}
     threads = {m.group(0).upper() for n in screws for m in [re.search(r'(?i)\bM\d+(?:\.\d+)?', _leaf(n))] if m}

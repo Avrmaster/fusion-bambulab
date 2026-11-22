@@ -30,5 +30,5 @@
   "motors.ref_pattern": "(?i)motor|nema|stepper|servo|connector|plug"
  },
  "expect": false,
- "says": "whose name does not say what they are (ref belt 280)"
+ "says": "that are no standard part and no bearing by their name (ref belt 280)"
 }
