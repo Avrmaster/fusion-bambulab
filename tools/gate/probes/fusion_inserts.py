@@ -19,7 +19,7 @@ material at another depth a cavity), and the part's own material further out tha
 in front of a 5 mm wide slot "free"). The file is not loaded with exec: a vendored copy may be older than this probe.
 The pure parts (levels, summary, relief room, mesh test) are in _geom.py."""
 
-_INS_RAY = {'n': 48, 'step': 0.1, 'max': 8.0, 'coarse_step': 0.5, 'refine': 0.005}
+_INS_RAY = {'n': 48, 'step': 0.1, 'max': 8.0, 'coarse_step': 0.5, 'refine': 0.001}
 
 
 _INS_TAPE = None                # the GateTape of this call (_fusion.py): probe() sets it, every point test goes through it
@@ -47,8 +47,9 @@ def _ins_kind(name, job):
 def _ins_walk(body, centre, dirs, r0, start, fine_to, ray):
     """one ring of rays at one depth: per ray the mm of plastic from the radius r0 outwards to the first point that is
     not inside the body. Steps of ray["step"] up to fine_to, of ray["coarse_step"] beyond, never past ray["max"]; the
-    last step is then halved until the exit is known to ray["refine"] mm, and its outer end is the wall (so a wall is
-    never read too small)."""
+    last step is then halved until the exit is known to ray["refine"] mm, and its INNER end (the last point in the
+    plastic, the thinner of the two) is the wall, rounded down to 0.01 with ray["refine"] of slack (_ins_down): a wall
+    drawn at 1.2 reads 1.2, one of 1.195 reads 1.19, never the outer end of the bisection."""
     out = []
     for d in dirs:
         t, last = start, 0.0
@@ -65,8 +66,14 @@ def _ins_walk(body, centre, dirs, r0, start, fine_to, ray):
                 lo = mid
             else:
                 hi = mid
-        out.append(0.0 if hi <= start else hi)          # no plastic at the first point: the wall is broken open here
+        out.append(0.0 if hi <= start else _ins_down(lo, ray['refine']))     # no plastic at the first point: the wall is broken open here
     return out
+
+
+def _ins_down(x, refine):
+    """A wall known to lie in [x, x + refine], rounded down to 0.01: the conservative end, so a row at the limit is the
+    true least wall (a wall of exactly 1.2 still reads 1.2)."""
+    return math.floor((x + refine + 1e-4) * 100.0 + 1e-9) / 100.0
 
 
 def _ins_env(design, occ, body, job, margin):
@@ -287,7 +294,7 @@ def _ins_pocket(get_env, body, box, h, row, tol_d, thin_wall, thin_relief, ray, 
             'walls': walls, 'floor': None if through else _ins_floor(body, segs, point, axis, h['depth'], ray['max']),
             'depth': h.get('depth'), 'through': through, 'levels': plan['levels'],
             'ray': {'n': n, 'step': ray['step'], 'max': ray['max'], 'coarse_step': ray['coarse_step'], 'refine': ray['refine'], 'fine_to': round(thin_wall + 0.3, 2),
-                    'start': start, 'thin_wall': thin_wall, 'thin_relief': thin_relief}}
+                    'start': start, 'thin_wall': thin_wall, 'thin_relief': thin_relief, 'wall_end': 'inner'}}
 
 
 def probe(job):
@@ -326,7 +333,8 @@ def probe(job):
       the ray: the air behind the wall is then a hole, slot or pocket of the part, not its outline; its "gap" is 0 and
       "width" is the width of the cavity; "w" = the wall of every ray; "from_d" = the diameter the walls are
       measured from. A ray is walked in "ray"."step" steps ("ray"."coarse_step" past "ray"."fine_to") and its last step
-      is halved down to "ray"."refine": a wall is known to 0.01 mm and never read too small.
+      is halved down to "ray"."refine": a wall is known to 0.01 mm and read at the thinner end of the bisection, rounded
+      down (a wall at exactly a limit reads the limit, one a few thousandths under it reads under it).
       "lead_in" and "relief" are measured from the hole's own wall. "insert" is measured from the lead-in diameter (or
       the hole's own wall where that is wider) at 0.6, 0.8 and 1.0 of the insert length below the relief floor: the
       knurl melts the plastic round the lead-in diameter. "levels" lists the depths and radii (pocket_levels).

@@ -1,0 +1,124 @@
+{
+ "judge": "washers_landing",
+ "case": "a D12 clamp washer at 15.5 from the axis of a 608 laps its outer ring by 1.45, to D19.1: the ring offers (22 - 20) / 2 = 1.0 of ISO face, so the 1.0 lower bound is met, but the shield begins at D2 19.2, 1.4 from the outside: it presses the shield, FAIL",
+ "incident": "clamp washers on a 608 outer ring were judged by the least lap only; a washer that reached past the ring land onto the shield read as a pass",
+ "facts": {
+  "screws": [],
+  "washers": [
+   {
+    "id": "w1",
+    "ref": "ref washer M3 wide",
+    "od": 12.0,
+    "id_d": 3.2,
+    "t": 1.5,
+    "anchor": {
+     "kind": "face",
+     "axis": [
+      0,
+      0,
+      1
+     ],
+     "point": [
+      15.5,
+      0.0,
+      44.0
+     ]
+    },
+    "landing": {
+     "share": 0.2,
+     "share_all": 0.1,
+     "gap": 0.0,
+     "on": "ref shaft A / 608 (1)",
+     "on_bearing": "ref shaft A / 608 (1)",
+     "open_d": null,
+     "look": 2.0,
+     "spot_face_d": null,
+     "covers": [
+      {
+       "name": "ref shaft A / 608 (1)",
+       "kind": "hardware",
+       "part": null,
+       "share": 0.2,
+       "gap": 0.0,
+       "bearing": true
+      },
+      {
+       "name": "Column tube",
+       "kind": "printed",
+       "part": "demo/column_tube",
+       "share": 0.0,
+       "gap": 1.0,
+       "bearing": false
+      }
+     ],
+     "ring_overlap": 1.45
+    },
+    "proud": {
+     "height": 3.15,
+     "nearest": null
+    }
+   }
+  ]
+ },
+ "params": {
+  "washers.landing_gap_max": 0.05,
+  "washers.landing_share_min": 0.95,
+  "washers.spot_face_clearance": 1.2,
+  "bearings.clamp_room_washer": 1.0,
+  "washers.slot_land_min": 1.0,
+  "washers.ring_overlap_min": 2.0,
+  "bearings.contact_gap_max": 0.05
+ },
+ "ctx": {
+  "census": {
+   "holes": [
+    {
+     "id": "h1",
+     "anchor": {
+      "kind": "hole",
+      "axis": [
+       0,
+       0,
+       1
+      ],
+      "point": [
+       0.0,
+       0.0,
+       44.0
+      ]
+     },
+     "segments": [
+      {
+       "d": 22.0,
+       "len": 7.0
+      }
+     ],
+     "depth": 7.0,
+     "through": false,
+     "class": {
+      "table": "bearings",
+      "kind": "608",
+      "role": "bearing_seat",
+      "match": "exact"
+     },
+     "coaxial": [
+      {
+       "name": "ref shaft A / 608 (1)",
+       "kind": "hardware",
+       "part": null
+      }
+     ]
+    }
+   ],
+   "openings": [],
+   "counts": {}
+  }
+ },
+ "expect": [
+  {
+   "verdict": "FAIL",
+   "measure": 1.45,
+   "limit": 1.4
+  }
+ ]
+}

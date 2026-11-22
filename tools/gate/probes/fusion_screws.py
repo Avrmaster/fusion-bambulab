@@ -638,6 +638,8 @@ def _scr_screw(g, job, world, own, inv, washers, threads, table, may_stop=False)
                 for k in range(len(pts))]
         r_out = max(sh['shank_r'] + 0.5, sh['head_r'] - 0.1)            # and 32 points just inside the edge of the head: its flanks
         ring += [[round(11.25 * k, 2), round(r_out, 3), 1 if in_own(p) else 0] for k, p in enumerate(_scr_ring(v_sub(land, v_scale(A, 0.05)), A, r_out, 32))]
+        r_far = sh['head_r'] + 1.0                                       # and 32 points beyond it: do the flanks of a U-slot run on past the head
+        ring += [[round(11.25 * k, 2), round(r_far, 3), 1 if in_own(p) else 0] for k, p in enumerate(_scr_ring(v_sub(land, v_scale(A, 0.05)), A, r_far, 32))]
         top = along(sh['top'], land, A)                                  # head top above the landing
         if sh['countersunk']:
             out['seat'] = {'kind': 'countersink', 'd': round(2 * sh['head_r'], 2), 'recess': 0.0, 'share': share, 'ring': ring}

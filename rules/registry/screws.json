@@ -355,7 +355,7 @@
     {
       "id": "screws.head_seat_full_ring",
       "title": "A head bears on a full ring",
-      "statement": "A head bears on a full ring of plastic: hole and seat lie fully inside material, with a margin to the edge. A counterbore near an edge becomes a U-slot or gets a boss: a head in a U-slot (its seat ring open over one strip from the axis no wider than the clearance hole + 0.2, plastic on both flanks, each flank at least {washers.slot_land_min}) bears on both flanks and is a full seat. Heads of neighbouring screws do not overlap, and no screw ends in air.",
+      "statement": "A head bears on a full ring of plastic: hole and seat lie fully inside material, with a margin to the edge. A counterbore near an edge becomes a U-slot or gets a boss: a head in a U-slot (its seat ring open over one strip from the axis no wider than the clearance hole + 0.2, plastic on both flanks, each flank at least {washers.slot_land_min}, and the flanks running on past the head) bears on both flanks and is a full seat. A hole broken out of the end of a bar is no U-slot: its flanks end within the reach of the head, which overhangs the end. Heads of neighbouring screws do not overlap, and no screw ends in air.",
       "why": "Heads bore half on plastic over the corner of a motor body, two screws sat half outside their tab, and a bracket had intersecting heads. All were found in models.",
       "params": [
         "washers.slot_land_min"

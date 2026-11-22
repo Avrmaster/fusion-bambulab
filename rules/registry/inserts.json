@@ -359,7 +359,8 @@
         "sensors.magnet_d6_pocket_d",
         "sensors.magnet_d6_pocket_depth",
         "fits.pin_ref_pattern",
-        "screws.wood_pattern"
+        "screws.wood_pattern",
+        "screws.min_engagement"
       ],
       "check": {
         "probe": "fusion_census",

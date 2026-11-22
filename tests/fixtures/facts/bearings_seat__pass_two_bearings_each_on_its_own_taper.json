@@ -1,0 +1,118 @@
+{
+ "judge": "bearings_seat",
+ "case": "the same boss drawn right: each 686 on its own taper, nominal D6.02 where it enters and 0.1 wider towards its stop: no row",
+ "facts": {
+  "bearings": [
+   {
+    "ref": "ref idler: 2 x 686 on the boss / 686 (1)",
+    "designation": "686ZZ",
+    "d": 6.0,
+    "D": 13.0,
+    "B": 5.0,
+    "anchor": {
+     "kind": "bearing",
+     "axis": [
+      0.0,
+      1.0,
+      0.0
+     ],
+     "point": [
+      -20.0,
+      0.0,
+      40.0
+     ]
+    },
+    "seat": {
+     "inner": {
+      "d": 6.07,
+      "entry_d": 6.12,
+      "entry_open": false,
+      "entry_other": 12.0,
+      "entry_side": "+",
+      "kind": "printed",
+      "lead_in": null,
+      "entry_end": null,
+      "len": 5.0,
+      "name": "Idler slider",
+      "part": "demo/idler_slider",
+      "rows": [
+       6.12,
+       6.11,
+       6.1,
+       6.09,
+       6.07,
+       6.06,
+       6.05,
+       6.04,
+       6.02
+      ]
+     },
+     "outer": null
+    }
+   },
+   {
+    "ref": "ref idler: 2 x 686 on the boss / 686 (2)",
+    "designation": "686ZZ",
+    "d": 6.0,
+    "D": 13.0,
+    "B": 5.0,
+    "anchor": {
+     "kind": "bearing",
+     "axis": [
+      0.0,
+      1.0,
+      0.0
+     ],
+     "point": [
+      -20.0,
+      5.0,
+      40.0
+     ]
+    },
+    "seat": {
+     "inner": {
+      "d": 6.07,
+      "entry_d": 4.0,
+      "entry_open": true,
+      "entry_other": 12.0,
+      "entry_side": "+",
+      "kind": "printed",
+      "lead_in": null,
+      "entry_end": null,
+      "len": 3.89,
+      "name": "Idler slider",
+      "part": "demo/idler_slider",
+      "rows": [
+       6.12,
+       6.1,
+       6.09,
+       6.07,
+       6.05,
+       6.04,
+       6.04,
+       null,
+       null
+      ]
+     },
+     "outer": null
+    }
+   }
+  ],
+  "seats_without_bearing": [],
+  "not_bearings": [],
+  "near_bearings": []
+ },
+ "params": {
+  "bearings.seat_d_tol": 0.3,
+  "bearings.seat_taper": 0.1,
+  "bearings.seat_taper_thick_base": 0.2,
+  "bearings.contact_gap_max": 0.05,
+  "bearings.seat_form": "any",
+  "bearings.seat_taper_tol": 0.05,
+  "bearings.seat_lead_in": 0.3
+ },
+ "ctx": {
+  "part": "demo/idler_slider"
+ },
+ "expect": []
+}

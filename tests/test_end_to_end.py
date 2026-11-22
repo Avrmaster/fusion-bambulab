@@ -47,7 +47,7 @@ POCKET = gate_features.anchor('insert_pocket', (0, 0, 1), (8, 8, 10))
 STACK = [{'d': 7.5, 'len': 0.54}, {'d': 4.4, 'len': 1.5}, {'d': 3.6, 'len': 5.0}]            # relief, lead-in, hole: the pocket of the table
 CLEAN = {'fusion_census': {'holes': [], 'openings': [], 'counts': {}}, 'fusion_inserts': {'pockets': []}, 'fusion_openings': {'openings': [], 'closed': []},
          'fusion_screws': {'screws': [], 'washers': []}, 'fusion_bearings': {'bearings': [], 'seats_without_bearing': []},
-         'fusion_gap': {'own_group': None, 'margin': 5.0, 'gaps': []}, 'fusion_thin': {'faces': [], 'width_cap': 2.0, 'lumps': 1, 'shells': 1},
+         'fusion_gap': {'own_group': 'lamp', 'margin': 5.0, 'gaps': [], 'groups': 1}, 'fusion_thin': {'faces': [], 'width_cap': 2.0, 'lumps': 1, 'shells': 1},
          'fusion_near': {'margin': 10.0, 'bodies': []}}
 
 

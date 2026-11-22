@@ -1,6 +1,6 @@
 {
  "judge": "clearance_min_gap_moving",
- "case": "the document declares no motion group: nothing can be checked, and the report says so",
+ "case": "the document declares no motion group: nothing can be checked, so the check did not run: NOT_RUN, register the motion groups in gate/layout.json (an INFO before)",
  "incident": "a border hung 0.5 mm over a turning flange; with no motion groups declared the gap check returned nothing and said nothing",
  "facts": {
   "own_group": null,
@@ -14,7 +14,7 @@
  },
  "expect": [
   {
-   "verdict": "INFO"
+   "verdict": "NOT_RUN"
   }
  ]
 }

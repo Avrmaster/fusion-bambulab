@@ -1247,6 +1247,55 @@
     }
   },
   "rings_about": "Per designation: r = smallest chamfer of the ring corners (r_s min of the dimension series); da_min = smallest diameter of a shoulder that holds the inner ring; Da_max = largest bore of a shoulder that holds the outer ring. da_min = d + 2 h and Da_max = D - 2 h with h from shoulder_height_min. A shoulder that ends inside the chamfer holds nothing. The corner of a printed seat is sharper than r, or relieved, so the ring lands on the shoulder and not on the corner. The ring's own shoulder diameters (where the seal or the cage begins) are not here: they differ from maker to maker.",
+  "shields": {
+    "608": {
+      "d1": 12.1,
+      "D2": 19.2
+    },
+    "686": {
+      "d1": 8.0,
+      "D2": 11.7
+    },
+    "686ZZ": {
+      "d1": 8.0,
+      "D2": 11.7
+    },
+    "6808": {
+      "d1": 43.6,
+      "D2": 49.6
+    },
+    "61808": {
+      "d1": 43.6,
+      "D2": 49.6
+    },
+    "6812": {
+      "d1": 65.1,
+      "D2": 74.0
+    },
+    "61812": {
+      "d1": 65.1,
+      "D2": 74.0
+    },
+    "6816": {
+      "d1": 85.4,
+      "D2": 95.8
+    },
+    "61816": {
+      "d1": 85.4,
+      "D2": 95.8
+    },
+    "6904": {
+      "d1": 24.9,
+      "D2": 33.4
+    },
+    "61904": {
+      "d1": 24.9,
+      "D2": 33.4
+    }
+  },
+  "shields_tag": "D",
+  "shields_about": "Per designation, where the shield or seal of a capped bearing begins: d1 = the shoulder diameter of the inner ring (the shield stands just outside it), D2 = the recess diameter of the outer ring (the shield sits inside it). A clamp washer on the inner ring reaches at most to d1, one on the outer ring at most to D2: further on it presses the shield onto the inner ring (washers.landing). Where a designation has no row here, a washer that reaches past the ISO land of its ring (da_min, Da_max of \"rings\") is not judged (NOT_RUN) until its row is added. A project replaces a row by the sheet of the bearing in hand: gate/owner/tables.json \"bearings\": {\"shields\": {\"608\": {\"d1\": ..., \"D2\": ..., \"source\": ..., \"date\": ...}}}.",
+  "shields_source": "Approximate values (the \"about\" figures of the capped variants -2Z / -2RZ in deep groove ball bearing catalogues), written down from reference knowledge for the sizes a first project used, rounded towards the shield; not measured and not checked against one maker's sheet. They differ from maker to maker by a few tenths: confirm a row against the sheet of the bearing you bought before a clamp depends on it.",
   "shoulder_height_min": {
     "0.1": 0.4,
     "0.15": 0.6,

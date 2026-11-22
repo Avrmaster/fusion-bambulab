@@ -1091,7 +1091,7 @@ def scan_notes(root, layout, census, doc_keys):
       HINT       families of equal bodies in one component (fusion.bought_hint_same_bodies): probably bought, the
                  owner adds a "not_printed" pattern or leaves them. Nothing is left out by this;
       NO GROUP   parts that match no motion group, or a document that declares none: clearance.min_gap_moving does
-                 not measure them. The judge says the same per part as an informational row."""
+                 not measure them. The judge says the same per part as a NOT_RUN row."""
     out, n_same = [], _own_number(root, 'fusion.bought_hint_same_bodies')
     for key in doc_keys:
         doc = gate_common.document_entry(layout, key)

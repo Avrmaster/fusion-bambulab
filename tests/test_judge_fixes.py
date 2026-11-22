@@ -31,5 +31,28 @@ class PinNames(unittest.TestCase):
         self.assertFalse(J._assembly_shaft(['ref shaft A / shaft pin 5m6x50']))
 
 
+
+class Round2Helpers(unittest.TestCase):
+    """Helpers of the second round of 0.3.1: pilot names, seat interference, the outer end of old wall reads."""
+    def test_a_pilot_is_named_with_a_diameter_and_a_fit_class(self):
+        self.assertEqual(J._spigot_d('ref gear motor / GX20 pilot D25h7 x 2'), 25.0)
+        self.assertEqual(J._spigot_d('ref gear motor / GX20 spigot D22f7 (front)'), 22.0)
+        for name in ('ref gear motor / GX20 round body D42 (4 x M4)', 'ref gear motor / GX20 collar D10', 'ref motor 17HS4401S', 'screw M4x8'):
+            self.assertIsNone(J._spigot_d(name), name)
+
+    def test_seat_interference_is_read_from_a_tapered_profile_only(self):
+        rows = [6.24, 6.23, 6.21, 6.2, 6.18, 6.18, 6.16, 6.15, 6.13]
+        self.assertEqual(J._seat_interference({'d': 6.18, 'rows': rows}, 6.0, 'inner', 0.05), (0.13, (6.13, 6.24)))
+        self.assertIsNone(J._seat_interference({'d': 6.18, 'rows': [6.18] * 9}, 6.0, 'inner', 0.05))      # straight: the INFO of the rule
+        self.assertIsNone(J._seat_interference({'d': 6.18}, 6.0, 'inner', 0.05))
+        self.assertEqual(J._seat_interference({'d': 12.9, 'rows': [12.8, 12.85, 12.9]}, 13.0, 'outer', 0.05)[0], 0.1)
+
+    def test_an_old_wall_read_at_a_limit_says_it_may_be_thinner(self):
+        old = {'ray': {'refine': 0.005}}
+        self.assertIn('outer end of its bisection', J._outer_end_note(old, 1.6, 4.0, 1.6))
+        self.assertEqual(J._outer_end_note(old, 1.7, 4.0, 1.6), '')
+        self.assertEqual(J._outer_end_note({'ray': {'refine': 0.001, 'wall_end': 'inner'}}, 1.6, 4.0, 1.6), '')
+
+
 if __name__ == '__main__':
     unittest.main()

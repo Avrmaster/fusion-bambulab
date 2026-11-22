@@ -196,12 +196,15 @@ class Gap(unittest.TestCase):
         self.assertIn('ONE motion group', judged('clearance.min_gap_moving', self.facts(gap=0.0))[0]['text'])
         self.assertNotIn('ONE motion group', judged('clearance.min_gap_moving', self.facts(gap=0.05))[0]['text'])
 
-    def test_a_part_in_no_group_is_said_and_does_not_block(self):
+    def test_a_part_in_no_group_is_not_run_and_says_to_register_its_group(self):
+        # an unjudged gap to a turning part never reads as INFO (0.3.1 round 2): the check did not run
         none = {'own_group': None, 'margin': 5.0, 'gaps': []}
-        self.assertEqual(verdicts(judged('clearance.min_gap_moving', dict(none, groups=3))), ['INFO'])
-        self.assertEqual(verdicts(judged('clearance.min_gap_moving', dict(none, groups=0))), ['INFO'])
+        self.assertEqual(verdicts(judged('clearance.min_gap_moving', dict(none, groups=3))), ['NOT_RUN'])
+        self.assertEqual(verdicts(judged('clearance.min_gap_moving', dict(none, groups=0))), ['NOT_RUN'])
         self.assertNotEqual(judged('clearance.min_gap_moving', dict(none, groups=3))[0]['text'], judged('clearance.min_gap_moving', dict(none, groups=0))[0]['text'])
-        self.assertEqual(judged('clearance.min_gap_moving', none), [])                    # facts written before the probe counted the groups
+        for facts in (dict(none, groups=3), dict(none, groups=0), none):
+            self.assertIn('gate/layout.json', judged('clearance.min_gap_moving', facts)[0]['text'])
+        self.assertEqual(verdicts(judged('clearance.min_gap_moving', none)), ['NOT_RUN'])     # facts written before the probe counted the groups
 
 
 if __name__ == '__main__':

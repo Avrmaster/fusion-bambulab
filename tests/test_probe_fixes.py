@@ -165,5 +165,33 @@ class SwingBlocks(unittest.TestCase):
         self.assertEqual([(r['name'], r.get('in')) for r in rows], [('Cover', None), ('Armature', 'Gearbox / Motor')])
 
 
+
+class InsertWallEnd(unittest.TestCase):
+    """fusion_inserts: a wall is read at the thinner end of its bisection, rounded down to 0.01 (a wall drawn at a
+    limit reads the limit, one a few thousandths under it reads under it)."""
+    def walls(self, wall):
+        g = probe_globals('_geom.py', 'fusion_inserts.py')
+        g['_ins_in'] = lambda body, p, tag=0: math.hypot(p[0], p[1]) < 2.0 + wall      # a ring of plastic `wall` thick round a D4 hole
+        return g['_ins_walk'](None, (0.0, 0.0, 0.0), [(1.0, 0.0, 0.0), (0.6, 0.8, 0.0)], 2.0, 0.03, 4.3, dict(g['_INS_RAY']))
+
+    def test_a_wall_at_the_limit_reads_the_limit(self):
+        self.assertEqual(self.walls(1.2), [1.2, 1.2])
+        self.assertEqual(self.walls(4.0), [4.0, 4.0])
+
+    def test_a_wall_under_the_limit_never_reads_the_limit(self):
+        self.assertEqual(self.walls(1.195), [1.19, 1.19])
+        self.assertEqual(self.walls(1.199), [1.19, 1.19])
+
+
+class USlotSamples(unittest.TestCase):
+    """fusion_screws: the seat samples of a head reach 1.0 beyond its edge, so the judge can tell a U-slot whose flanks
+    run on from a hole broken out of the end of a bar."""
+    def test_the_probe_samples_beyond_the_head(self):
+        with open(os.path.join(PROBES, 'fusion_screws.py'), encoding='utf-8') as f:
+            text = f.read()
+        self.assertIn("r_far = sh['head_r'] + 1.0", text)
+        self.assertIn('round(r_far, 3)', text)
+
+
 if __name__ == '__main__':
     unittest.main()

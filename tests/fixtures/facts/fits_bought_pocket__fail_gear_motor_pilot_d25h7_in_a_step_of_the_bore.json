@@ -1,0 +1,94 @@
+{
+ "judge": "fits_bought_pocket",
+ "case": "a gear motor's pilot D25h7 x 2 sits in the D25 x 2 step of the housing bore: the press fit of the pins fits, decided and never printed: FAIL (coupon first), and the bore is still asked what else goes in",
+ "incident": "a gearbox pilot D25h7 in a printed housing was judged by no rule: the bore was only asked what goes in",
+ "facts": {
+  "holes": [
+   {
+    "id": "h7",
+    "anchor": {
+     "axis": [
+      -1.0,
+      0.0,
+      0.0
+     ],
+     "kind": "hole",
+     "point": [
+      60.0,
+      0.0,
+      100.0
+     ]
+    },
+    "segments": [
+     {
+      "d": 42.6,
+      "len": 41.5
+     },
+     {
+      "d": 25.0,
+      "len": 2.0
+     },
+     {
+      "d": 13.5,
+      "len": 3.0
+     }
+    ],
+    "depth": 46.5,
+    "through": true,
+    "class": null,
+    "coaxial": [
+     {
+      "kind": "bought",
+      "name": "ref gear motor (GX20) / GX20 pilot D25h7 x 2",
+      "part": null,
+      "span": [
+       -43.5,
+       -41.5
+      ]
+     },
+     {
+      "kind": "hardware",
+      "name": "ref gear motor (GX20) / GX20 round body D42 (4 x M4 on PCD 35)",
+      "part": null,
+      "span": [
+       -41.5,
+       0.0
+      ]
+     },
+     {
+      "kind": "bought",
+      "name": "ref gear motor (GX20) / GX20 collar D10",
+      "part": null,
+      "span": [
+       -45.5,
+       -43.5
+      ]
+     }
+    ]
+   }
+  ],
+  "openings": [],
+  "counts": {}
+ },
+ "params": {
+  "fits.pin_press_extra#tag": "D",
+  "fits.pin_slip_extra#tag": "D",
+  "fits.pin_running_extra#tag": "D",
+  "fits.pin_press_extra": 0.0,
+  "fits.pin_slip_extra": 0.05,
+  "fits.pin_running_extra": 0.3
+ },
+ "expect": [
+  {
+   "verdict": "FAIL",
+   "by": [
+    "ref gear motor (GX20) / GX20 pilot D25h7 x 2",
+    "fits.pin_press_extra"
+   ]
+  },
+  {
+   "verdict": "INFO",
+   "ask": "fits.pocket_content"
+  }
+ ]
+}

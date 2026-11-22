@@ -999,7 +999,7 @@ class Inserts(Units):
     def test_only_the_pockets_are_measured(self):
         self.assertEqual(sorted(self.p), ['p1', 'p2', 'p3', 'p4', 'p5', 'p6', 't1']); self.assertEqual(self.env['sig'], self.cenv['sig'])
         ray = self.p['p1']['ray']
-        self.assertEqual((ray['n'], ray['step'], ray['max'], ray['thin_wall'], ray['thin_relief'], ray['start'], ray['refine']), (48, 0.1, 8.0, 4.0, 1.2, 0.03, 0.005))
+        self.assertEqual((ray['n'], ray['step'], ray['max'], ray['thin_wall'], ray['thin_relief'], ray['start'], ray['refine']), (48, 0.1, 8.0, 4.0, 1.2, 0.03, 0.001))
         self.assertEqual((self.p['p1']['kind'], self.p['p1']['match'], self.p['p6']['match']), ('M3x4x5', 'exact', 'band'))
         self.assertEqual(self.p['p1']['anchor'], {'kind': 'insert_pocket', 'axis': [0.0, 0.0, 1.0], 'point': [36.0, 16.0, 12.0]})
 

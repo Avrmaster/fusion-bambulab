@@ -1,7 +1,6 @@
 {
  "judge": "washers_landing",
- "case": "a D12 clamp washer at 15.5 from the axis of a 608 laps its outer ring by 1.45: the ring offers (22 - 20) / 2 = 1.0 of face, a 2.0 lap would reach over the shield: a pass",
- "incident": "clamp washers on a 608 outer ring were asked for 2.0 mm of lap on a ring whose whole face is 1.0 wide, and washers 60 deg off the sample directions read 0.04 short",
+ "case": "the same washer moved out to 15.75 from the axis laps the 608 outer ring by 1.2, to D19.6: past the 1.0 of ISO face and short of the shield at D2 19.2: a pass",
  "facts": {
   "screws": [],
   "washers": [
@@ -19,7 +18,7 @@
       1
      ],
      "point": [
-      15.5,
+      15.75,
       0.0,
       44.0
      ]
@@ -51,7 +50,7 @@
        "bearing": false
       }
      ],
-     "ring_overlap": 1.45
+     "ring_overlap": 1.2
     },
     "proud": {
      "height": 3.15,

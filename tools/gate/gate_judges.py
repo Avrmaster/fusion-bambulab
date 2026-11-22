@@ -1899,6 +1899,7 @@ def inserts_wall(facts, params, ctx):
         if _relief_carries(row, other):
             continue                                     # a smaller relief fits: inserts.wall_at_relief has the row of this pocket
         text = '%s: wall %s %s, %s' % (_pocket(p, a), _g(row['measure']), row['where'], row['why'])
+        text += _outer_end_note(p, row['measure'], target, floor)
         if other:
             text += '; also %s beside its D%s melt relief, under %s (%s; inserts.wall_at_relief %s)' % (
                 _g(other['measure']), _g(other['relief_d']), _g(relief_min),
@@ -1970,6 +1971,7 @@ def inserts_wall_at_relief(facts, params, ctx):
         if not _relief_carries(other, row) and not (other is not None and _relief_own_cause(p, other, row, ctx)):
             continue                                     # one cause: inserts.wall has the row of this pocket and names this level
         text = '%s: %s of plastic beside its D%s melt relief, under %s; %s' % (_pocket(p, a), _g(row['measure']), _g(row['relief_d']), _g(limit), row['why'])
+        text += _outer_end_note(p, row['measure'], limit, floor)
         if other:
             text += '; also wall %s %s, %s (inserts.wall %s)' % (_g(other['measure']), other['where'], other['why'], other['verdict'])
         context = {'kind': p.get('kind'), 'relief_d': row['relief_d'], 'wall': row['measure'], 'blocked_by': row['named'],
@@ -1978,6 +1980,21 @@ def inserts_wall_at_relief(facts, params, ctx):
             context['walls'] = [other['lead_in'], other['insert'], other['verdict']]
         out.append(finding(ctx['rule'], ctx['part'], row['verdict'], text, anchor=a, measure=row['measure'], limit=limit, by=row['named'], context=context))
     return out
+
+
+def _outer_end_note(p, wall, *limits):
+    """The note for a wall that facts of a unit before 0.3.1 round 2 read at the OUTER end of its bisection ("ray"
+    without "wall_end": "inner"), when it lies within "refine" of one of the limits: the true wall may be that much
+    thinner, so it may be under the line it seems to meet. Else ""."""
+    ray = p.get('ray') if isinstance(p.get('ray'), dict) else {}
+    if ray.get('wall_end') == 'inner' or not _num(wall):
+        return ''
+    refine = ray.get('refine') if _num(ray.get('refine')) else 0.005
+    near = [x for x in limits if _num(x) and -_EPS <= wall - x <= refine + 0.005 + _EPS]
+    if not near:
+        return ''
+    return (' (read by an older unit at the outer end of its bisection: the wall may be up to %s thinner, under the %s it seems to meet; measure the part again)'
+            % (_g(refine), _g(near[0])))
 
 
 @judge
@@ -2571,6 +2588,39 @@ def _seat_tapered(s, size, ring, tol, band):
     return abs(stop - size) <= tol + _EPS and size - _EPS <= entry <= size + band + _EPS and entry >= stop - _EPS and s['d'] <= size + band + _EPS
 
 
+def _seat_interference(s, size, ring, ttol):
+    """(interference, (narrowest, widest)) of a TAPERED seat over the ring's own width, or None: a post (inner ring) at
+    its narrowest height minus the bore d, a bore (outer ring) D minus its widest height, from the profile "rows" (a
+    profile whose heights differ by more than `ttol`; a straight seat off nominal is the INFO of bearings.seat).
+    Positive: the taper is not nominal where this ring enters, so the ring is pressed over plastic over its whole width
+    (one taper drawn across two rings: the second ring sits on the wide end of the first)."""
+    known = [r for r in _list(s.get('rows')) if _num(r)]
+    if len(known) < 2 or not _num(size) or max(known) - min(known) <= ttol + _EPS:
+        return None
+    lo, hi = min(known), max(known)
+    return (round(lo - size, 4) if ring == 'inner' else round(size - hi, 4)), (lo, hi)
+
+
+def _seat_shared_with(b, bearings, ring, ctx):
+    """The name of another bearing whose `ring` sits on the same printed seat body on the same axis line as `b` (one
+    taper run across two bearings), or None."""
+    a = _anchor(b.get('anchor'))
+    s = (b.get('seat') or {}).get(ring) if isinstance(b.get('seat'), dict) else None
+    if a is None or not isinstance(s, dict) or not s.get('part'):
+        return None
+    for o in bearings:
+        if o is b or not isinstance(o.get('seat'), dict):
+            continue
+        so, ao = o['seat'].get(ring), _anchor(o.get('anchor'))
+        if not isinstance(so, dict) or so.get('part') != s.get('part') or ao is None:
+            continue
+        if abs(abs(sum(x * y for x, y in zip(a['axis'], ao['axis']))) - 1.0) > 1e-3:
+            continue
+        if _near_on_line(ao['point'], a['point'], a['axis'])[1] <= 0.05:
+            return str(o.get('ref') or o.get('designation') or 'another bearing')
+    return None
+
+
 @judge
 def bearings_seat(facts, params, ctx):
     """Rule bearings.seat. Reads fusion_bearings facts: "bearings"[].seat.inner / .outer ({"d", "part", "len", "entry_d"} or
@@ -2628,6 +2678,19 @@ def bearings_seat(facts, params, ctx):
                 out.append(_not_run(ctx, '%s: its %s seat or its own %s has no number' % (_bearing(b, a), ring, key), a))
                 continue
             band = pv(params, 'bearings.seat_taper_thick_base' if ring == 'inner' else 'bearings.seat_taper')
+            grip = _seat_interference(s, size, ring, ttol) if printed and abs(s['d'] - size) <= tol + _EPS else None
+            if grip is not None and grip[0] > ttol + _EPS:
+                lo, hi = grip[1]
+                shared = _seat_shared_with(b, bearings, ring, ctx)
+                out.append(finding(ctx['rule'], ctx['part'], 'FAIL',
+                                   '%s: its %s seat is a taper D%s..%s that is not nominal where the ring %s: %s, %s mm of interference or more over the whole width of the ring on %s D%s. A taper is nominal (within %s) at that end%s' % (
+                                       _bearing(b, a), ring, _g(lo), _g(hi), 'enters' if ring == 'inner' else 'stops',
+                                       'every height of it is wider than the bore' if ring == 'inner' else 'every height of it is narrower than the ring',
+                                       _g(grip[0]), what, _g(size), _g(ttol),
+                                       ('; one taper runs on under %s: each ring needs its own nominal end' % shared) if shared else ''),
+                                   anchor=a, measure=grip[0], limit=ttol, by=[str(s['part'])] if s.get('part') else [],
+                                   context={'designation': b.get('designation'), 'ring': ring, 'seat_d': s['d'], 'size': size, 'interference': grip[0], 'shared_taper': shared}))
+                continue
             if form != 'tapered' and printed and abs(s['d'] - size) > ttol + _EPS and abs(s['d'] - size) <= tol + _EPS \
                     and not _seat_tapered(s, size, ring, ttol, band):        # a taper nominal within seat_taper_tol where it grips is what it should be
                 out.append(finding(ctx['rule'], ctx['part'], 'INFO', '%s: its %s seat is D%s, %s off %s D%s: inside the tolerance %s, but more than the %s a taper is judged to. '
@@ -4530,8 +4593,10 @@ def inserts_no_tapped_plastic(facts, params, ctx):
     the role "tap_pilot" (a tap-drill size of the screws table) or "pilot" (a thread-forming pilot of the inserts
     table): a thread cut or formed in the print. One INFO finding with ask = "inserts.no_tapped_plastic" per hole;
     the answer names the exception. anchor = the hole's anchor, context = the rounded segments + the class kind.
-    A pocket of the pockets table (_bought_pocket) is not asked: fits.bought_part_pocket judges it. Parameters: the "d"
-    and "depth" parameters of every kind of that table."""
+    A pocket of the pockets table (_bought_pocket) is not asked: fits.bought_part_pocket judges it. A blind hole
+    shallower than the least thread engagement of its size (_thread_too_shallow) with no hardware or bought body on its
+    axis holds no thread (a phasing marker, the socket of a spigot): not asked. Parameters: the "d" and "depth"
+    parameters of every kind of that table, screws.min_engagement."""
     holes, out = _rows(facts, 'holes', ctx)
     for h in holes:
         c = _hole_class(h, ctx)
@@ -4541,6 +4606,8 @@ def inserts_no_tapped_plastic(facts, params, ctx):
             continue
         if _piece_of(h, holes):                      # the same surface as another hole of the census
             continue
+        if _thread_too_shallow(h, c, params) and not any(isinstance(x, dict) and x.get('kind') in ('hardware', 'bought') for x in _list(h.get('coaxial'))):
+            continue                                 # blind, shallower than any thread engagement, nothing on its axis: a marker, no thread
         a, segs = _anchor(h.get('anchor')), _segments(h)
         what = 'a tap-drill hole for %s' % c.get('kind') if c['role'] == 'tap_pilot' else 'a pilot for a thread formed in the plastic (%s)' % c.get('kind')
         out.append(finding(ctx['rule'], ctx['part'], 'INFO', 'hole %s at %s is %s: a thread in the print. Which screw goes in, and why not an insert?' % (_shape(segs), _at(a), what),
@@ -4657,6 +4724,72 @@ def _judge_pin(h, info, params, ctx, unnamed=None):
                     context=dict(base, pin_d=pin_d, pin_len=pin_len, fit=fit, problems=[p[0] for p in problems]))]
 
 
+_FIT_CLASS = re.compile(r'(?i)(?:(?<![a-z])d|\u00d8)\s*(\d+(?:\.\d+)?)\s*([a-hj-z]{1,2}\d{1,2})(?![\d.])')
+
+
+def _spigot_d(name):
+    """The diameter of a toleranced pilot, spigot or register a bought body is named with ("pilot D25h7 x 2": 25.0),
+    or None: an explicit diameter with an ISO fit class after it, in its own name without the parentheses."""
+    m = _FIT_CLASS.search(_bare_own(name))
+    return float(m.group(1)) if m else None
+
+
+def _judge_spigots(h, params, ctx):
+    """fits_bought_pocket: the rows of the toleranced pilots of bought parts that sit in one step of the census hole h.
+    A bought or hardware body on the hole's axis that is no pin of fits.pin_ref_pattern and whose own name gives a
+    diameter with a fit class (_spigot_d), whose span along the axis lies at least half inside one segment of the hole
+    and whose diameter is within 1.0 of that segment's: that step is the recess of the pilot. It is the press, slip or
+    running fit of the pockets table's pins (_pin_fit) or FAIL ("no fit of it"); the parameter of the fit is M or U here
+    or FAIL (decided, never printed: the coupon first); a tag not handed over is NOT_RUN. One row per pilot."""
+    segs, a0 = _segments(h), _anchor(h.get('anchor'))
+    if not segs or a0 is None:
+        return []
+    pins = set(_pins_on_axis(h, params))
+    ranges, z = [], 0.0
+    for sg in segs:
+        ranges.append((z, z + sg['len'], sg['d']))
+        z += sg['len']
+    out, seen = [], set()
+    for c in _list(h.get('coaxial')):
+        if not isinstance(c, dict) or c.get('kind') not in ('bought', 'hardware') or not isinstance(c.get('name'), str):
+            continue
+        name, sp = c['name'], c.get('span')
+        d = _spigot_d(name)
+        if d is None or name in pins or name in seen or not (isinstance(sp, list) and len(sp) == 2 and all(_num(x) for x in sp)):
+            continue
+        lo, hi = -max(sp), -min(sp)                  # its depth range below the mouth
+        if hi - lo <= _EPS:
+            continue
+        step = None
+        for r0, r1, sd in ranges:
+            if min(hi, r1) - max(lo, r0) >= 0.5 * (hi - lo) - _EPS and abs(sd - d) <= 1.0 + _EPS:
+                step = (r0, r1, sd)
+                break
+        if step is None:
+            continue
+        seen.add(name)
+        a = dict(a0, kind='hole', point=[round(a0['point'][i] - a0['axis'][i] * step[0], 4) for i in range(3)])    # the mouth of the step
+        where = 'the D%s x %s step at %s of %s hole %s' % (_g(step[2]), _g(round(step[1] - step[0], 3)), _at(a), 'through' if h.get('through') else 'blind', _shape(segs))
+        fit, pname, want = _pin_fit(step[2], d, params, ctx)
+        base = {'spigot': name, 'spigot_d': d, 'step_d': step[2], 'segments': [[x['d'], x['len']] for x in segs]}
+        if fit is None:
+            fits = (_table(ctx, 'pockets').get('pins') or {}).get('fits') or {}
+            how = ', '.join('%s D%s' % (f, _g(d + _fit_value(params, fits[f], ctx))) for f in sorted(fits) if _num(_fit_value(params, fits[f], ctx)))
+            out.append(finding(ctx['rule'], ctx['part'], 'FAIL', '%s receives the pilot D%s of %s: D%s is no fit of it (%s)%s' % (
+                where, _g(d), name, _g(step[2]), how or 'no fit parameter was handed over', ': the pilot does not go in' if step[2] < d - _EPS else ': the pilot does not locate the part'),
+                anchor=a, measure=step[2], limit=want, by=[name], context=base))
+            continue
+        tag = params.get(pname + '#tag')
+        if tag not in ('M', 'U', 'D', 'S'):
+            out.append(_not_run(ctx, '%s is the %s fit of the pilot D%s of %s, but the tag of %s was not handed to the judge' % (where, fit, _g(d), name, pname), anchor=a))
+        elif tag not in ('M', 'U'):
+            out.append(finding(ctx['rule'], ctx['part'], 'FAIL', '%s receives the pilot D%s of %s: it is the %s fit and takes its size from %s = %s (tag %s), sized for pins: decided, never printed '
+                               'for this nozzle, material, hole compensation and layer height at this diameter. Print the coupon first' % (
+                                   where, _g(d), name, fit, pname, _g(_fit_value(params, pname, ctx)), tag),
+                               anchor=a, by=[name, pname], context=dict(base, fit=fit, tag=tag)))
+    return out
+
+
 def _box_kinds(facts, params, ctx):
     """[(opening, kind, row)] for every census opening (slot or window) whose two sizes are those of a box of the pockets
     table (tol.box); a box with "l" null is matched by its width alone."""
@@ -4732,6 +4865,8 @@ def fits_bought_pocket(facts, params, ctx):
                                    anchor=a, by=bad,
                                    context={'kind': kind, 'segments': [[s['d'], s['len']] for s in segs], 'tags': sorted(tags.items())}))
             continue
+        if not _piece_of(h, holes):
+            out += _judge_spigots(h, params, ctx)    # a toleranced pilot of a bought part in a step of this hole: its diameter fit
         c = _hole_class(h, ctx)
         bought = _content_asked(h, c)
         if bought is None or _piece_of(h, holes):    # known by a table; or a through hole with nothing bought in it; or the same surface as another hole
@@ -4786,12 +4921,12 @@ def _decided_fits(facts, params, ctx):
                 names = [rows[0][2]] if len(rows) == 1 else sorted(fits.values())
             for n in names:
                 if params.get(n + '#tag') not in ('M', 'U'):
-                    out[n] = 'pin pockets (tag %s)' % params.get(n + '#tag')
+                    out[n] = 'pin pockets (%s)' % _tag_words(params.get(n + '#tag'))
             continue
         if found:
             for n in (found[1].get('d'), found[1].get('depth')):
                 if isinstance(n, str) and params.get(n + '#tag') not in ('M', 'U'):
-                    out[n] = '%s pockets (tag %s)' % (found[0], params.get(n + '#tag'))
+                    out[n] = '%s pockets (%s)' % (found[0], _tag_words(params.get(n + '#tag')))
             continue
         c = _hole_class(h, ctx)
         if isinstance(c, dict) and c.get('table') == 'bearings' and c.get('role') == 'bearing_seat' and c.get('match') == 'band':
@@ -4815,7 +4950,7 @@ def _decided_fits(facts, params, ctx):
     for o, kind, row in _box_kinds(facts, params, ctx):
         for n in (row.get('w'), row.get('l')):
             if isinstance(n, str) and params.get(n + '#tag') not in ('M', 'U'):
-                out[n] = '%s pockets (tag %s)' % (kind, params.get(n + '#tag'))
+                out[n] = '%s pockets (%s)' % (kind, _tag_words(params.get(n + '#tag')))
     return out
 
 
@@ -4834,11 +4969,30 @@ def fits_decided_not_printed(facts, params, ctx):
     found = _decided_fits(facts, params, ctx)
     if not found:
         return []
-    names = sorted(found)
+    loose = sorted(n for n in found if _fit_unrecorded(found[n]))
+    names = sorted(n for n in found if n not in loose)
+    if loose:                                        # no decision on record: nothing says what the fit is, so it is not judged
+        out.append(finding(ctx['rule'], ctx['part'], 'NOT_RUN', 'this part relies on %d fit%s with no decision on record: %s. Record the decision (a tagged parameter, '
+                           'or the seat fit row of the bearings table) or print the coupon; until then the fit is not judged' % (
+                               len(loose), '' if len(loose) == 1 else 's', '; '.join('%s (%s)' % (n, found[n]) for n in loose)),
+                           by=loose, context={'unrecorded': [[n, found[n]] for n in loose]}))
+    if not names:
+        return out
     text = 'this part relies on %d fit%s never printed under its declared target: %s' % (
         len(names), '' if len(names) == 1 else 's', '; '.join('%s (%s)' % (n, found[n]) for n in names))
-    return [finding(ctx['rule'], ctx['part'], 'INFO', text, ask='fits.decided_not_printed', by=names,
-                    context={'decided': [[n, found[n]] for n in names]})]
+    return out + [finding(ctx['rule'], ctx['part'], 'INFO', text, ask='fits.decided_not_printed', by=names,
+                          context={'decided': [[n, found[n]] for n in names]})]
+
+
+def _tag_words(tag):
+    """"tag D" for a parameter's tag, "no tag" when it has none (_decided_fits)."""
+    return 'tag %s' % tag if tag else 'no tag'
+
+
+def _fit_unrecorded(why):
+    """Is the reason _decided_fits gives for a fit one where no decision is on record (a parameter without a tag, a
+    bearings table without its seat fit row), not a decided (D) or standard (S) value never printed here?"""
+    return why.endswith('(no tag)') or 'has no seat fit row' in why
 
 
 @judge
@@ -5566,6 +5720,7 @@ def washers_landing(facts, params, ctx):
     share_min, gap_max, clearance = pv(params, 'washers.landing_share_min'), pv(params, 'washers.landing_gap_max'), pv(params, 'washers.spot_face_clearance')
     room, land_min = pv(params, 'bearings.clamp_room_washer'), pv(params, 'washers.slot_land_min')
     lap_min, no_lap, contact = params.get('washers.ring_overlap_min'), [], params.get('bearings.contact_gap_max')
+    past_land = []                                   # clamp washers past the ISO land of a bearing whose shield the table does not give
     washers, out = _rows(facts, 'washers', ctx)
     for w in washers:
         a, land, od = _anchor(w.get('anchor')), w.get('landing'), w.get('od')
@@ -5585,13 +5740,23 @@ def washers_landing(facts, params, ctx):
             need, step, which = lap_min, _LAP_STEP, None
             rl = _ring_land(w, ring, ctx)
             if rl is not None and _num(lap_min) and _num(contact):
-                which, face = rl
+                which, face = rl[0], rl[1]
                 need, step = min(lap_min, face), contact  # the ring offers only its face: a 608 outer ring 1.0, not the 2.0 of a 6816
             if _num(lap) and _num(need) and lap < need - step - _EPS:      # the unit finds each end of the lap to 0.02
                 out.append(finding(ctx['rule'], ctx['part'], 'FAIL', '%s clamps %s but reaches only %s mm over the%s ring (it needs %s%s): the ring is held at its chamfer'
                                    % (label, ring, _g(lap), (' %s' % which) if which else '', _g(need),
                                       ', its face is %s wide' % _g(rl[1]) if rl else ''), anchor=a, measure=lap, limit=need, by=[str(ring)],
                                    context={'od': od, 'clamps': ring, 'ring_overlap': lap}))
+            elif _num(lap) and rl is not None and rl[2] is not None and lap > rl[2] + _LAP_STEP + _EPS:
+                edge = rl[3]                             # the washer reaches past the ring's land: onto the shield or seal
+                out.append(finding(ctx['rule'], ctx['part'], 'FAIL', '%s clamps %s and reaches %s mm over the %s ring, to D%s: the %s ring is clamp face only to D%s (%s), %s mm from its %s; '
+                                   'further on it presses on the shield or seal, which then rubs the turning ring' % (
+                                       label, ring, _g(lap), which, _g(rl[4]), which, _g(edge), 'd1' if which == 'inner' else 'D2', _g(rl[2]),
+                                       'bore' if which == 'inner' else 'outside'),
+                                   anchor=a, measure=lap, limit=rl[2], by=[str(ring)],
+                                   context={'od': od, 'clamps': ring, 'ring_overlap': lap, 'shield_d': edge, 'ring': which}))
+            elif _num(lap) and rl is not None and rl[2] is None and lap > rl[1] + _LAP_STEP + _EPS:
+                past_land.append((label, rl[4], rl[5]))  # past the ISO land, and the shield of this bearing is not in the table
             elif 'ring_overlap' not in land:
                 no_lap.append(label)
             if not isinstance(covers, list):
@@ -5629,14 +5794,24 @@ def washers_landing(facts, params, ctx):
     if no_lap:
         out.append(_not_run(ctx, '%d clamp washer%s of this part: how far %s over %s ring was not measured (facts of an older unit, first: %s): collect the facts again'
                             % (len(no_lap), '' if len(no_lap) == 1 else 's', 'it reaches' if len(no_lap) == 1 else 'they reach', 'its' if len(no_lap) == 1 else 'their', no_lap[0])))
+    if past_land:
+        keys = sorted(set(k for _, _, k in past_land))
+        out.append(_not_run(ctx, '%d clamp washer%s of this part reach%s past the ISO land of %s ring, to D%s (first: %s), and where the shield of %s begins is not in the bearings table: '
+                            'add d1 and D2 of the bearing in hand to "shields" (gate/owner/tables.json), so it is judged whether the washer presses the shield'
+                            % (len(past_land), '' if len(past_land) == 1 else 's', 'es' if len(past_land) == 1 else '', 'its' if len(past_land) == 1 else 'their',
+                               _g(past_land[0][1]), past_land[0][0], ', '.join(keys))))
     return out
 
 
 def _ring_land(w, ring, ctx):
-    """("outer" | "inner", the width of that ring's face a washer can clamp on) for a clamp washer on bearing `ring`
-    (the name of its ref), or None: the bearings table row of the designation in the ref's own name and its "rings"
-    row (da_min, Da_max), and the axis of the census hole whose coaxial bodies name that ref. The washer clamps the
-    outer ring when its centre lies further from that axis than the middle of the bearing's section, (d + D) / 4."""
+    """("outer" | "inner", the width of that ring's ISO face a washer can clamp on, the most it may reach over that ring
+    before it touches the shield or None, the diameter where the shield begins or None, the diameter the given lap
+    would reach to as a function, the designation) for a clamp washer on bearing `ring` (the name of its ref), or None:
+    the bearings table row of the designation in the ref's own name, its "rings" row (da_min, Da_max) and its "shields"
+    row (d1, D2: where the shield or seal begins, when the table has it), and the axis of the census hole whose coaxial
+    bodies name that ref. The washer clamps the outer ring when its centre lies further from that axis than the middle
+    of the bearing's section, (d + D) / 4. The ISO face is (D - Da_max) / 2 outer and (da_min - d) / 2 inner; the reach
+    to the shield is (D - D2) / 2 outer and (d1 - d) / 2 inner."""
     table = _table(ctx, 'bearings')
     sizes, aliases, rings = table.get('sizes') or {}, table.get('aliases') or {}, table.get('rings') or {}
     key = None
@@ -5655,9 +5830,16 @@ def _ring_land(w, ring, ctx):
     if a is None or L is None:
         return None
     r0 = _near_on_line(a['point'], L[0], L[1])[1]
-    if r0 > (row['d'] + row['D']) / 4.0:
-        return 'outer', round((row['D'] - rr['Da_max']) / 2.0, 3)
-    return 'inner', round((rr['da_min'] - row['d']) / 2.0, 3)
+    sh = (table.get('shields') or {}).get(key)
+    sh = sh if isinstance(sh, dict) else {}
+    lap = (w.get('landing') or {}).get('ring_overlap') if isinstance(w.get('landing'), dict) else None
+    if r0 > (row['D'] + row['d']) / 4.0:
+        edge = sh.get('D2') if _num(sh.get('D2')) and row['d'] < sh['D2'] < row['D'] else None
+        reach = round((row['D'] - edge) / 2.0, 3) if edge is not None else None
+        return 'outer', round((row['D'] - rr['Da_max']) / 2.0, 3), reach, edge, round(row['D'] - 2.0 * lap, 3) if _num(lap) else None, key
+    edge = sh.get('d1') if _num(sh.get('d1')) and row['d'] < sh['d1'] < row['D'] else None
+    reach = round((edge - row['d']) / 2.0, 3) if edge is not None else None
+    return 'inner', round((rr['da_min'] - row['d']) / 2.0, 3), reach, edge, round(row['d'] + 2.0 * lap, 3) if _num(lap) else None, key
 
 
 @judge
@@ -5951,11 +6133,14 @@ def screws_head_seat_full_ring(facts, params, ctx):
 
 def _u_slot_seat(s, seat, params, ctx):
     """{"width", "flank"} when the seat samples of a head ("ring": [angle deg, radius, 1 on material / 0 in air], from
-    fusion_screws 0.3.1: the two rings of the share and 32 points just inside the edge of the head) show a U-slot: every point in air lies in ONE half-strip that starts at the axis (width at
-    most the clearance hole of its size + 0.2: the slot of the shank, open towards one end), no point on material lies
-    inside that strip, material stands on both sides of it, and each flank, (head diameter - slot width) / 2, is at
-    least washers.slot_land_min. A head over an edge (air on a whole side), a slot through the middle of the seat (air on
-    both ends of the strip) and facts without the samples: None."""
+    fusion_screws: the two rings of the share, 32 points just inside the edge of the head and, since 0.3.1 round 2, 32
+    points 1.0 beyond it) show a U-slot: every point under the head in air lies in ONE half-strip that starts at the axis
+    (width at most the clearance hole of its size + 0.2: the slot of the shank, open towards one end), no point on
+    material lies inside that strip, material stands on both sides of it, the flanks run on past the head (every point
+    beyond the head on the open side and beside the strip is on material), and each flank, (head diameter - slot
+    width) / 2, is at least washers.slot_land_min. A head over an edge (air on a whole side), a hole broken out of the
+    end of a bar (the flanks end within the head's reach: the head overhangs the end), a slot through the middle of the
+    seat (air on both ends of the strip) and facts without the samples beyond the head: None."""
     ring = seat.get('ring')
     size = s.get('size') if isinstance(s.get('size'), str) else None
     row = ((_table(ctx, 'screws').get('sizes') or {}).get(size) or {}) if size else {}
@@ -5968,9 +6153,13 @@ def _u_slot_seat(s, seat, params, ctx):
             return None
         t = math.radians(r[0])
         pts.append((r[1] * math.cos(t), r[1] * math.sin(t), r[2]))
-    air, mat = [p for p in pts if not p[2]], [p for p in pts if p[2]]
-    if not air or not mat or max(r[1] for r in ring) < head_d / 2.0 - 0.3:
+    inside = [p for p, r in zip(pts, ring) if r[1] <= head_d / 2.0 + _EPS]
+    beyond = [p for p, r in zip(pts, ring) if r[1] > head_d / 2.0 + _EPS]
+    air, mat = [p for p in inside if not p[2]], [p for p in inside if p[2]]
+    if not air or not mat or max(r[1] for r in ring if r[1] <= head_d / 2.0 + _EPS) < head_d / 2.0 - 0.3:
         return None                                  # no samples near the edge of the head: its flanks are not known
+    if not beyond:
+        return None                                  # facts of 0.3.1: nothing says the flanks run on past the head (a bar end looks the same)
     half = (clear + 0.2) / 2.0
     for k in range(360):
         t = math.radians(k)
@@ -5983,6 +6172,9 @@ def _u_slot_seat(s, seat, params, ctx):
             continue                                 # material inside the strip: no slot there
         if not (any(cross(p) > half for p in mat) and any(cross(p) < -half for p in mat)):
             continue                                 # plastic on one flank only: a head over an edge
+        side = [p for p in beyond if dot(p) > _EPS and half + 0.2 < abs(cross(p)) < head_d / 2.0]
+        if not side or any(not p[2] for p in side):
+            continue                                 # the flanks end within the head's reach: a hole broken out of an end, the head overhangs it
         flank = (head_d - clear) / 2.0
         if flank < land_min - _EPS:
             return None
@@ -6239,20 +6431,23 @@ def clearance_min_gap_moving(facts, params, ctx):
     back to the boxes) is never a FAIL. The distance between two boxes is never more than the real gap: at the limit or
     above it is a pass, under the limit it decides nothing and is NOT_RUN with what to do.
     margin below the limit, no "own_group" key, or a neighbour without a gap: NOT_RUN.
-    own_group None (the part is in no declared motion group): nothing is measured, and one INFO finding says so (it
-    does not block): either "the document declares no motion group at all" ("groups": 0) or "this part matches none of
-    the declared groups" ("groups" above 0). Facts without "groups" (written before the probe counted them): nothing."""
+    own_group None (the part is in no declared motion group): nothing is measured, so the check did not run: one NOT_RUN
+    whose action is to register the motion group in gate/layout.json, either "the document declares no motion group at
+    all" ("groups": 0) or "this part matches none of the declared groups" ("groups" above 0, or facts written before
+    the probe counted them). An unjudged gap to a turning part never reads as INFO."""
     limit = pv(params, 'clearance.min_gap_moving')
     if not isinstance(facts, dict) or 'own_group' not in facts:
         return [_not_run(ctx, 'the facts do not say which motion group the part is in: the probe did not look')]
     if facts['own_group'] is None:
         if facts.get('groups') == 0:
-            return [finding(ctx['rule'], ctx['part'], 'INFO', 'no motion group is declared for this document in gate/layout.json ("motion_groups"): the gap to moving neighbours was NOT checked for any part',
-                            context={'groups': 0})]
-        if _num(facts.get('groups')) and facts['groups'] > 0:
-            return [finding(ctx['rule'], ctx['part'], 'INFO', 'this part matches none of the %d motion groups of gate/layout.json: its gap to moving neighbours was NOT checked. '
-                            'A part that moves with others, or stands still with others, belongs to their group' % facts['groups'], context={'groups': facts['groups'], 'own_group': None})]
-        return []
+            return [finding(ctx['rule'], ctx['part'], 'NOT_RUN', 'no motion group is declared for this document in gate/layout.json ("motion_groups"): the gap to moving neighbours was NOT checked for any part. '
+                            'Register the motion groups in gate/layout.json: every part that turns or slides with others, and every part that stands still with others, in one group',
+                            context={'groups': 0, 'not_run': 'no_group'})]
+        n = facts.get('groups') if _num(facts.get('groups')) else None
+        return [finding(ctx['rule'], ctx['part'], 'NOT_RUN', 'this part matches none of the %smotion groups of gate/layout.json: its gap to moving neighbours was NOT checked. '
+                        'Register the motion group in gate/layout.json: a part that moves with others, or stands still with others, belongs to their group; '
+                        'one that moves on its own (an eccentric, a wobbling disc) gets a group of its own' % ('%d ' % n if n else ''),
+                        context={'groups': n, 'own_group': None, 'not_run': 'no_group'})]
     gaps, out = _rows(facts, 'gaps', ctx)
     if not _num(facts.get('margin')) or facts['margin'] < limit - _EPS:
         out.append(_not_run(ctx, 'not proven: neighbours were listed only within %s mm, the limit is %s' % (_g(facts.get('margin')), _g(limit))))

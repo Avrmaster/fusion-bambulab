@@ -55,9 +55,20 @@ False classes found in the first full run of 0.3.0 on a real project, closed. Ea
 - `tests/test_guard.py` takes the temporary folder out of the printed paths before it looks for the word "gate": a TMPDIR whose name holds it failed three tests.
 - `tests/test_fit_settings.py` follows the printed-depth rule of print.z_layers.
 
+### Fixed in a second pass: no real defect silenced, no unjudged check shown as INFO
+
+- `bearings.seat`: a tapered seat whose every height under a ring presses on that ring by more than `bearings.seat_taper_tol` (a post wider than the bore, a bore narrower than the ring, over the ring's whole width) fails. One taper drawn across two bearings is caught this way: the second ring sits on the wide end of the first one's taper. The row names the other bearing on the same taper. A taper that is nominal where its ring enters stays quiet, and a straight seat off nominal is still the INFO it was.
+- `screws.head_seat_full_ring`: a U-slot is a full seat only when its flanks run on past the head. The probe now samples 32 points 1.0 beyond the edge of the head (**re-measure**: `fusion_screws`). A hole broken out of the end of a bar, where the head hangs over the end, is no U-slot and fails. Facts without the samples beyond the head fail as before.
+- `washers.landing`: a clamp washer may reach over its ring only as far as the shield or seal begins (outer ring to D2, inner ring to d1) and fails when it reaches further. The bearings table gains `shields` (d1, D2) for the common sizes, with a source line: these are approximate catalogue values and tag D, so check them against the sheet of the bearing in hand. A washer past the ISO face of a bearing that has no shield row is one NOT_RUN per part.
+- `clearance.min_gap_moving`: a part in no motion group (and a document with none) is NOT_RUN, which says to register the motion group in `gate/layout.json`. Before, this was INFO, or nothing at all for older facts.
+- `fits.decided_not_printed`: a fit with no decision on record (a parameter without a tag, no seat fit row) is NOT_RUN. A fit decided (D) or standard (S) and never printed here is still the question.
+- `fits.bought_part_pocket`: a toleranced pilot or spigot of a bought part (named with a diameter and a fit class, such as `pilot D25h7 x 2`) that sits in one step of a hole is judged as a press, slip or running fit of that step. Its row is anchored at the mouth of the step.
+- `inserts.wall` and `inserts.wall_at_relief`: the probe reads a wall at the thinner end of its bisection, to 0.001 rounded down to 0.01 (**re-measure**: `fusion_inserts`). A wall drawn at a limit reads the limit, and one a few thousandths under it reads under it. On older facts, a wall within the bisection step of a limit says that it may be that much thinner.
+- `inserts.no_tapped_plastic`: a blind hole of tap-drill size that is shallower than the least thread engagement of its size, with nothing on its axis, is a marker and is not asked which screw goes in.
+
 ### Re-measure after updating the tools
 
-`fusion_thin` (every part), `fusion_census` (every part: the stack tolerance), `fusion_screws` (every part with screws, washers or a board near it), `fusion_bearings` (parts with a thin sleeve on a pin), `fusion_openings` (parts with heads beside bought assemblies). The next `gate.py run --changed` measures them again, because the probe texts changed.
+`fusion_thin` (every part), `fusion_census` (every part: the stack tolerance), `fusion_screws` (every part with screws, washers or a board near it), `fusion_inserts` (every part with insert pockets: the wall end), `fusion_bearings` (parts with a thin sleeve on a pin), `fusion_openings` (parts with heads beside bought assemblies). The next `gate.py run --changed` measures them again, because the probe texts changed.
 
 ## 0.3.0
 

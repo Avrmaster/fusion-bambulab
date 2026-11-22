@@ -1,6 +1,6 @@
 {
  "judge": "bearings_seat",
- "case": "the same post 80.13 at its entry end: a taper, but not nominal within 0.05 where the ring enters (the whole ring presses over 0.13): the INFO stays",
+ "case": "the same post 80.13 at its entry end: a taper that is not nominal within 0.05 where the ring enters, so the whole ring presses over 0.13 of plastic: FAIL (an INFO in the first 0.3.1)",
  "facts": {
   "bearings": [
    {
@@ -138,9 +138,9 @@
  },
  "expect": [
   {
-   "verdict": "INFO",
-   "measure": 80.18,
-   "limit": 80.0
+   "verdict": "FAIL",
+   "measure": 0.13,
+   "limit": 0.05
   }
  ]
 }
