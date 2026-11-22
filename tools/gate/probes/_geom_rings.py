@@ -678,13 +678,25 @@ def seat_possible(bmin, bmax, centre, axis, r_nom, outer=True, window=1.0, n_ang
     """Can a body with this bounding box be a seat for seat_scan() at all? A seat needs a wall in three quarters of the
     directions at mid width, and a wall needs the point at the radius expected in material to be inside the body, so
     inside its box. False = seat_scan() returns None for every body with that box, and no point need be asked."""
-    _, dirs, _, r_mat = _rings_seat_frame(axis, r_nom, outer, window, n_ang)
-    held = 0
-    for d in dirs:
-        p = v_add(centre, v_scale(d, r_mat))
-        if all(bmin[i] <= p[i] <= bmax[i] for i in range(3)):
-            held += 1
-    return held >= 0.75 * n_ang
+    window, dirs, _, _ = _rings_seat_frame(axis, r_nom, outer, window, n_ang)
+    for r_mat in _rings_mat_radii(r_nom, outer, window):
+        held = 0
+        for d in dirs:
+            p = v_add(centre, v_scale(d, r_mat))
+            if all(bmin[i] <= p[i] <= bmax[i] for i in range(3)):
+                held += 1
+        if held >= 0.75 * n_ang:
+            return True
+    return False
+
+
+def _rings_mat_radii(r_nom, outer, window):
+    """The radii at which seat_scan() expects material, nearest to the seat first: 0.25, 0.5, then the window from the
+    nominal radius, into the material side. A sleeve 0.5 thick round a pin is material only at the first two: probed
+    at the window alone its bore was air, and the pin inside it was taken for the seat."""
+    sgn = 1.0 if outer else -1.0
+    out = [r_nom + sgn * x for x in (0.25, 0.5) if x < window - 1e-9] + [r_nom + sgn * window]
+    return [r for r in out if r > 0.0]
 
 
 def seat_scan(inside, centre, axis, r_nom, width, outer=True, window=1.0, look_in=3.0, n_ang=8, entry_len=None, entry_step=1.0):
@@ -708,9 +720,12 @@ def seat_scan(inside, centre, axis, r_nom, width, outer=True, window=1.0, look_i
      as "d": no point test more,
      "lead_in", "entry_end": seat_lead_in() on the entry side: the chamfer where the seat wall ends (mm, as a 45 degree
      chamfer; 0 = a sharp edge) and how far from the ring's face it ends; None when it does not end within reach}."""
-    window, dirs, r_air, r_mat = _rings_seat_frame(axis, r_nom, outer, window, n_ang)
-    mid = [radial_edge(inside, centre, axis, 0.0, d, r_air, r_mat) for d in dirs]
-    if sum(1 for r in mid if r is not None) < 0.75 * n_ang:
+    window, dirs, r_air, r_win = _rings_seat_frame(axis, r_nom, outer, window, n_ang)
+    for r_mat in _rings_mat_radii(r_nom, outer, window):            # the material side probed near the seat first (a thin sleeve)
+        mid = [radial_edge(inside, centre, axis, 0.0, d, r_air, r_mat) for d in dirs]
+        if sum(1 for r in mid if r is not None) >= 0.75 * n_ang:
+            break
+    else:
         return None
     radii, held, rows = [], 0, []
     for i in range(9):
@@ -738,11 +753,11 @@ def seat_scan(inside, centre, axis, r_nom, width, outer=True, window=1.0, look_i
                 if inside(v_add(base, v_scale(d, r_deep))):
                     r = r_deep
                 else:
-                    r = radial_edge(inside, centre, axis, s, d, r_deep, r_mat)
+                    r = radial_edge(inside, centre, axis, s, d, r_deep, r_win)
                 if r is not None and (worst is None or (r < worst if outer else r > worst)):
                     worst = r
         sides[side] = worst
-    edge = r_mat                                                      # "open": nothing of this body inside the window
+    edge = r_win                                                      # "open": nothing of this body inside the window
     val = lambda side: edge if sides[side] is None else sides[side]
     best = max(('+', '-'), key=lambda sd: (val(sd) if outer else -val(sd), sd == '+'))
     other = '-' if best == '+' else '+'

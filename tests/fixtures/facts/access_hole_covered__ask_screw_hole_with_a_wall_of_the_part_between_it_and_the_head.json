@@ -1,0 +1,199 @@
+{
+ "judge": "access_hole_covered",
+ "case": "the same hole, but a wall of the part stands in the head's path 10 mm out, before the hole: it is no piece of that key channel, and it is judged as a screw hole under the link",
+ "facts": {
+  "openings": [
+   {
+    "feature": "h1",
+    "of": "hole",
+    "anchor": {
+     "kind": "hole",
+     "axis": [
+      0,
+      0,
+      1
+     ],
+     "point": [
+      10.0,
+      0.0,
+      10.0
+     ]
+    },
+    "end": "mouth",
+    "paths": {
+     "own": {
+      "r": 1.7,
+      "reach": 60.0,
+      "free": 2.0,
+      "hits": [
+       {
+        "name": "Demo link",
+        "kind": "printed",
+        "part": "demo/link",
+        "at": 2.0,
+        "share": 1.0,
+        "approx": false,
+        "expected": false
+       }
+      ]
+     }
+    }
+   },
+   {
+    "feature": "h1",
+    "of": "hole",
+    "anchor": {
+     "kind": "hole",
+     "axis": [
+      0,
+      0,
+      -1
+     ],
+     "point": [
+      10.0,
+      0.0,
+      0.4
+     ]
+    },
+    "end": "exit",
+    "paths": {
+     "own": {
+      "r": 1.7,
+      "reach": 60.0,
+      "free": 2.0,
+      "hits": [
+       {
+        "name": "Demo link",
+        "kind": "printed",
+        "part": "demo/link",
+        "at": 2.0,
+        "share": 1.0,
+        "approx": false,
+        "expected": false
+       }
+      ]
+     }
+    }
+   },
+   {
+    "feature": "s1",
+    "of": "screw_head",
+    "ref": "ref HW / screw M3x20 #9",
+    "anchor": {
+     "kind": "screw",
+     "axis": [
+      0,
+      0,
+      1
+     ],
+     "point": [
+      10.0,
+      0.0,
+      -30.0
+     ]
+    },
+    "end": "mouth",
+    "paths": {
+     "tool": {
+      "r": 3.25,
+      "reach": 60.0,
+      "free": 25.9,
+      "hits": [
+       {
+        "name": "Demo bracket",
+        "kind": "self",
+        "part": "demo/bracket",
+        "at": 10.0,
+        "share": 1.0,
+        "approx": false,
+        "expected": false
+       },
+       {
+        "name": "Demo link",
+        "kind": "printed",
+        "part": "demo/link",
+        "at": 25.9,
+        "share": 1.0,
+        "approx": false,
+        "expected": false
+       }
+      ]
+     }
+    }
+   }
+  ],
+  "closed": []
+ },
+ "params": {
+  "access.reach": 60.0,
+  "access.min_blocked_share": 0.02,
+  "access.seal_gap": 0.2,
+  "access.cap_max": 2.0,
+  "sensors.magnet_pocket_d": 4.2,
+  "sensors.magnet_pocket_depth": 2.1
+ },
+ "ctx": {
+  "part": "demo/bracket",
+  "census": {
+   "holes": [
+    {
+     "id": "h1",
+     "anchor": {
+      "kind": "hole",
+      "axis": [
+       0,
+       0,
+       1
+      ],
+      "point": [
+       10.0,
+       0.0,
+       10.0
+      ]
+     },
+     "segments": [
+      {
+       "d": 3.4,
+       "len": 9.6
+      }
+     ],
+     "depth": 9.6,
+     "through": true,
+     "floor": null,
+     "exit": {
+      "kind": "hole",
+      "axis": [
+       0,
+       0,
+       -1
+      ],
+      "point": [
+       10.0,
+       0.0,
+       0.4
+      ]
+     },
+     "class": {
+      "table": "screws",
+      "kind": "M3",
+      "role": "clearance",
+      "match": "exact"
+     },
+     "coaxial": []
+    }
+   ],
+   "openings": [],
+   "partial": [],
+   "counts": {}
+  }
+ },
+ "expect": [
+  {
+   "verdict": "FAIL",
+   "ask": "assembly.order",
+   "by": [
+    "Demo link"
+   ]
+  }
+ ]
+}

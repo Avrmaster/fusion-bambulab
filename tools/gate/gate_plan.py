@@ -1246,6 +1246,35 @@ def _prev_facts(root, part, entry, sig, probe):
     return None
 
 
+def _mates(root, census, entry, prev):
+    """What regression.feature_lost needs to know of the printed parts that stood on the axes of the holes of a
+    part's last checked census ("prev"): {part id: {"changed": its signature differs from its last checked one,
+    "lines": [[point, axis] of each of its census holes, in the document frame]}}. A hole that moved with its
+    fasteners is only "moved, nothing lost" when such a part moved its own hole along (gate_judges._mate_followed)."""
+    out = {}
+    pids = sorted({str(c.get('part')) for h in ((prev or {}).get('holes') or []) if isinstance(h, dict)
+                   for c in (h.get('coaxial') or []) if isinstance(c, dict) and c.get('kind') == 'printed' and c.get('part')})
+    for pid in pids:
+        e = (census.get('parts') or {}).get(pid)
+        if not isinstance(e, dict) or not e.get('sig'):
+            continue
+        cen = _probe_facts(load_facts(root, pid, e['sig']), 'fusion_census') or {}
+        m = e.get('matrix')
+        lines = []
+        for h in cen.get('holes') or []:
+            a = h.get('at') if isinstance(h, dict) and isinstance(h.get('at'), dict) else (h.get('anchor') if isinstance(h, dict) else None)
+            if not (isinstance(a, dict) and isinstance(a.get('point'), list) and isinstance(a.get('axis'), list) and len(a['point']) == 3 and len(a['axis']) == 3):
+                continue
+            if isinstance(m, list) and len(m) == 16:
+                pt = [round(m[4 * r] * a['point'][0] + m[4 * r + 1] * a['point'][1] + m[4 * r + 2] * a['point'][2] + m[4 * r + 3], 4) for r in range(3)]
+                ax = [round(m[4 * r] * a['axis'][0] + m[4 * r + 1] * a['axis'][1] + m[4 * r + 2] * a['axis'][2], 6) for r in range(3)]
+            else:
+                pt, ax = list(a['point']), list(a['axis'])
+            lines.append([pt, ax])
+        out[pid] = {'changed': bool(e.get('prev_sig') and e.get('prev_sig') != e.get('sig')), 'lines': sorted(lines)}
+    return out
+
+
 _STL_SHA = {}
 
 
@@ -1597,6 +1626,8 @@ def judge_part(root, reg, resolved, part, sig=None, stage='design', intent=None,
         ctx = {'part': part, 'rule': rule['id'], 'tables': tables, 'target': target, 'census': census_facts,
                'prev': None if probe == 'fusion_scan' else _prev_facts(root, part, entry, sig, probe),
                'intent': list(intent) if intent is not None else None, 'print': frame}
+        if name == 'regression_feature_lost' and ctx['prev'] is not None:
+            ctx['mates'], ctx['matrix'] = _mates(root, census, entry, ctx['prev']), entry.get('matrix')   # did the parts on its axes move along
         stored = (data.get('probes') or {}).get(probe)
         if facts is None and isinstance(stored, dict) and str(stored.get('error') or '').startswith(OVER_BUDGET):
             ctx['no_facts'] = _first_line(stored['error'])       # the unit was given up: the NOT_RUN row says so

@@ -1,0 +1,106 @@
+{
+ "judge": "print_fit_axis",
+ "case": "a D4.2 x 1.7 magnet pocket and an insert pocket with its D7.5 relief, both opening in the bed face: their diameters print in the plane, their floors are short bridges; one INFO row that says the magnet floor may print a layer short",
+ "incident": "nineteen blind fit pockets whose mouths lie in the bed face (magnet seats, insert pockets) were failed as \"opens towards the bed\"",
+ "facts": {
+  "holes": [
+   {
+    "id": "h1",
+    "anchor": {
+     "kind": "hole",
+     "axis": [
+      0,
+      0,
+      -1
+     ],
+     "point": [
+      10.0,
+      0.0,
+      0.0
+     ]
+    },
+    "segments": [
+     {
+      "d": 4.2,
+      "len": 1.7
+     }
+    ],
+    "depth": 1.7,
+    "through": false,
+    "floor": 2.0,
+    "exit": null,
+    "class": null,
+    "coaxial": []
+   },
+   {
+    "id": "h2",
+    "anchor": {
+     "kind": "insert_pocket",
+     "axis": [
+      0,
+      0,
+      -1
+     ],
+     "point": [
+      30.0,
+      0.0,
+      0.0
+     ]
+    },
+    "segments": [
+     {
+      "d": 7.5,
+      "len": 0.54
+     },
+     {
+      "d": 4.4,
+      "len": 1.5
+     },
+     {
+      "d": 3.6,
+      "len": 5.0
+     }
+    ],
+    "depth": 7.04,
+    "through": false,
+    "floor": 2.0,
+    "exit": null,
+    "class": {
+     "table": "inserts",
+     "kind": "M3x4x5",
+     "role": "insert_pocket",
+     "match": "exact"
+    },
+    "coaxial": []
+   }
+  ]
+ },
+ "params": {
+  "print.fit_axis_deg": 1.0,
+  "print.fit_ledge_max": 1.0,
+  "print.z_layer_tol": 0.02,
+  "overhang.max_bridge": 6.0,
+  "sensors.magnet_pocket_d": 4.2,
+  "sensors.magnet_pocket_depth": 1.7,
+  "sensors.magnet_d6_pocket_d": 6.2,
+  "sensors.magnet_d6_pocket_depth": 2.6
+ },
+ "ctx": {
+  "print": {
+   "up": [
+    0,
+    0,
+    1
+   ],
+   "bed": 0.0,
+   "from": "project",
+   "source": "bambulab/demo.3mf: bracket on plate \"plate 1\"",
+   "why": null
+  }
+ },
+ "expect": [
+  {
+   "verdict": "INFO"
+  }
+ ]
+}

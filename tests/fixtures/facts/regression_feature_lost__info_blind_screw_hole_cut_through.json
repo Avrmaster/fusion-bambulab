@@ -1,0 +1,79 @@
+{
+ "judge": "regression_feature_lost",
+ "case": "a blind D3.4 hole whose 0.2 floor was cut away on purpose: through now, named from the other mouth; a plain hole loses nothing",
+ "facts": {
+  "holes": [
+   {
+    "id": "h1",
+    "anchor": {
+     "kind": "hole",
+     "axis": [
+      0,
+      1,
+      0
+     ],
+     "point": [
+      5,
+      -3.2,
+      10
+     ]
+    },
+    "segments": [
+     {
+      "d": 3.4,
+      "len": 5.7
+     }
+    ],
+    "depth": 5.7,
+    "through": true,
+    "floor": null,
+    "exit": null,
+    "class": null,
+    "coaxial": []
+   }
+  ],
+  "openings": [],
+  "counts": {}
+ },
+ "ctx": {
+  "prev": {
+   "holes": [
+    {
+     "id": "h1",
+     "anchor": {
+      "kind": "hole",
+      "axis": [
+       0,
+       -1,
+       0
+      ],
+      "point": [
+       5,
+       -8.9,
+       10
+      ]
+     },
+     "segments": [
+      {
+       "d": 3.4,
+       "len": 5.5
+      }
+     ],
+     "depth": 5.5,
+     "through": false,
+     "floor": 0.2,
+     "exit": null,
+     "class": null,
+     "coaxial": []
+    }
+   ],
+   "openings": [],
+   "counts": {}
+  }
+ },
+ "expect": [
+  {
+   "verdict": "INFO"
+  }
+ ]
+}

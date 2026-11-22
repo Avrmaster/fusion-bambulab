@@ -13,6 +13,7 @@
  "params": {
   "walls.min_face_width": 1.2,
   "walls.strip_turn_max": 60,
+  "walls.artefact_width": 0.1,
   "overhang.bridge_step": 0.3
  },
  "expect": [

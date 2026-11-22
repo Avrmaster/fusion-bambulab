@@ -58,6 +58,16 @@
       "tag": "D",
       "description": "a narrow face is one flat of a chamfer, a bevel or a faceted curve, and no sliver, when each of its long sides turns by at most this angle and the sides that turn by more than half of it turn the same way"
     },
+    "walls.artefact_width": {
+      "default": 0.1,
+      "unit": "mm",
+      "looser": "higher",
+      "measured_on": "decided, nobody measured it: about twice the radius within which a slicer closes the gaps of a slice (2 x 0.049 mm), a sixth of a 0.6 mm line; the owner confirms the number",
+      "class": "limit",
+      "formula": null,
+      "tag": "D",
+      "description": "a place of narrow faces that are all narrower than this (and none of them the land of a rib) is a modelling artefact: one INFO row per part, not a FAIL per place"
+    },
     "walls.load_path_min": {
       "default": 3.0,
       "unit": "mm",
@@ -182,11 +192,12 @@
     {
       "id": "walls.thin_faces",
       "title": "No sliver faces",
-      "statement": "No planar face of a printed part is a leftover narrower than {walls.min_face_width}: a sliver, a narrow ledge, the crescent left by an old hole, the land of a rib that is too thin. Old holes are filled before new ones are cut. Cuts and fills end on existing faces. Features never meet on an edge only: the body is one lump, and no edge joins more than two faces. A narrow face is judged by how it joins its neighbours, not by its width alone. One flat of a chamfer, a bevel or a faceted curve (a tooth flank) is no leftover: each of its long sides turns by at most {walls.strip_turn_max} deg, and the sides that turn by more than half of that turn the same way. The bridge steps of {overhang.bridge_step} between a counterbore and its hole are a print aid and no leftover. Narrow faces that touch are one finding. Equal places that repeat round one axis (the teeth of a wheel, a spline, a knurl: at least 12 places with the same faces and widths, on the steps of one even division of one circle) are one finding for the profile, with the count, the axis and one place; a place that differs keeps a row of its own. How thick the material is behind a face is not judged here: the wall check on the STL measures it (walls.min_material, walls.one_line). The check runs on every discovered part of every document, not on a typed list.",
+      "statement": "No planar face of a printed part is a leftover narrower than {walls.min_face_width}: a sliver, a narrow ledge, the crescent left by an old hole, the land of a rib that is too thin. Old holes are filled before new ones are cut. Cuts and fills end on existing faces. Features never meet on an edge only: the body is one lump, and no edge joins more than two faces. A narrow face is judged by how it joins its neighbours, not by its width alone. One flat of a chamfer, a bevel or a faceted curve (a tooth flank) is no leftover: each of its long sides turns by at most {walls.strip_turn_max} deg, and the sides that turn by more than half of that turn the same way. The bridge steps of {overhang.bridge_step} between a counterbore and its hole are a print aid and no leftover. Narrow faces that touch are one finding. Equal places that repeat round one axis (the teeth of a wheel, a spline, a knurl: at least 12 places with the same faces and widths, on the steps of one even division of one circle) are one finding for the profile, with the count, the axis and one place; a place that differs keeps a row of its own. An annular face between two coaxial diameters is no leftover, also when its two circles lie up to 0.05 mm apart (a cut placed on a rounded centre), as long as that is at most a quarter of the ring's width; a ring further off centre is judged by its narrowest side. A face that is one rectangle is judged by its true width (area / long side), not by its mean width. A place whose narrow faces are all narrower than {walls.artefact_width}, none of them the land of a rib and none touching a wider narrow face, is a modelling artefact the slicer closes: such places are one INFO row per part, to be tidied at the next edit, not a FAIL each. How thick the material is behind a face is not judged here: the wall check on the STL measures it (walls.min_material, walls.one_line). The check runs on every discovered part of every document, not on a typed list.",
       "why": "A 1 mm groove ledge, 0.2 to 0.3 mm crescents of old insert holes and 0.5 mm slivers reached the slicer; the owner found them by eye. The check ran on a hand-typed list of five parts in whatever document was active. One part had 72 intended hits and no way to waive them, so the result was read by eye as \"nothing new\". On the first run over a whole assembly the width alone gave 2892 rows on ten parts, 2356 of them the tooth flanks of one pulley: a rule that counts every narrow face is read by nobody.",
       "params": [
         "walls.min_face_width",
         "walls.strip_turn_max",
+        "walls.artefact_width",
         "overhang.bridge_step"
       ],
       "check": {
@@ -204,7 +215,7 @@
         "An intended thin face that the check does not know as a strip or as bridge steps: owner waiver for that place; everything else reaches zero."
       ],
       "attest": null,
-      "note": "The probe lists every planar face up to its width cap with the turn at each of its edges. A face whose edges the unit could not read is judged by its width alone, one row per face. Stored facts of an older unit, which read no edges at all, are not judged by width: one row says that the check did not run and the part is to be run again. The bridge steps are known from the holes of the census: a region of narrow faces between a counterbore and the narrower hole on its axis, treads that look out of the mouth and low walls tangent to the hole. A profile is told from the facts alone: the places are equal (the same number of faces, the same way they join, widths within 0.05 mm), there are at least 12 of them, all on one circle within 0.05 mm and each on a step of one even division of it. Both numbers are decided, not measured. The profile row is anchored on its axis and its context holds the count and one place, so a waiver covers the whole profile, expires when a place joins, leaves or changes, and never covers another defect of the part. Where the test is not met the places stay rows of their own."
+      "note": "The probe lists every planar face up to its width cap with the turn at each of its edges. A face whose edges the unit could not read is judged by its width alone, one row per face. Stored facts of an older unit, which read no edges at all, are not judged by width: one row says that the check did not run and the part is to be run again. The bridge steps are known from the holes of the census: a region of narrow faces between a counterbore and the narrower hole on its axis, treads that look out of the mouth and low walls tangent to the hole. A profile is told from the facts alone: the places are equal (the same number of faces, the same way they join, widths within 0.05 mm), there are at least 12 of them, all on one circle within 0.05 mm and each on a step of one even division of it. Both numbers are decided, not measured. The profile row is anchored on its axis and its context holds the count and one place, so a waiver covers the whole profile, expires when a place joins, leaves or changes, and never covers another defect of the part. Where the test is not met the places stay rows of their own. The ring offset of facts that name none is estimated from the face's centroid and the census hole on its axis; the artefact width is decided, not measured."
     },
     {
       "id": "walls.one_line_ladder",

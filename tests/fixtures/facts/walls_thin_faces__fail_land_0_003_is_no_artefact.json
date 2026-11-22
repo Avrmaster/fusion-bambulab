@@ -1,0 +1,55 @@
+{
+ "judge": "walls_thin_faces",
+ "case": "a 0.003 mm face whose two long sides both fall away: the land of a knife-edge fin, not an artefact",
+ "facts": {
+  "width_cap": 2.0,
+  "lumps": 1,
+  "non_manifold_edges": 0,
+  "seam_edges": 0,
+  "faces": [
+   {
+    "id": 1,
+    "anchor": {
+     "kind": "face",
+     "axis": [
+      0,
+      0,
+      1
+     ],
+     "point": [
+      0.0,
+      0.0,
+      10.0
+     ]
+    },
+    "width": 0.003,
+    "area": 0.015,
+    "shape": "strip",
+    "sides": [
+     [
+      5.0,
+      90.0,
+      90
+     ],
+     [
+      4.99,
+      90.0,
+      91
+     ]
+    ]
+   }
+  ]
+ },
+ "params": {
+  "walls.min_face_width": 1.2,
+  "walls.strip_turn_max": 60,
+  "walls.artefact_width": 0.1,
+  "overhang.bridge_step": 0.3
+ },
+ "expect": [
+  {
+   "verdict": "FAIL",
+   "measure": 0.003
+  }
+ ]
+}

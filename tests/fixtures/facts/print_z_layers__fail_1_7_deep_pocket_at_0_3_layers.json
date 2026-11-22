@@ -1,6 +1,6 @@
 {
  "judge": "print_z_layers",
- "case": "the incident: a 1.7 deep pocket for a 1.6 high magnet, printed in 0.3 layers with its axis along the print axis: it prints 1.5 or 1.8",
+ "case": "the incident: a 1.7 deep pocket for a 1.6 high magnet, printed in 0.3 layers with its axis along the print axis, on a part whose height on the bed is not known: not a whole number of layers, it prints 1.5 or 1.8",
  "facts": {
   "holes": [
    {
@@ -64,7 +64,6 @@
     0.0,
     1.0
    ],
-   "bed": 0.0,
    "source": "bambulab/build_3mf.py: lever on plate \"levers\", orient False",
    "why": null
   }

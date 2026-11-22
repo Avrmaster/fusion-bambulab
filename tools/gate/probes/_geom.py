@@ -301,7 +301,7 @@ def _geo_chains(spans, tol_r, tol_s):
     return chains
 
 
-def stack_holes(cylinders, tol_r=0.02, tol_axis=0.02, tol_s=0.05):
+def stack_holes(cylinders, tol_r=0.02, tol_axis=0.05, tol_s=0.05):
     """Group the cylindrical and conical faces of one body into coaxial stacks.
 
     cylinders  [{"origin": (x, y, z) a point on the axis, "axis": unit (x, y, z), "r": radius mm, "r2": radius at the far
@@ -310,7 +310,9 @@ def stack_holes(cylinders, tol_r=0.02, tol_axis=0.02, tol_s=0.05):
                  material is outside the cylinder, the face is the wall of a hole), "arc": share of the circle that is
                  wall, 0..1 (optional, default 1.0)}]
     tol_r      mm: radii this close on one axis are one segment
-    tol_axis   mm: axes this close (distance between the lines, directions parallel) are one axis
+    tol_axis   mm: axes this close (distance between the lines, directions parallel) are one axis. 0.05: a relief or a
+               deepening cut later at a centre rounded to 0.01 lies 0.03 off the pocket's axis and is the same hole;
+               nothing that close can print apart, and a real eccentric (a cam, a cycloid) is millimetres off
     tol_s      mm: spans whose ends are this close along the axis follow each other
 
     Returns [{"origin": point on the axis, "axis": canonical_axis, "spans": [{"s0", "s1", "r", "r2"}] sorted by s0 and

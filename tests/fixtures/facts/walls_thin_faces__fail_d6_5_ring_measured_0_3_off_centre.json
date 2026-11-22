@@ -1,0 +1,107 @@
+{
+ "judge": "walls_thin_faces",
+ "case": "a D6.5 / D4.4 ring the present probe measured with its circles 0.3 mm apart (shape \"ring\", ecc 0.3): judged at its narrowest side, 0.75",
+ "facts": {
+  "width_cap": 2.0,
+  "lumps": 1,
+  "non_manifold_edges": 0,
+  "seam_edges": 0,
+  "faces": [
+   {
+    "id": 30,
+    "anchor": {
+     "kind": "face",
+     "axis": [
+      0,
+      0,
+      1
+     ],
+     "point": [
+      10.1,
+      0.0,
+      19.4
+     ]
+    },
+    "width": 0.75,
+    "area": 17.98,
+    "shape": "ring",
+    "sides": [
+     [
+      20.42,
+      -90.0,
+      31
+     ],
+     [
+      13.823,
+      90.0,
+      32
+     ]
+    ],
+    "ecc": 0.3
+   }
+  ]
+ },
+ "params": {
+  "walls.min_face_width": 1.2,
+  "walls.strip_turn_max": 60,
+  "walls.artefact_width": 0.1,
+  "overhang.bridge_step": 0.3
+ },
+ "ctx": {
+  "census": {
+   "holes": [
+    {
+     "id": "h1",
+     "anchor": {
+      "kind": "insert_pocket",
+      "axis": [
+       0,
+       0,
+       1
+      ],
+      "point": [
+       10.0,
+       0.0,
+       20.0
+      ]
+     },
+     "at": {
+      "axis": [
+       0,
+       0,
+       1
+      ],
+      "point": [
+       10.0,
+       0.0,
+       20.0
+      ]
+     },
+     "segments": [
+      {
+       "d": 5.9,
+       "len": 0.6
+      },
+      {
+       "d": 4.4,
+       "len": 1.5
+      },
+      {
+       "d": 3.6,
+       "len": 5.0
+      }
+     ],
+     "through": false,
+     "depth": 7.1,
+     "floor": 1.5
+    }
+   ]
+  }
+ },
+ "expect": [
+  {
+   "verdict": "FAIL",
+   "measure": 0.75
+  }
+ ]
+}

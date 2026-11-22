@@ -236,6 +236,7 @@
         "sensors.magnet_pocket_depth",
         "inserts.ref_pattern",
         "screws.ref_pattern",
+        "bearings.ref_pattern",
         "fits.pin_ref_pattern",
         "fits.pin_press_extra",
         "fits.pin_slip_extra",

@@ -1,0 +1,194 @@
+{
+ "judge": "access_mouth_sealed",
+ "case": "a counterbore that holds the head of its screw (seated on this part), with a plate flat on the face over it: what covers the head is access.screw_path's question; the thread end is open: no row here",
+ "incident": "eight lid counterbores were \"sealed\" by the plate laid over the heads of the screws already in them",
+ "facts": {
+  "openings": [
+   {
+    "feature": "h1",
+    "of": "counterbore",
+    "anchor": {
+     "kind": "hole",
+     "axis": [
+      0,
+      0,
+      1
+     ],
+     "point": [
+      20.0,
+      0.0,
+      12.0
+     ]
+    },
+    "end": "mouth",
+    "paths": {
+     "own": {
+      "r": 3.3,
+      "reach": 60.0,
+      "free": 0.05,
+      "hits": [
+       {
+        "name": "Demo end plate",
+        "kind": "printed",
+        "part": "demo/end_plate",
+        "at": 0.05,
+        "share": 1.0,
+        "approx": false,
+        "expected": false,
+        "profile": [
+         [
+          0.07,
+          1.0
+         ]
+        ],
+        "full_window": 4.3
+       }
+      ]
+     }
+    }
+   },
+   {
+    "feature": "h1",
+    "of": "counterbore",
+    "anchor": {
+     "kind": "hole",
+     "axis": [
+      0,
+      0,
+      -1
+     ],
+     "point": [
+      20.0,
+      0.0,
+      0.0
+     ]
+    },
+    "end": "exit",
+    "paths": {
+     "own": {
+      "r": 1.7,
+      "reach": 60.0,
+      "free": 60.0,
+      "hits": [
+       {
+        "name": "ref lid screws / M3x12 DIN 912 shank #2",
+        "kind": "hardware",
+        "part": null,
+        "at": 0.05,
+        "share": 0.88,
+        "approx": false,
+        "expected": true
+       }
+      ]
+     }
+    }
+   },
+   {
+    "feature": "s1",
+    "of": "screw_head",
+    "ref": "ref lid screws / M3x12 DIN 912 head (lid to base) #1",
+    "anchor": {
+     "kind": "screw",
+     "axis": [
+      0,
+      0,
+      1
+     ],
+     "point": [
+      20.0,
+      0.0,
+      8.0
+     ]
+    },
+    "end": "mouth",
+    "paths": {}
+   }
+  ],
+  "closed": [],
+  "screws": [
+   {
+    "ref": "ref lid screws / M3x12 DIN 912 head (lid to base) #1",
+    "holes": [
+     "h1"
+    ],
+    "seated": true,
+    "head": "cap",
+    "size": "M3",
+    "under": null,
+    "n": 1,
+    "by": "name"
+   }
+  ],
+  "screws_cut": false
+ },
+ "params": {
+  "access.seal_gap": 0.2,
+  "access.cap_max": 2.0
+ },
+ "ctx": {
+  "part": "demo/bracket",
+  "census": {
+   "holes": [
+    {
+     "id": "h1",
+     "anchor": {
+      "kind": "hole",
+      "axis": [
+       0,
+       0,
+       1
+      ],
+      "point": [
+       20.0,
+       0.0,
+       12.0
+      ]
+     },
+     "segments": [
+      {
+       "d": 6.6,
+       "len": 4.0
+      },
+      {
+       "d": 3.4,
+       "len": 8.0
+      }
+     ],
+     "depth": 12.0,
+     "through": true,
+     "floor": null,
+     "exit": {
+      "kind": "hole",
+      "axis": [
+       0,
+       0,
+       -1
+      ],
+      "point": [
+       20.0,
+       0.0,
+       0.0
+      ]
+     },
+     "class": {
+      "table": "screws",
+      "kind": "M3",
+      "role": "counterbore",
+      "match": "exact"
+     },
+     "coaxial": [
+      {
+       "name": "ref lid screws / M3x12 DIN 912 head (lid to base) #1",
+       "kind": "hardware",
+       "part": null
+      }
+     ]
+    }
+   ],
+   "openings": [],
+   "partial": [],
+   "counts": {}
+  }
+ },
+ "expect": []
+}

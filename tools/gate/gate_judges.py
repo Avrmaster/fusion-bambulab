@@ -253,9 +253,26 @@ def _rows(facts, key, ctx):
     if not isinstance(v, list):
         return [], [_not_run(ctx, 'the facts hold no "%s" list: the probe did not look' % key)]
     good = [r for r in v if isinstance(r, dict)]
-    if len(good) != len(v):
+    if key == 'screws':
+        good = [r for r in good if not _bought_as_screw(r)]   # a board or a magnet the probe took for a screw: hardware.recognised says so
+    if len(good) != len(v) - (sum(1 for r in v if isinstance(r, dict) and _bought_as_screw(r)) if key == 'screws' else 0):
         return good, [_not_run(ctx, '%d of %d rows of "%s" cannot be read' % (len(v) - len(good), len(v), key))]
     return good, []
+
+
+_NOT_FASTENER = re.compile(r'(?i)(?<![a-z])(?:boards?|pcbs?|magnets?|sensors?|encoders?|switch(?:es)?|motors?|bearings?|cables?|connectors?)(?![a-z])')
+_FASTENER_WORD = re.compile(r'(?i)(?<![a-z])(?:screws?|bolts?|inserts?|nuts?|washers?)(?![a-z])|(?<![a-z\d])M\d+(?:\.\d+)?\s*[x×]\s*\d')
+
+
+def _bought_as_screw(row):
+    """Is a row of the screw facts a bought part that is no fastener: its ref's own name, without its parentheses, says
+    board, magnet, sensor, motor, bearing (and no fastener word)? fusion_screws 0.3.0 took such a body for a screw by
+    the name of its component ("encoders (magnets, boards, screws, inserts)") and merged a real screw into it."""
+    ref = row.get('ref') if isinstance(row, dict) else None
+    if not isinstance(ref, str):
+        return False
+    bare = _bare_own(ref)
+    return bool(_NOT_FASTENER.search(bare)) and not _FASTENER_WORD.search(bare)
 
 
 def _names(rows):
@@ -375,6 +392,156 @@ def _piece_of(hole, holes):
                 break
         if inside:
             return o.get('id') or '?'
+    return None
+
+
+_SPLIT_OFF = 0.05          # mm between two hole axes the census kept apart (0.3.0 joined only up to 0.02) that are one hole
+_SPLIT_GAP = 0.1           # mm along the axis: where one piece ends and the other begins
+
+
+def _hole_line(h):
+    """(mouth point, unit axis out of the mouth, depth, segments) of a census hole, from "at" (not rounded) or the
+    anchor; None when it cannot be read."""
+    segs = _segments(h) if isinstance(h, dict) else None
+    a = h.get('at') if isinstance(h.get('at'), dict) else h.get('anchor') if isinstance(h, dict) else None
+    if not segs or not isinstance(a, dict) or not (_xyz(a.get('point')) and _xyz(a.get('axis'))):
+        return None
+    n = sum(c * c for c in a['axis']) ** 0.5
+    if n < 1e-9:
+        return None
+    depth = sum(s['len'] for s in segs)
+    return [float(c) for c in a['point']], [c / n for c in a['axis']], depth, segs
+
+
+def _near_on_line(p, o, ax):
+    """(depth of point p below the mouth o along the out-axis ax, its distance from that line)."""
+    w = [p[i] - o[i] for i in range(3)]
+    t = -sum(w[i] * ax[i] for i in range(3))
+    off = max(0.0, sum(x * x for x in w) - t * t) ** 0.5
+    return t, off
+
+
+def _relief_ds(c, ctx):
+    """The relief diameters (main and fallbacks) of the inserts row of a hole class, [] when none."""
+    if not (isinstance(c, dict) and c.get('table') == 'inserts' and isinstance(c.get('kind'), str)):
+        return []
+    row = ((_table(ctx, 'inserts').get('kinds') or {}).get(c['kind'])) or {}
+    relief = row.get('relief') or {}
+    return [d for d in [relief.get('d')] + _list(relief.get('fallback_d')) if _num(d)]
+
+
+def _joined_holes(holes, ctx, params=None):
+    """The census holes with the pieces of a split stack put back together: (holes, absorbed, fronts).
+    The census follows a stack of cylinders only while their axes lie within its tolerance; a melt relief or a
+    deepening cut later at a centre rounded to 0.01 lies 0.03 mm off the pocket's axis, and the census then holds one
+    pocket as three holes (a D5.9 x 0.66 "through" step at the mouth, the lead-in and hole "through" into a stub, and a
+    blind D3.6 stub). Each piece was then judged as a hole of its own: a pocket 0.64 short, an iron path that starts at
+    the floor of the relief, two "what goes in" questions.
+    Only two shapes are joined, and only when the axes are parallel (within 1 deg) and within _SPLIT_OFF of one line:
+      a stub that continues the far end of a through hole: it opens at that end (its mouth within _SPLIT_GAP of it,
+      facing it), with the same diameter there (within 0.05). Its segments are appended, and the joined hole is blind
+      or through as the stub is;
+      a short wider step in front of the mouth of an insert pocket (by today's tables): a through piece whose one end
+      is that mouth and the other an outer face, no longer than inserts.relief_depth_max + 0.3, wider than the pocket's
+      first segment and of a relief diameter of the pocket's row (within 0.1). It is put in front as the relief, and the
+      mouth moves to the outer face.
+    Two holes that each open on a face of their own are never joined: a piece is joined only by the end where it opens
+    into the other hole. A back-to-back pair of pockets keeps both.
+    absorbed: {piece id: id of the hole it went into}; fronts: {hole id: length of the relief put in front of the mouth
+    the census gave it} (the paths measured from the old mouth start at the floor of that relief)."""
+    holes = list(holes or [])
+    lines = {id(h): (_hole_line(h) if isinstance(h, dict) and isinstance(h.get('id'), str) else None) for h in holes}
+    relief_max = (pv(params, 'inserts.relief_depth_max') if isinstance(params, dict) and _num(params.get('inserts.relief_depth_max')) else 0.6) + 0.3
+    cos = math.cos(math.radians(1.0))
+    absorbed, fronts, out = {}, {}, []
+    used = set()
+    for h in holes:
+        L = lines[id(h)]
+        if id(h) in used:
+            continue
+        if L is None:
+            out.append(h)                            # a row that cannot be read stays as it is: the judge says what is wrong with it
+            continue
+        o, ax, depth, segs = L
+        tail = None
+        if h.get('through'):
+            far = [o[i] - ax[i] * depth for i in range(3)]
+            for p in holes:
+                Lp = lines[id(p)]
+                if p is h or Lp is None or id(p) in used or sum(ax[i] * Lp[1][i] for i in range(3)) < cos:
+                    continue                                 # the stub faces back the way this hole's mouth does
+                t, off = _near_on_line(Lp[0], o, ax)
+                if off <= _SPLIT_OFF and abs(t - depth) <= _SPLIT_GAP and Lp[3][0].get('d2') is None and segs[-1].get('d2') is None \
+                        and abs(Lp[3][0]['d'] - segs[-1]['d']) <= 0.05:
+                    tail = (p, t)
+                    break
+        front = None
+        c = _hole_class(h, ctx)
+        rds = _relief_ds(c, ctx) if isinstance(c, dict) and c.get('role') == 'insert_pocket' else []
+        if rds:
+            for p in holes:
+                Lp = lines[id(p)]
+                if p is h or Lp is None or id(p) in used or not p.get('through') or sum(ax[i] * Lp[1][i] for i in range(3)) > -cos:
+                    continue                                 # the step is anchored at the pocket's mouth and points into it
+                t, off = _near_on_line(Lp[0], o, ax)
+                if off > _SPLIT_OFF or abs(t) > _SPLIT_GAP or Lp[2] > relief_max + _EPS:
+                    continue
+                if all(s.get('d2') is None and s['d'] > segs[0]['d'] + 0.3 and any(abs(s['d'] - d) <= 0.1 for d in rds) for s in Lp[3]):
+                    front = p
+                    break
+        if tail is None and front is None:
+            out.append(h)
+            continue
+        j = dict(h)
+        new_segs = [dict(s) for s in segs]
+        if tail is not None:
+            p, t = tail
+            Lp = lines[id(p)]
+            overlap = depth - t
+            first = dict(Lp[3][0], len=round(Lp[3][0]['len'] - overlap, 3))
+            new_segs[-1] = dict(new_segs[-1], len=round(new_segs[-1]['len'] + first['len'], 3))
+            new_segs += [dict(s) for s in Lp[3][1:]]
+            for k in ('through', 'exit', 'floor', 'floor_capped', 'behind'):
+                j[k] = p.get(k)
+            absorbed[p.get('id')] = h.get('id')
+            used.add(id(p))
+        if front is not None:
+            Lf = lines[id(front)]
+            new_segs = [dict(s) for s in reversed(Lf[3])] + new_segs
+            mouth = [o[i] + ax[i] * Lf[2] for i in range(3)]
+            j['at'] = {'point': [round(x, 4) for x in mouth], 'axis': list(ax)}
+            j['anchor'] = dict(h.get('anchor') or {}, point=[round(x * 20.0) / 20.0 for x in mouth])
+            fronts[h.get('id')] = Lf[2]
+            j['front_relief'] = {'d': Lf[3][0]['d'], 'depth': round(Lf[2], 3), 'hole': front.get('id')}
+            absorbed[front.get('id')] = h.get('id')
+            used.add(id(front))
+        j['segments'] = new_segs
+        j['depth'] = round(sum(s['len'] for s in new_segs), 3)
+        names = {str(c2.get('name')) for c2 in _list(j.get('coaxial')) if isinstance(c2, dict)}
+        for p in [x for x in holes if lines[id(x)] is not None and absorbed.get(x.get('id')) == h.get('id')]:
+            j['coaxial'] = list(_list(j.get('coaxial'))) + [c2 for c2 in _list(p.get('coaxial')) if isinstance(c2, dict) and str(c2.get('name')) not in names]
+        j['joined'] = sorted(k for k, v in absorbed.items() if v == h.get('id'))
+        j.pop('class', None)                         # classified again from the joined segments (_hole_class)
+        out.append(j)
+    return [h for h in out if id(h) not in used], absorbed, fronts
+
+
+def _split_end(h, holes):
+    """The id of another census hole that one end of this through hole opens into (a parallel axis within 0.1 mm, its
+    mouth or far end within _SPLIT_GAP of this end), or None: the census did not follow the stack there, so what lies
+    beyond is not in this hole's segments."""
+    L = _hole_line(h)
+    if L is None or not h.get('through'):
+        return None
+    o, ax, depth, _ = L
+    for p in holes:
+        Lp = _hole_line(p) if isinstance(p, dict) and p is not h else None
+        if Lp is None or abs(sum(ax[i] * Lp[1][i] for i in range(3))) < 0.9998:
+            continue
+        for q in (Lp[0], [Lp[0][i] - Lp[1][i] * Lp[2] for i in range(3)]):
+            t, off = _near_on_line(q, o, ax)
+            if off <= 0.1 and (abs(t) <= _SPLIT_GAP or abs(t - depth) <= _SPLIT_GAP):
+                return p.get('id') or '?'
     return None
 
 
@@ -702,6 +869,8 @@ def _acc_note(groups, kind, hits, label):
         where = h.get('in')
         if kind == 'body' and isinstance(where, str) and where.strip() and not h.get('part'):
             name = '%s / %s' % (where.strip(), name)
+        if kind == 'approx' and h.get('kind') == 'hidden':
+            groups.setdefault('hidden_names', set()).add(name)      # said as "hidden", not as "a mesh"
         groups[kind].setdefault(name, []).append((label, h.get('at')))
 
 
@@ -743,14 +912,16 @@ def _acc_grouped(ctx, groups, limit, what, shown=6, places=2, brief=6):
                        '; and %d more (the question names them all)' % left if left > 0 else ''))
         out.append(finding(ctx['rule'], ctx['part'], 'FAIL', text, measure=first, limit=limit, by=names,
                            context={'covers': sorted([c[1], c[2]] for c in covers), 'of': what}, ask='assembly.order'))
+    hidden_names = set(groups.get('hidden_names') or ())
     for name in sorted(groups['approx']):
         rows = groups['approx'][name]
         labels = sorted({r[0] for r in rows})
         first = min([r[1] for r in rows if _num(r[1])] or [0.0])
         out.append(finding(ctx['rule'], ctx['part'], 'NOT_RUN',
-                           '%s lies in front of %d %s of this part, the nearest %s mm out (%s), and it is known only as a mesh or by sample points: '
+                           '%s lies in front of %d %s of this part, the nearest %s mm out (%s), and it is known only as %s: '
                            'not a measurement. Make it a solid body, or, when it is no part of the build (an old version, a scan), let the owner name it in access.overlay_pattern'
-                           % (name, len(labels), what, _g(first), '; '.join(labels[:6]) + ('; ...' if len(labels) > 6 else '')),
+                           % (name, len(labels), what, _g(first), '; '.join(labels[:6]) + ('; ...' if len(labels) > 6 else ''),
+                              'a hidden body (its light bulb is off) of no part' if name in hidden_names else 'a mesh or by sample points'),
                            measure=first, limit=limit, by=[name], context={'approx': name, 'in_front_of': labels}))
     if groups['overlay']:
         names = sorted(groups['overlay'])
@@ -1122,28 +1293,65 @@ def _axis_bought(hole):
     return sorted({str(x['name']) for x in _list(hole.get('coaxial')) if isinstance(x, dict) and x.get('kind') in ('bought', 'hardware') and isinstance(x.get('name'), str)})
 
 
+_PAREN = re.compile(r'\([^()]*\)')
+_KEY_SIZE = re.compile(r'(?i)\(\s*key[^()]*\)|(?<![a-z])key(?:way)?\s*\d+(?:\.\d+)?\s*[x×*]\s*\d+(?:\.\d+)?(?:\s*[x×*]\s*\d+(?:\.\d+)?)?')
+
+
+def _bare_own(name):
+    """The own name of a body without what stands in parentheses: what the body IS, not where it goes. "bearing 686
+    (shaft S inner, on sleeve a)" is a bearing, "shaft D8h7 (key 3 x 3 x 14)" a D8 shaft."""
+    return ' '.join(_PAREN.sub(' ', _own(name)).split())
+
+
 def _pins_on_axis(hole, params):
     """The full names of the steel pins, dowels and rods on the axis of a census hole: bought or hardware bodies whose
-    own name matches fits.pin_ref_pattern. [] when the parameter was not handed over or does not compile."""
+    own name, without its parentheses, matches fits.pin_ref_pattern, and matches neither bearings.ref_pattern nor
+    screws.ref_pattern when those are handed over (a bearing whose note says which shaft it sits on is no pin). [] when
+    the parameter was not handed over or does not compile."""
     pattern = params.get('fits.pin_ref_pattern')
     if not isinstance(pattern, str):
         return []
-    return [n for n in _axis_bought(hole) if _named_screw([_own(n)], pattern)]
+    others = [p for p in (params.get('bearings.ref_pattern'), params.get('screws.ref_pattern')) if isinstance(p, str) and p.strip()]
+    return [n for n in _axis_bought(hole) if _named_screw([_bare_own(n)], pattern) and not any(_named_screw([_bare_own(n)], p) for p in others)]
 
 
 _PIN_DXL = re.compile(r'(?i)(?<![\d.])(\d+(?:\.\d+)?)\s*(?:[a-z]\d{1,2})?\s*[x×*]\s*(\d+(?:\.\d+)?)(?![\d.]*\s*[x×*])')
-_PIN_D = re.compile(r'(?i)(?:(?<![a-z])d|Ø|\bdia\.?\s*)\s*(\d+(?:\.\d+)?)(?![\d.])')
+_PIN_D = re.compile(r'(?i)(?:(?<![a-z])d|Ø|\bdia\.?\s*)\s*(\d+(?:\.\d+)?)(?:\s*[a-wyz]{1,2}\d{1,2}(?![\d.]))?(?:\s*[x×*]\s*(\d+(?:\.\d+)?))?(?![\d.]*\s*[x×*])')
+_PIN_FIT = re.compile(r'(?i)(?<![\w.])(\d+(?:\.\d+)?)\s*[a-wyz]{1,2}\d{1,2}(?:\s*[x×*]\s*(\d+(?:\.\d+)?))?(?![\d.]*\s*[x×*])')
 
 
 def _pin_size(name):
-    """(diameter, length) a pin ref is named with: "pin D5 x 20" (5, 20), "4m6x32" (4, 32), "Rods (steel D6) / Rod"
-    (6, None); (None, None) when the name says neither. A thread "M3x12" is no pin size."""
-    text = str(name)
-    for m in _PIN_DXL.finditer(text):
-        if text[max(0, m.start() - 1):m.start()].upper() != 'M':
-            return float(m.group(1)), float(m.group(2))
-    m = _PIN_D.search(text)
-    return (float(m.group(1)), None) if m else (None, None)
+    """(diameter, length) a pin ref is named with: "pin D5 x 20" (5, 20), "4m6x32" (4, 32), "shaft D8h7" (8, None),
+    "Rods (steel D6) / Rod" (6, None); (None, None) when the name says neither. A thread "M3x12" is no pin size.
+    The own name decides first, with its parentheses taken off; an explicit diameter (D8, D8h7, Ø8) or a fit size
+    (5m6, 8h7) is taken before a bare "a x b", and a length only from an "x L" attached to that token. The size of a
+    key ("key 3 x 3 x 14") is never a size of the pin. Only when the own name gives no diameter is the whole name read
+    (the component may give it: "Rods (steel D6) / Rod")."""
+    def read(text):
+        text = _KEY_SIZE.sub(' ', text)
+        m = _PIN_D.search(text)
+        if m:
+            return float(m.group(1)), (float(m.group(2)) if m.group(2) else None)
+        m = _PIN_FIT.search(text)
+        if m and text[max(0, m.start() - 1):m.start()].upper() != 'M':
+            return float(m.group(1)), (float(m.group(2)) if m.group(2) else None)
+        for m in _PIN_DXL.finditer(text):
+            if text[max(0, m.start() - 1):m.start()].upper() != 'M':
+                return float(m.group(1)), float(m.group(2))
+        return None, None
+    d, ln = read(_bare_own(name))
+    return (d, ln) if d is not None else read(str(name))
+
+
+def _assembly_shaft(names):
+    """Is a pin of these names the output shaft of a bought assembly (a gear motor, a gearbox): a "shaft" whose own
+    name begins with a product designation (a token with a digit: "GM20 shaft") or names a key? Such a shaft has
+    no stock length of the pins table: only its diameter fit is judged."""
+    for n in names:
+        own = _own(n)
+        if re.search(r'(?i)(?<![a-z])shafts?(?![a-z])', own) and (re.search(r'(?i)(?<![a-z])key', own) or re.match(r'\s*\S*\d\S*\s+\S*\s*shaft', _bare_own(n), re.I)):
+            return True
+    return False
 
 
 def _grip_d(segs, through):
@@ -1382,6 +1590,7 @@ def inserts_pocket_shape(facts, params, ctx):
     that ends one relief depth short of its row (its relief was cut later) is a row here, and its text names that
     cause. With true such a pocket is exact."""
     holes, out = _rows(facts, 'holes', ctx)
+    holes = _joined_holes(holes, ctx, params)[0]     # the pieces of a stack the census split are one pocket again
     table = _table(ctx, 'inserts')
     tol, late = table.get('tol') or {}, bool(table.get('hole_short_by_relief'))
     for h in holes:
@@ -1402,6 +1611,11 @@ def inserts_pocket_shape(facts, params, ctx):
         named = _kind_named(h, ctx)
         if _piece_of(h, holes) or (_too_short(segs, row, tol) and not named):
             continue                                 # a pocket whose ref names another insert has its one row here, short or not
+        split = _split_end(h, holes)
+        if split:                                    # it opens into another hole on its axis: its segments are not the whole stack
+            out.append(_not_run(ctx, 'hole %s at %s is in the band of insert %s and opens into hole %s on its axis: the census did not follow the stack '
+                                     'there, so its profile is not judged. Collect the census of this part again' % (_shape(segs), _at(a), kind, split), a))
+            continue
         off = _pocket_off(segs, row, tol, late) if segs and isinstance(row, dict) else None
         text = 'hole %s at %s is in the band of insert %s and is not its pocket' % (_shape(segs), _at(a), kind)
         if named:
@@ -1473,11 +1687,24 @@ def _kind_named(h, ctx):
     return None
 
 
+_JOIN_CACHE = {}               # the joined holes of the last census _census_hole was asked about: one pocket after the other
+
+
 def _census_hole(p, ctx):
-    """The census hole of one pocket of the fusion_inserts facts (its "hole" id in ctx["census"]), or None."""
+    """The census hole of one pocket of the fusion_inserts facts (its "hole" id in ctx["census"]), or None. A hole the
+    census split into pieces is the joined hole (_joined_holes), found by the id of any of its pieces."""
     census = ctx.get('census')
-    for h in _list(census.get('holes')) if isinstance(census, dict) else []:
-        if isinstance(h, dict) and h.get('id') is not None and h.get('id') == p.get('hole'):
+    holes = [h for h in _list(census.get('holes')) if isinstance(h, dict)] if isinstance(census, dict) else []
+    last = _JOIN_CACHE.get('last')
+    if last is not None and last[0] is census and last[1] is ctx.get('tables'):
+        joined, absorbed = last[2], last[3]
+    else:
+        joined, absorbed, _ = _joined_holes(holes, ctx)
+        _JOIN_CACHE['last'] = (census, ctx.get('tables'), joined, absorbed)    # the objects are held, so their ids stay theirs
+    want = p.get('hole')
+    want = absorbed.get(want, want) if isinstance(want, str) else want
+    for h in joined:
+        if h.get('id') is not None and h.get('id') == want:
             return h
     return None
 
@@ -1823,6 +2050,10 @@ def inserts_relief_missing(facts, params, ctx):
         a, relief = _anchor(p.get('anchor')), p.get('relief')
         if _not_a_pocket(p, params, ctx):
             continue
+        if not isinstance(relief, dict):
+            h = _census_hole(p, ctx)                 # a relief the census split off as a hole of its own is this pocket's relief
+            if isinstance(h, dict) and isinstance(h.get('front_relief'), dict):
+                relief = {'d': h['front_relief']['d'], 'depth': h['front_relief']['depth']}
         recess = p.get('recess') if isinstance(p.get('recess'), dict) else None
         where = ' (at the bottom of a D%s x %s recess, which is not a relief)' % (_g(recess.get('d')), _g(recess.get('depth'))) if recess else ''
         if isinstance(relief, dict):
@@ -1861,6 +2092,20 @@ def inserts_relief_missing(facts, params, ctx):
     return out
 
 
+def _past_front(path, depth):
+    """An iron path measured from the floor of a melt relief, seen from the relief's mouth: the hits of the part itself
+    whose material lies only within `depth` (+ 0.1) of where the path starts are the relief's own wall, which the joined
+    pocket has in front of its new mouth, and are dropped. A hit with no profile, or with material further out, stays."""
+    hits = []
+    for h in _list(path.get('hits')):
+        prof = h.get('profile') if isinstance(h, dict) else None
+        if isinstance(h, dict) and h.get('kind') == 'self' and _num(h.get('at')) and h['at'] <= depth + 0.1 and isinstance(prof, list) and prof \
+                and all(isinstance(r, list) and len(r) == 2 and _num(r[0]) and _num(r[1]) and (r[1] <= _EPS or r[0] <= depth + 0.1) for r in prof):
+            continue
+        hits.append(h)
+    return dict(path, hits=hits)
+
+
 @judge
 def inserts_mouth_reachable(facts, params, ctx):
     """Rule inserts.mouth_reachable. Reads fusion_openings facts: "openings"[] with "of" == "insert_pocket", their
@@ -1882,9 +2127,12 @@ def inserts_mouth_reachable(facts, params, ctx):
     reach, r_min = pv(params, 'inserts.iron_reach'), pv(params, 'inserts.iron_d') / 2.0
     openings, out = _rows(facts, 'openings', ctx)
     census = ctx.get('census') if isinstance(ctx.get('census'), dict) else {}
-    holes = {h.get('id'): h for h in _list(census.get('holes')) if isinstance(h, dict)}
+    joined, absorbed, fronts = _joined_holes(_list(census.get('holes')), ctx, params)
+    holes = {h.get('id'): h for h in joined}
     by_id = {}
     for o in openings:
+        if isinstance(o.get('feature'), str) and o['feature'] in absorbed:
+            continue                                 # a piece of a pocket the census split: the pocket's own rows judge it
         if o.get('of') == 'insert_pocket':
             by_id.setdefault(str(o.get('feature')), []).append(o)
         elif o.get('of') in _ACC_HOLES and o.get('end') != 'exit' and isinstance(o.get('feature'), str) and o['feature'] in holes \
@@ -1920,6 +2168,8 @@ def inserts_mouth_reachable(facts, params, ctx):
             if path is None:
                 states.append((o, 'unknown', '%s: its "iron" path was not measured' % label))
                 continue
+            if o.get('end') != 'exit' and isinstance(fid, str) and _num(fronts.get(fid)):
+                path = _past_front(path, fronts[fid])    # measured from the floor of a relief the census split off: its own wall is no cover
             s = _acc_sorted(path, reach, 0.0, None)
             short = _acc_short(path, reach, label, r_min)
             if s['self']:
@@ -2335,8 +2585,11 @@ def bearings_seat(facts, params, ctx):
     A seat in another printed part is that part's finding: it is not repeated here. A bearing that no printed part
     seats, touches or clamps (_bearing_unheld) has no seat of this part: not judged here (bearings.holding counts it).
     A bearing-sized seat of this part with no recognised bearing in it:
-      - bought bodies lie on its axis ("bodies", else the coaxial bodies of the census hole) and the seat has the exact
-        table diameter: NOT_RUN. A bearing the name patterns miss looks like this, and "holds no bearing" is not proven;
+      - bought bodies lie on its axis ("bodies", else the coaxial bodies of the census hole), one of them inside the
+        hole's length (_bodies_in_span), and the seat has the exact table diameter: NOT_RUN. A bearing the name patterns
+        miss looks like this, and "holds no bearing" is not proven;
+      - such bodies lie only beyond the hole's ends (a bore of bearing size by chance, in front of a socket): INFO with
+        ask = "census.unknown_hole";
       - the seat has the exact table diameter and nothing bought on its axis: FAIL "holds no bearing";
       - the hole is only near a bearing diameter (census match "band"): the size alone is a guess, so the hole is
         asked (INFO with ask = "census.unknown_hole"), not failed: a shaft bore looks like this."""
@@ -2374,12 +2627,14 @@ def bearings_seat(facts, params, ctx):
             if not (isinstance(s, dict) and _num(s.get('d')) and _num(size)):
                 out.append(_not_run(ctx, '%s: its %s seat or its own %s has no number' % (_bearing(b, a), ring, key), a))
                 continue
-            if form != 'tapered' and printed and abs(s['d'] - size) > ttol + _EPS and abs(s['d'] - size) <= tol + _EPS:
+            band = pv(params, 'bearings.seat_taper_thick_base' if ring == 'inner' else 'bearings.seat_taper')
+            if form != 'tapered' and printed and abs(s['d'] - size) > ttol + _EPS and abs(s['d'] - size) <= tol + _EPS \
+                    and not _seat_tapered(s, size, ring, ttol, band):        # a taper nominal within seat_taper_tol where it grips is what it should be
                 out.append(finding(ctx['rule'], ctx['part'], 'INFO', '%s: its %s seat is D%s, %s off %s D%s: inside the tolerance %s, but more than the %s a taper is judged to. '
                                    'Nominal is what a straight seat is drawn to' % (_bearing(b, a), ring, _g(s['d']), _g(round(s['d'] - size, 3)), what, _g(size), _g(tol), _g(ttol)),
                                    anchor=a, measure=s['d'], limit=size, context={'designation': b.get('designation'), 'ring': ring, 'seat_d': s['d'], 'off_nominal': True}))
             entry = s.get('entry_d')
-            if abs(s['d'] - size) > tol + _EPS and _seat_tapered(s, size, ring, tol, pv(params, 'bearings.seat_taper_thick_base' if ring == 'inner' else 'bearings.seat_taper')):
+            if abs(s['d'] - size) > tol + _EPS and _seat_tapered(s, size, ring, tol, band):
                 continue                             # a tapered press fit inside its band: nominal where it must be
             if abs(s['d'] - size) > tol + _EPS:
                 out.append(finding(ctx['rule'], ctx['part'], 'FAIL', '%s: its %s seat is D%s, %s is D%s (tolerance %s)' % (_bearing(b, a), ring, _g(s['d']), what, _g(size), _g(tol)),
@@ -2415,6 +2670,11 @@ def bearings_seat(facts, params, ctx):
             text = 'hole %s is near the seat diameter of %s and holds no recognised bearing%s: what is this hole?' % (where, des, ('; on its axis: %s' % ', '.join(bodies)) if bodies else '')
             out.append(finding(ctx['rule'], ctx['part'], 'INFO', text, anchor=a, ask='census.unknown_hole',
                                context={'designation': s.get('designation'), 'seat_d': s.get('d'), 'bodies': bodies, 'guess': True}))
+        elif bodies and not _bodies_in_span(hole, bodies, depth):
+            out.append(finding(ctx['rule'], ctx['part'], 'INFO',
+                               'hole %s has the seat diameter of %s and nothing stands inside it; on its axis beyond its ends: %s. A bore with the size of a bearing by chance '
+                               '(a key or tool way, a socket behind it): what is this hole?' % (where, des, ', '.join(bodies)),
+                               anchor=a, ask='census.unknown_hole', context={'designation': s.get('designation'), 'seat_d': s.get('d'), 'bodies': bodies, 'beyond': True}))
         elif bodies:
             out.append(finding(ctx['rule'], ctx['part'], 'NOT_RUN',
                                'seat for %s, %s: %s on its axis and no bearing was recognised there. Name the bearing ref so that bearings.ref_pattern or its designation matches, or add its size to the bearing table; "holds no bearing" is not proven' % (
@@ -2425,6 +2685,28 @@ def bearings_seat(facts, params, ctx):
                                anchor=a, measure=s.get('d') if _num(s.get('d')) else None,
                                context={'designation': s.get('designation'), 'seat_d': s.get('d'), 'empty': True}))
     return out
+
+
+def _bodies_in_span(hole, names, depth):
+    """Do any of these bodies on a census hole's axis lie inside the hole's own length? Their coaxial "span" is counted
+    along the hole's axis from its mouth (the hole is [-depth, 0]). A body the census gives no span for, or a hole of
+    no known depth, counts as inside: only a body measured to lie beyond the hole's ends is not in it."""
+    if not _num(depth):
+        return True
+    spans = {}
+    for c in _list(hole.get('coaxial')):
+        if isinstance(c, dict) and isinstance(c.get('name'), str):
+            spans.setdefault(c['name'], []).append(c.get('span'))
+    for n in names:
+        rows = spans.get(n)
+        if not rows:
+            return True
+        for sp in rows:
+            if not (isinstance(sp, list) and len(sp) == 2 and _num(sp[0]) and _num(sp[1])):
+                return True
+            if sp[1] > -depth + 0.1 and sp[0] < -0.1:
+                return True
+    return False
 
 
 def _seat_form_row(s, size, ring, params, b, a, ctx):
@@ -2756,6 +3038,103 @@ def _thin_kind(face, turn_max):
     if ways == {False}:
         return 'the floor of a groove: the long sides rise'
     return ''
+
+
+_RING_ECC_MAX = 0.05       # mm: two circles of one annular face whose centres lie closer than this (and than a quarter of the ring's
+                           # width) are one ring; the cut that left them was placed on rounded coordinates. probes/fusion_thin.py
+                           # holds the same number for the faces it skips (0.005 cm)
+
+
+def _ring_ecc_ok(e, big_r, small_r):
+    """Is an offset of `e` mm between the circles of a ring of radii big_r > small_r no more than rounding: at most
+    _RING_ECC_MAX and at most a quarter of the ring's width (a ring 0.1 wide may be 0.025 off, never a crescent)."""
+    return _num(e) and e <= min(_RING_ECC_MAX, 0.25 * (big_r - small_r)) + _EPS
+
+
+def _thin_rect_width(face):
+    """The true width of a narrow face that is one four-sided band, or None. The probe's width is 2 * area / perimeter,
+    which for a rectangle w x L is w * L / (w + L): a 45 degree bevel 1.202 wide and 63.6 long reads 1.18, the 1.5 x 1.2
+    wall of a slot reads 0.67. A face counts when it has exactly four sides, the two long ones equal within 5 % (a band
+    whose ends are cut square or a little skew: a rectangle, a parallelogram, a trapezoid with equal legs), the two short
+    ones equal within 1 %, its area no more than the mean long side x the short side (the distance between the long
+    sides is never more than a leg), and the four sides add up to the perimeter its width was computed from (no edge left
+    out). Then its width is area / mean long side: the distance between the long sides. Any other face: None (its
+    width stays as measured). A face that tapers (two short sides of different length) never counts."""
+    rows, area, width = face.get('sides'), face.get('area'), face.get('width')
+    if not (isinstance(rows, list) and len(rows) == 4 and _num(area) and _num(width) and width > 0):
+        return None
+    if not all(isinstance(r, list) and len(r) == 3 and _num(r[0]) and r[0] > 0 for r in rows):
+        return None
+    ln = sorted((r[0] for r in rows), reverse=True)
+    long, short = (ln[0] + ln[1]) / 2.0, (ln[2] + ln[3]) / 2.0
+    if ln[0] - ln[1] > 0.05 * ln[0] + _EPS or ln[2] - ln[3] > 0.01 * ln[2] + 0.002:
+        return None
+    if area > 1.01 * long * short + 0.01:
+        return None
+    if abs(2.0 * area / sum(ln) - width) > 0.01 * width + 0.002:
+        return None                                 # the probe counted an edge these sides do not list (a seam): not a plain rectangle
+    return round(area / long, 3)
+
+
+def _thin_ring_of(face, census):
+    """Is a narrow face of these facts an annulus the probe did not know as one: (offset of its circles, outer radius,
+    inner radius), else None.
+    The probe skipped an annular face only when the centres of its two circles were 0.001 mm apart; a cut placed at a
+    centre rounded to 0.01 leaves two circles 0.002 to 0.03 mm apart, and the face came out as a "strip". Facts of that
+    probe say it by these signs together, and every one is needed:
+      the face has exactly two sides, whose lengths are full circles: R = L1 / 2 pi, r = L2 / 2 pi, R > r;
+      its area is pi (R^2 - r^2) and its width R - r (within 2 %): a crescent of an old hole has other numbers;
+      a hole of the census (either end) lies on a line square to the face within 0.1 mm of its centroid, and the face
+      lies along that hole's length.
+    The side lengths and the area alone do not tell the offset: a ring whose circles lie 3 mm apart has the same ones.
+    The offset is estimated from the centroid instead: an annulus whose circles lie e apart has its centroid
+    e r^2 / (R^2 - r^2) from the outer centre and e R^2 / (R^2 - r^2) from the inner one. The census hole is taken for
+    the inner circle when it has a segment of diameter 2r, for the outer when it has 2R, and for the outer (the larger
+    estimate) when it has neither (a step on the outside of a post with a pocket on its axis). The face is a ring when
+    that estimate passes _ring_ecc_ok; its offset is given back either way, so the caller can say it.
+    Faces of the present probe that are off centre come as shape "ring" with "ecc": the offset is read from there."""
+    if face.get('shape') == 'ring':
+        rows = face.get('sides')
+        e = face.get('ecc')
+        if isinstance(rows, list) and len(rows) == 2 and all(isinstance(r, list) and _num(r[0]) for r in rows) and _num(e):
+            big, small = max(rows[0][0], rows[1][0]) / (2 * math.pi), min(rows[0][0], rows[1][0]) / (2 * math.pi)
+            return e, big, small
+        return None
+    rows, area, width = face.get('sides'), face.get('area'), face.get('width')
+    if face.get('shape') != 'strip' or not (isinstance(rows, list) and len(rows) == 2 and _num(area) and _num(width)):
+        return None
+    if not all(isinstance(r, list) and len(r) == 3 and _num(r[0]) and r[0] > 0 for r in rows):
+        return None
+    big, small = max(rows[0][0], rows[1][0]) / (2 * math.pi), min(rows[0][0], rows[1][0]) / (2 * math.pi)
+    if big - small < 0.01:
+        return None
+    ring_area = math.pi * (big * big - small * small)
+    if abs(area - ring_area) > 0.02 * ring_area + 0.01 or abs(width - (big - small)) > 0.02 * (big - small) + 0.002:
+        return None
+    place = _thin_place(face.get('anchor'))
+    if place is None or not isinstance(census, dict):
+        return None
+    best = None
+    for h in _list(census.get('holes')):
+        if not isinstance(h, dict):
+            continue
+        hp, segs = _thin_place(h.get('at')) or _thin_place(h.get('anchor')), _segments(h)
+        if not (hp and segs) or abs(sum(x * y for x, y in zip(hp[1], place[1]))) < 0.999:
+            continue
+        w = [p - q for p, q in zip(place[0], hp[0])]
+        along = sum(x * y for x, y in zip(w, hp[1]))
+        off = max(0.0, sum(x * x for x in w) - along * along) ** 0.5
+        length = sum(s['len'] for s in segs)
+        if off > 0.1 or not (-length - 0.1 <= along <= 0.1):
+            continue
+        ds = [s['d'] for s in segs] + [s['d2'] for s in segs if _num(s.get('d2'))]
+        if any(abs(d - 2 * small) <= 0.05 for d in ds):
+            e = off * (big * big - small * small) / (big * big)          # the hole is the inner circle
+        else:
+            e = off * (big * big - small * small) / (small * small)      # the outer circle, or neither: the larger estimate
+        if best is None or e < best:
+            best = e
+    return (round(best, 4), big, small) if best is not None else None
 
 
 def _thin_regions(faces):
@@ -3213,12 +3592,26 @@ def walls_thin_faces(facts, params, ctx):
     width_cap below the limit (faces were listed only up to a smaller width), or a face without a width: NOT_RUN."""
     limit, turn_max, step = pv(params, 'walls.min_face_width'), pv(params, 'walls.strip_turn_max'), pv(params, 'overhang.bridge_step')
     faces, out = _rows(facts, 'faces', ctx)
-    under = []
+    art = pv(params, 'walls.artefact_width')
+    census = ctx.get('census') if isinstance(ctx.get('census'), dict) else None
+    under, rects, annuli = [], 0, 0
     for f in faces:
         a, w = _anchor(f.get('anchor')), f.get('width')
         if not _num(w):
             out.append(_not_run(ctx, 'a thin face at %s has no width' % _at(a), a))
         elif w < limit - _EPS:
+            rw = _thin_rect_width(f)
+            if rw is not None and rw >= limit - _EPS:
+                rects += 1                           # a rectangle as wide as the limit: 2 A / P is less than its width
+                continue
+            ring = _thin_ring_of(f, census)
+            if ring is not None:
+                e, big, small = ring
+                if _ring_ecc_ok(e, big, small):
+                    annuli += 1                      # an annulus whose circles are off by a rounding: the probe skips such faces
+                    continue
+                if f.get('shape') != 'ring':         # an annulus really off centre: its narrowest side is R - r - e
+                    f = dict(f, ecc=e, width=round(max(0.0, big - small - e), 3))
             under.append(f)
     if under and 'seam_edges' not in facts and 'sides_unread' not in facts and not any('sides' in f or 'id' in f for f in under):
         # facts of a unit that never looked at the sides (it wrote none of the keys of the one that does): the width alone
@@ -3230,7 +3623,7 @@ def walls_thin_faces(facts, params, ctx):
         under = []
     zones = _thin_zones(ctx.get('census'), step) if isinstance(ctx.get('census'), dict) else []
     strips = strip_places = steps = step_places = floors = floor_places = 0
-    places, rings = [], []
+    places, rings, artefacts = [], [], []
     for region in _thin_regions(under):
         odd = [f for f in region if not _thin_is_strip(f, turn_max)]
         if not odd:
@@ -3239,6 +3632,7 @@ def walls_thin_faces(facts, params, ctx):
         if len(odd) > 1 and zones and _thin_bridge(odd, zones):
             steps, step_places = steps + len(region), step_places + 1
             continue
+        whole = odd                                  # every judged face of the region, bridge steps included: an artefact never touches a wider one
         split = _thin_bridge_split(odd, zones) if len(odd) > 1 and zones else None
         if split:
             taken = {id(f) for f in split[0]}
@@ -3246,6 +3640,9 @@ def walls_thin_faces(facts, params, ctx):
             region, odd = [f for f in region if id(f) not in taken], split[1]
         if _thin_floor(odd, ctx.get('census')):
             floors, floor_places = floors + len(region), floor_places + 1
+            continue
+        if _num(art) and all(f['width'] < art - _EPS and _thin_sides(f) is not None and not _thin_kind(f, turn_max).startswith('a land') for f in whole):
+            artefacts.append((region, odd))          # every judged face of the place is under the slicer's closing width, and none is a land
             continue
         place = _thin_place_of(region, odd, turn_max)
         ring = _thin_ring(region) if len(region) >= 24 else None
@@ -3302,6 +3699,21 @@ def walls_thin_faces(facts, params, ctx):
     if floors:
         out.append(finding(ctx['rule'], ctx['part'], 'INFO', '%d faces under %s mm wide are the flat floors of %d blind hole(s) the census knows: a small hole has a small floor, not a sliver'
                            % (floors, _g(limit), floor_places), context={'hole_floors': floors, 'places': floor_places}))
+    if artefacts:
+        n = sum(len(odd) for _, odd in artefacts)
+        widest = max(f['width'] for _, odd in artefacts for f in odd)
+        spots = [_at(_anchor(min(odd, key=lambda x: x['width']).get('anchor'))) for _, odd in artefacts]
+        out.append(finding(ctx['rule'], ctx['part'], 'INFO',
+                           '%d modelling artefacts under %s mm in %d place(s) (the widest %s mm; no land among them, each place alone): the slicer closes a gap or a jog '
+                           'that narrow, so nothing prints differently. Tidy them at the next edit of the part: %s'
+                           % (n, _g(art), len(artefacts), _g(widest), ', '.join(spots[:8]) + (' and %d more' % (len(spots) - 8) if len(spots) > 8 else '')),
+                           context={'artefacts': n, 'places': len(artefacts), 'at': spots}))
+    if rects:
+        out.append(finding(ctx['rule'], ctx['part'], 'INFO', '%d rectangular face(s) at least %s mm wide read narrower by their mean width (2 x area / perimeter): '
+                           'measured as area / long side, they are not under the limit' % (rects, _g(limit)), context={'rectangles': rects}))
+    if annuli:
+        out.append(finding(ctx['rule'], ctx['part'], 'INFO', '%d annular face(s) (a step between two coaxial diameters) whose two circles lie at most %s mm apart: '
+                           'one ring, cut at a rounded centre, not a crescent' % (annuli, _g(_RING_ECC_MAX)), context={'annuli': annuli}))
     lumps, bad = facts.get('lumps'), facts.get('non_manifold_edges')
     if _num(lumps) and lumps > 1:
         out.append(finding(ctx['rule'], ctx['part'], 'FAIL', 'the body is %d separate lumps, not one solid' % lumps, measure=lumps, limit=1, unit='lumps', context={'lumps': lumps}))
@@ -3319,6 +3731,33 @@ def walls_thin_faces(facts, params, ctx):
 
 
 # ---- access (probe fusion_openings) -----------------------------------------------------------------------------------------------
+
+def _key_channel_of(b, ends, head_rows, reach, gap):
+    """Is a bore of the census a piece of the key channel of a screw head of this part that stands behind it: the head
+    on the bore's axis (parallel within 0.999, within 0.3 of the line), its key side facing the bore's nearer mouth no
+    more than `reach` away, the head's straight "tool" path followed past that mouth, and no wall of the part itself in
+    that path before the mouth (beyond the recess of the head, `gap`)? A key channel cut in segments across a bore
+    another part runs in is judged from the head by access.screw_path (its path runs through this bore); a channel with
+    no head on its axis is judged here."""
+    if b['axis'] is None:
+        return False
+    for o in head_rows:
+        h = _anchor(o.get('anchor'))
+        if abs(sum(x * y for x, y in zip(h['axis'], b['axis']))) < 0.999 or _acc_off(h['point'], b['origin'], b['axis']) > 0.3:
+            continue
+        dists = [_acc_s(e['point'], h['point'], h['axis']) for e in (_anchor(x.get('anchor')) for x in ends) if e is not None]
+        ahead = [d for d in dists if d > _EPS]
+        if not ahead or min(ahead) > reach + _EPS:
+            continue                                 # the bore is not on the key side of the head, or out of the key's reach
+        mouth = min(ahead)
+        tool = _acc_path(o, 'tool')
+        if tool is None or not _num(tool.get('reach')) or tool['reach'] <= mouth + _EPS:
+            continue                                 # the head's path did not reach the bore: nothing judged it there
+        if any(isinstance(x, dict) and x.get('kind') == 'self' and _num(x.get('at')) and gap + _EPS < x['at'] < mouth - _EPS for x in _list(tool.get('hits'))):
+            continue                                 # a wall of the part stands between the head and the bore: access.screw_path has that ledge
+        return True
+    return False
+
 
 @judge
 def access_hole_covered(facts, params, ctx):
@@ -3366,6 +3805,7 @@ def access_hole_covered(facts, params, ctx):
     bores, loose = _acc_bores(openings, ctx, cap, out)
     groups = {'body': {}, 'approx': {}, 'overlay': {}}
     heads = [a for a in (_anchor(o.get('anchor')) for o in loose if o.get('of') == 'screw_head') if a is not None]
+    head_rows = [o for o in loose if o.get('of') == 'screw_head' and _anchor(o.get('anchor')) is not None]
     held, blind = None, []
     if isinstance(facts.get('screws'), list) and not facts.get('screws_cut'):
         held = {i for s in facts['screws'] if isinstance(s, dict) for i in _list(s.get('holes')) if isinstance(i, str)}
@@ -3425,6 +3865,8 @@ def access_hole_covered(facts, params, ctx):
         if b['axis'] is not None and any(abs(sum(x * y for x, y in zip(h['axis'], b['axis']))) >= 0.999 and _acc_off(h['point'], b['origin'], b['axis']) <= 0.3
                                          and b['lo'] - cap <= _acc_s(h['point'], b['origin'], b['axis']) <= b['hi'] + cap for h in heads):
             continue                                                 # the head of a screw ref sits on this bore: access.screw_path
+        if _key_channel_of(b, ends, head_rows, reach, gap):
+            continue                                                 # a piece of the key channel of a head behind it: access.screw_path judges it from the head
         if held is not None and any(i in held for i in b['ids']):
             continue                                                 # a screw ref lies in it, with its head on another part: judged where the head sits
         if held is None and any(isinstance(c, dict) and c.get('kind') in ('bought', 'hardware') for h in b['holes'] for c in _list(h.get('coaxial'))):
@@ -3637,7 +4079,9 @@ def access_mouth_sealed(facts, params, ctx):
     Sealed, every sealing hit measured: FAIL "sealed by <name>", anchor = the first sealed end, measure = the nearest
     distance, limit = the seal gap, by = every sealing body.
     Sealed, and one end only by a mesh or by sample points: NOT_RUN. An end without its own path: NOT_RUN.
-    Slots and windows are not judged here (what lies flat on a window is as a rule what it is for), nor screw heads.
+    Slots and windows are not judged here (what lies flat on a window is as a rule what it is for), nor screw heads,
+    nor the end of a bore that holds the head of a screw already in it (_head_end: a seated screw of facts["screws"]
+    in this bore, its head inside this end's counterbore): access.screw_path asks what covers that head.
     A body of access.overlay_pattern seals nothing.
     A sealed end that faces another hole end of this part across a gap (_acc_facing: on its axis, ahead, looking back)
     is one piece of a channel that crosses that gap, and every body that seals it is another solid body lying in the
@@ -3661,6 +4105,8 @@ def access_mouth_sealed(facts, params, ctx):
             out.append(_acc_no_end(b, ctx))                          # (a seat or a screw hole without a row: access.hole_covered; a pocket: inserts.mouth_reachable)
         sealed, maybe, free = [], [], not b['ends']
         for o in b['ends']:
+            if _head_end(o, b, facts, openings, ctx):
+                continue                             # the head of the screw already in it sits in this end: access.screw_path judges what covers it
             label, path = _acc_label(o), _acc_path(o, 'own')
             if path is None:
                 out.append(_not_run(ctx, '%s: its own path was not measured' % label, _anchor(o.get('anchor'))))
@@ -3697,6 +4143,37 @@ def access_mouth_sealed(facts, params, ctx):
         out.append(finding(ctx['rule'], ctx['part'], 'FAIL', text, anchor=_anchor(o.get('anchor')), measure=at, limit=gap, by=names,
                            context={'of': o.get('of'), 'sealed_by': names, 'at': at}))
     return out + _acc_grouped(ctx, groups, gap, 'channel mouths')
+
+
+def _head_end(o, b, facts, openings, ctx):
+    """Is this outer end of a bore the head end of a screw that is already in it: a screw of facts["screws"] (with
+    "screws_cut" false) seated on this part whose "holes" hold a hole of the bore, and whose head (its "screw_head"
+    opening row, by ref) lies on the bore's axis inside this end's first step (between the mouth and the floor of the
+    counterbore, 0.3 to spare)? What covers that end covers the head: access.screw_path asks it. The other end, and a
+    bore with no screw in it, are judged as before."""
+    screws = facts.get('screws') if isinstance(facts, dict) else None
+    if not isinstance(screws, list) or facts.get('screws_cut') or b['axis'] is None:
+        return False
+    refs = {str(x.get('ref')) for x in screws if isinstance(x, dict) and x.get('seated') is True and any(i in b['ids'] for i in _list(x.get('holes')) if isinstance(i, str))}
+    if not refs:
+        return False
+    m = _anchor(o.get('anchor'))
+    census = ctx.get('census') if isinstance(ctx.get('census'), dict) else {}
+    hole = next((h for h in _list(census.get('holes')) if isinstance(h, dict) and h.get('id') == o.get('feature')), None)
+    segs = _segments(hole) if hole else None
+    if m is None or not segs:
+        return False
+    step = (segs[0] if o.get('end') != 'exit' else segs[-1])['len']
+    for h in openings:
+        if h.get('of') != 'screw_head' or str(h.get('ref')) not in refs:
+            continue
+        a = _anchor(h.get('anchor'))
+        if a is None or _acc_off(a['point'], b['origin'], b['axis']) > 0.3:
+            continue
+        depth = -_acc_s(a['point'], m['point'], m['axis'])          # how far below this mouth the head sits
+        if -0.3 - _EPS <= depth <= step + 0.3 + _EPS:
+            return True
+    return False
 
 
 def _seals_mouth(h, gap, r):
@@ -3768,7 +4245,10 @@ def access_hole_closed(facts, params, ctx):
     spigot, a phasing marker) holds no fastener: its end is closed on purpose, no row.
     The floor of an insert pocket whose own screw comes in at the mouth, with its head on the body that the probe
     found "behind" the cap (_floor_of_pocket: the probe finds that body by its box, and the body that holds the head
-    stands in front of the mouth): nothing passes the floor. ONE INFO row for the part names those pockets."""
+    stands in front of the mouth): nothing passes the floor. ONE INFO row for the part names those pockets.
+    The floor of an insert pocket whose own screw comes in at the mouth and ends inside it (_pocket_screw_stops: no
+    screw body on the axis crosses the floor) is closed by design whatever lies behind it on the axis (a part that only
+    lines up in one pose): ONE INFO row for the part too."""
     import math
     cap_max, step, angle = pv(params, 'access.cap_max'), pv(params, 'overhang.bridge_step'), pv(params, 'overhang.max_angle')
     closed, out = _rows(facts, 'closed', ctx)
@@ -3795,7 +4275,7 @@ def access_hole_closed(facts, params, ctx):
         if key not in caps or (_num(own) and not (_num(caps[key][3]) and caps[key][3] >= own)):
             caps[key] = (c, a, behind, own)
     up = ctx['print'].get('up') if isinstance(ctx.get('print'), dict) else None
-    floors = []
+    floors, stops = [], []
     for key in caps:
         c, a, behind, own = caps[key]
         cap, other = c['cap'], behind.get('d')
@@ -3804,6 +4284,10 @@ def access_hole_closed(facts, params, ctx):
         if mouth:
             floors.append((c, a, mouth))
             continue                                 # the floor of a pocket whose screw comes in at its mouth: nothing passes it
+        own_stop = _pocket_screw_stops(c, behind, by_id, facts, ctx)
+        if own_stop:
+            stops.append((c, a, own_stop, name))
+            continue                                 # its own screw comes from the mouth and ends inside: the floor is meant, whatever lies behind
         text = 'hole %s at %s ends in a %s mm cap; behind it on the same axis: %s %s D%s' % (c.get('hole') or '', _at(a), _g(cap), behind.get('what') or 'feature', name, _g(other))
         bridge = behind.get('what') == 'hole' and _num(own) and _num(other) and abs(own - other) > 0.05 and cap <= step + _EPS
         if bridge and a is not None and _xyz(up) and _num(angle):
@@ -3825,7 +4309,48 @@ def access_hole_closed(facts, params, ctx):
                            'which stands %s mm in front of the mouth on the axis. Nothing passes the floor; inserts.floor judges it%s'
                            % (n, '' if n == 1 else 's', 's' if n == 1 else '', body, screw, c.get('hole'), _at(a), body, _g(at), '' if n == 1 else '; and %d more' % (n - 1)),
                            by=sorted({x[2][1] for x in floors}), context={'pocket_floors': sorted([str(x[0].get('hole')), x[2][1]] for x in floors)}))
+    if stops:
+        c, a, screw, behind_name = stops[0]
+        n = len(stops)
+        out.append(finding(ctx['rule'], ctx['part'], 'INFO',
+                           '%d insert pocket%s end%s in a floor, and %s own screw comes in at the mouth and ends inside the pocket: %s (pocket %s at %s); behind the floor: %s. '
+                           'Nothing passes the floor; inserts.floor judges it%s'
+                           % (n, '' if n == 1 else 's', 's' if n == 1 else '', 'its' if n == 1 else 'their', screw, c.get('hole'), _at(a), behind_name, '' if n == 1 else '; and %d more' % (n - 1)),
+                           by=sorted({x[3] for x in stops}), context={'pocket_floors_own_screw': sorted([str(x[0].get('hole')), x[3]] for x in stops)}))
     return out
+
+
+def _pocket_screw_stops(c, behind, holes, facts, ctx):
+    """The ref of an insert pocket's own screw when the floor of the pocket is closed by design: the census hole of the
+    row is an insert pocket, a screw of the screw facts names that hole and is not seated on this part (it comes in at
+    the mouth), and of the screw bodies on the hole's axis (census "coaxial" with a "span" along the hole, the hole is
+    [-depth, 0]) those inside the pocket all end before its floor, and none crosses the floor plane (a screw that would
+    run on through, or one of another part pointing in through the floor). Else None, and the cap is judged as before."""
+    hole = holes.get(c.get('hole')) if isinstance(c.get('hole'), str) else None
+    cls = _hole_class(hole, ctx) if isinstance(hole, dict) else None
+    if not (isinstance(cls, dict) and cls.get('role') == 'insert_pocket') or behind.get('what') == 'screw':
+        return None
+    segs = _segments(hole)
+    depth = hole.get('depth') if _num(hole.get('depth')) else (sum(x['len'] for x in segs) if segs else None)
+    if not _num(depth):
+        return None
+    own = [sc for sc in _list(facts.get('screws')) if isinstance(sc, dict) and c['hole'] in _list(sc.get('holes')) and sc.get('seated') is False]
+    if not own:
+        return None
+    word = re.compile(r'(?i)(?<![a-z])(?:screws?|bolts?)(?![a-z])|(?<![a-z\d])M\d+(?:\.\d+)?\s*[x×]\s*\d')
+    inside = 0
+    for co in _list(hole.get('coaxial')):
+        if not (isinstance(co, dict) and co.get('kind') in ('hardware', 'bought') and word.search(_bare_own(str(co.get('name') or '')))):
+            continue
+        sp = co.get('span')
+        if not (isinstance(sp, list) and len(sp) == 2 and _num(sp[0]) and _num(sp[1])):
+            return None                              # a screw on the axis with no span: where it ends is not known
+        lo, hi = min(sp), max(sp)
+        if lo < -depth - _EPS and hi > -depth + _EPS:
+            return None                              # a screw crosses the floor
+        if hi > -depth + _EPS and lo < -_EPS:
+            inside += 1
+    return str(own[0].get('ref') or 'its screw') if inside else None
 
 
 def _floor_of_pocket(c, behind, holes, facts, ctx, cap_max):
@@ -3950,6 +4475,7 @@ def census_unknown_hole(facts, params, ctx):
     - a broken-open cylinder longer than the deepest pocket of its diameter (_pocket_len_max): a channel, no pocket.
     A step of an unknown hole that has the diameter of a straight insert pocket is named in the question."""
     holes, out = _rows(facts, 'holes', ctx)
+    holes = _joined_holes(holes, ctx, params)[0]     # the pieces of a split stack are one hole
     pattern = pv(params, 'screws.ref_pattern')
     for h in holes:
         c = _hole_class(h, ctx)
@@ -4104,7 +4630,10 @@ def _judge_pin(h, info, params, ctx, unnamed=None):
             by.append(name)
     stock = _pin_lengths(pin_d, ctx)
     depth = h.get('depth') if _num(h.get('depth')) else sum(x['len'] for x in segs)
-    if pin_len is None and unnamed is not None:
+    shaft = _assembly_shaft(names)
+    if shaft:
+        pass                                         # the shaft of a bought assembly: no stock length to buy, only the fit is judged
+    elif pin_len is None and unnamed is not None:
         unnamed.setdefault(str(names[0]).rsplit(' / ', 1)[0], []).append((h, pin_d))
     elif pin_len is None:
         problems.append(('the ref names no length, so its stock length and its length against the pocket are not judged: name the ref with its size ("pin D%s x 20")' % _g(pin_d), None, None))
@@ -4120,6 +4649,8 @@ def _judge_pin(h, info, params, ctx, unnamed=None):
         return []
     only_unnamed = pin_len is None and unnamed is None and len(problems) == 1
     first = next((p for p in problems if p[1] is not None), problems[0])
+    if shaft:
+        problems.append(('this is the shaft of a bought assembly: only its diameter fit is judged here, not its length, and not a key or a flat on it', None, None))
     return [finding(ctx['rule'], ctx['part'], 'NOT_RUN' if only_unnamed else 'FAIL',
                     '%s holds pin D%s%s (%s): %s' % (where, _g(pin_d), (' x %s' % _g(pin_len)) if pin_len else '', _some_names(names), '; '.join(p[0] for p in problems)),
                     anchor=a, measure=first[1], limit=first[2], by=by,
@@ -4174,8 +4705,10 @@ def fits_bought_pocket(facts, params, ctx):
     context = the rounded segments, the kind and the tags (so a tag that changes opens it again).
     That hole is then not asked by census.unknown_hole as well (_content_asked): one hole, one question. A hole that is
     only a piece of another hole of the census (_piece_of) is not asked at all. The text names three of the bodies on
-    the axis and counts the rest; "by" holds them all."""
+    the axis and counts the rest; "by" holds them all. The pieces of a stack the census split (_joined_holes: a relief
+    or a stub 0.03 mm off the pocket's axis) are one hole again and are not asked."""
     holes, out = _rows(facts, 'holes', ctx)
+    holes = _joined_holes(holes, ctx, params)[0]
     unnamed = {}
     for h in holes:
         a, segs = _anchor(h.get('anchor')), _segments(h)
@@ -4317,8 +4850,15 @@ def print_fit_axis(facts, params, ctx):
     pocket of the pockets table (_bought_pocket), a bearing seat of the census (role bearing_seat, exact).
       - its axis is more than print.fit_axis_deg off the print axis: FAIL, measure = the angle, limit = the parameter.
         A hole on its side prints oval and its diameter is not the diameter the fit was measured at;
-      - a blind one opens towards the bed (its axis out of the material points down): FAIL, measure = 180, the floor of
-        the pocket prints as a bridge over air and the insert, magnet or ring goes in from below.
+      - a blind one opens towards the bed (its axis out of the material points down) out of a face above the bed
+        (its mouth more than print.z_layer_tol above ctx["print"]["bed"], or the bed height not known): FAIL,
+        measure = 180, the floor of the pocket prints as a bridge over air and the insert, magnet or ring goes in from
+        below;
+      - a blind one that opens IN the bed face prints its diameter in the plane it was measured in. Its ceilings
+        decide (_bed_pocket_ceilings): a step inwards from a wider to a narrower diameter wider than
+        print.fit_ledge_max (a ring held at its outer edge only) FAIL, measure = the ring's width; a floor wider
+        than overhang.max_bridge FAIL, measure = its diameter. Else ONE INFO row for the part that lists them and
+        says the floor of a magnet, bearing or pin pocket may print up to one layer short.
     One row per hole; the owner waives a hole whose orientation is meant. The bed face is not known yet (a part no
     project places and no build table names): ONE INFO row for the part, which says the first run after placement
     judges it; print.bed_face is asked at the export meanwhile, so the part does not leave the gate unplaced unseen."""
@@ -4344,6 +4884,9 @@ def print_fit_axis(facts, params, ctx):
         return out + [finding(ctx['rule'], ctx['part'], 'INFO', 'the bed face of this part is not known yet (%s): the axes of %d fit hole(s) are judged by the first `gate.py run` '
                               'after the part is placed; until then print.bed_face is asked at its export' % (frame.get('why') or 'no print orientation was handed to the judge', len(fits)),
                               context={'unplaced': len(fits)})]
+    bed, tol = frame.get('bed'), pv(params, 'print.z_layer_tol')
+    ledge_max, bridge_max = pv(params, 'print.fit_ledge_max'), pv(params, 'overhang.max_bridge')
+    on_bed = []
     for h, what in fits:
         a, segs = _anchor(h.get('anchor')), _segments(h)
         if a is None:
@@ -4357,10 +4900,56 @@ def print_fit_axis(facts, params, ctx):
                                % (where, _g(ang), frame.get('from') or 'the build table'), anchor=a, measure=ang, limit=lim, unit='deg',
                                context={'what': what, 'side': True, 'angle': ang}))
         elif cos < 0 and not h.get('through'):
-            out.append(finding(ctx['rule'], ctx['part'], 'FAIL', '%s opens towards the bed (bed face from %s): its floor prints as a bridge over air, and what it holds goes in from below'
-                               % (where, frame.get('from') or 'the build table'), anchor=a, measure=180.0, limit=lim, unit='deg',
-                               context={'what': what, 'down': True}))
+            mouth = sum(a['point'][i] * up[i] for i in range(3)) - bed if _num(bed) else None
+            if mouth is None or abs(mouth) > tol + _EPS:     # above the bed (or a bed height that does not fit the part): over air
+                out.append(finding(ctx['rule'], ctx['part'], 'FAIL', '%s opens towards the bed (bed face from %s): its floor prints as a bridge over air, and what it holds goes in from below'
+                                   % (where, frame.get('from') or 'the build table'), anchor=a, measure=180.0, limit=lim, unit='deg',
+                                   context={'what': what, 'down': True}))
+                continue
+            ceil = _bed_pocket_ceilings(segs, _relief_ds(_hole_class(h, ctx), ctx))   # it opens IN the bed face: what decides is what its ceilings hang on
+            ledge = max([w for w, _ in ceil['ledges']] or [0.0])
+            if ledge > ledge_max + _EPS:
+                out.append(finding(ctx['rule'], ctx['part'], 'FAIL',
+                                   '%s opens in the bed face (bed face from %s), and the step from D%s to D%s inside it is a flat ring %s mm wide held at its outer edge only: '
+                                   'with nothing under it, it is supported in the recess or sags onto what follows' % (
+                                       where, frame.get('from') or 'the build table', _g(ceil['ledges'][0][1][0]), _g(ceil['ledges'][0][1][1]), _g(ledge)),
+                                   anchor=a, measure=ledge, limit=ledge_max, context={'what': what, 'bed_face': True, 'ledge': ledge}))
+            elif _num(ceil['floor']) and ceil['floor'] > bridge_max + _EPS:
+                out.append(finding(ctx['rule'], ctx['part'], 'FAIL', '%s opens in the bed face (bed face from %s), and its floor is a bridge of D%s, longer than %s'
+                                   % (where, frame.get('from') or 'the build table', _g(ceil['floor']), _g(bridge_max)),
+                                   anchor=a, measure=ceil['floor'], limit=bridge_max, context={'what': what, 'bed_face': True, 'floor': ceil['floor']}))
+            else:
+                on_bed.append((h, what, ceil))
+    if on_bed:
+        crit = [what for h, what, _ in on_bed if not what.startswith('insert pocket')]
+        spots = ['%s at %s' % (what, _at(_anchor(h.get('anchor')))) for h, what, _ in on_bed]
+        out.append(finding(ctx['rule'], ctx['part'], 'INFO',
+                           '%d blind fit hole(s) open in the bed face (bed face from %s): their diameters print in the plane they were measured in, their floors are short bridges%s: %s'
+                           % (len(on_bed), frame.get('from') or 'the build table',
+                              ' and may print up to one layer short, which matters for %d of them (%s)' % (len(crit), _some_names(crit)) if crit else '',
+                              ', '.join(spots[:6]) + (' and %d more' % (len(spots) - 6) if len(spots) > 6 else '')),
+                           context={'bed_face': len(on_bed), 'critical': len(crit)}))
     return out
+
+
+def _bed_pocket_ceilings(segs, relief_ds=()):
+    """What a blind hole that opens in the bed face prints as ceilings: {"ledges": [(width, (from d, to d))] widest
+    first: every step inwards from a wider to a narrower diameter is a flat ring that hangs from its outer edge,
+    "floor": the diameter of its floor, a bridge held all round}. A cone narrowing inwards is a slope, judged by the
+    overhang checks, and makes no ring. The ceiling of an insert pocket's own melt relief (its first segment, of a
+    relief diameter of its row: relief_ds) is no ring here: the relief is the room the melt and a sag go into, and the
+    owner's insert pockets stay round and may take a support; a recess wider than the relief is judged."""
+    ledges = []
+    for i, (s, t) in enumerate(zip(segs or [], (segs or [])[1:])):
+        end = s['d2'] if _num(s.get('d2')) else s['d']
+        if i == 0 and not _num(s.get('d2')) and any(abs(s['d'] - d) <= 0.1 + _EPS for d in relief_ds or ()):
+            continue
+        if end - t['d'] > _EPS:
+            ledges.append((round((end - t['d']) / 2.0, 3), (end, t['d'])))
+    ledges.sort(key=lambda x: -x[0])
+    last = (segs or [None])[-1]
+    floor = (last['d2'] if _num(last.get('d2')) else last['d']) if isinstance(last, dict) else None
+    return {'ledges': ledges, 'floor': floor}
 
 
 def _printed_void(lo, hi, first, layer):
@@ -4445,11 +5034,17 @@ def print_z_layers(facts, params, ctx):
     0.2 and layers of 0.3 at 0.2, 0.5, 0.8, ... above the bed face. A face prints where it is modelled only when it
     lies on one of these heights (or on the bed).
     For every pocket of the table (_bought_pocket) whose axis is the print axis (within 1 degree):
+    - where the pocket lies along the print axis is known (the bed height): what prints decides. The printed depth is
+      the layers whose middles lie in it, counted from the bed (_printed_void; a middle within print.z_layer_tol of
+      a face counts against the pocket both ways): under the part height + print.z_clearance FAIL, measure = the printed depth, limit = what it needs; more than one layer (+ tol) deeper
+      than that FAIL too (the part sits loose). The tests below are for a pocket whose place is not known;
+    - the height of the bought part is still the registry's placeholder (its parameter "#placeholder"): NOT_RUN,
+      "measure the part in hand", never a FAIL against an invented number;
     - its depth is not a whole number of layers (off by more than print.z_layer_tol): FAIL, measure = the depth,
       limit = the least whole-layer depth that holds the bought part with the clearance. A pocket that opens in the
       bed face is measured from the bed: its depth is the first layer plus whole layers;
     - else the depth rounded DOWN to whole layers is under the part height + print.z_clearance: FAIL, same limit;
-    - else its mouth, or its floor, does not lie on a layer counted from the bed face: FAIL, measure = that height.
+    - else (the depth holds, the place is not known): NOT_RUN, what its layers print was not worked out.
     A pocket across the print axis is not judged: its depth lies in the print plane.
     NOT_RUN, never a pass: the declared target does not say the layer height or the first layer height; the bed face of
     the part is not known (no build table names its orientation, or the census has no pose of the part); the part
@@ -4475,8 +5070,6 @@ def print_z_layers(facts, params, ctx):
                                % (frame.get('why') or 'no print orientation was handed to the judge', len(pockets)))]
     tol, clear, bed = pv(params, 'print.z_layer_tol'), pv(params, 'print.z_clearance'), frame.get('bed')
     whole = lambda z: abs(z - round(z / layer) * layer) <= tol + _EPS                       # a whole number of layers
-    on_layer = lambda z: abs(z) <= tol + _EPS or (z >= first - tol - _EPS and whole(z - first))   # a height above the bed where a layer ends
-    near = lambda z: 0.0 if z < first / 2.0 else round(first + max(0, round((z - first) / layer)) * layer, 6)
     for h, kind, row in pockets:
         a, segs = _anchor(h.get('anchor')), _segments(h)
         depth = h.get('depth') if _num(h.get('depth')) else sum(s['len'] for s in segs)
@@ -4489,6 +5082,11 @@ def print_z_layers(facts, params, ctx):
         part_h = params.get(row.get('part_h'))
         if not _num(part_h):
             out.append(_not_run(ctx, 'pocket %s at %s is a %s pocket, but the height of the bought part (%s) was not handed to the judge' % (_shape(segs), _at(a), kind, row.get('part_h')), anchor=a))
+            continue
+        ph = params.get('%s#placeholder' % row.get('part_h'))
+        if _num(ph) and abs(ph - part_h) <= _EPS:   # the value is still the registry's placeholder
+            out.append(_not_run(ctx, 'pocket %s at %s is a %s pocket, and the height of the bought part (%s = %s) is still the placeholder of the registry, not a part in hand: '
+                                     'measure the part and record the value as its parameter (tag M)' % (_shape(segs), _at(a), kind, row.get('part_h'), _g(part_h)), anchor=a))
             continue
         need = part_h + clear
         mouth = (sum(a['point'][i] * up[i] for i in range(3)) - bed) if _num(bed) else None
@@ -4503,6 +5101,25 @@ def print_z_layers(facts, params, ctx):
         if abs(first - layer) > _EPS:
             context['first'] = first
         what = row.get('receives') or 'a bought part (%s)' % kind
+        if mouth is not None:
+            # where the pocket lies is known: what prints is the layers whose middles lie in it, counted from the bed.
+            # That decides; a depth that is no whole number of layers prints as the next layer boundary, which may hold
+            lo, hi = min(mouth, floor), max(mouth, floor)
+            got = _printed_void(lo + tol, hi - tol, first, layer)      # a layer whose middle lies within tol of a face may go either way:
+            deep = _printed_void(lo - tol, hi + tol, first, layer)     # the shallow test counts it closed, the deep test open
+            context = dict(context, printed=got)
+            if got < need - _EPS:
+                out.append(finding(ctx['rule'], ctx['part'], 'FAIL',
+                                   'pocket %s at %s for %s is %s deep and prints %s deep in %s layers (first %s), from %s to %s above the bed: the part is %s high and needs %s; '
+                                   '%s whole layers hold it'
+                                   % (_shape(segs), _at(a), what, _g(depth), _g(got), _g(layer), _g(first), _g(round(min(mouth, floor), 3)), _g(round(max(mouth, floor), 3)), _g(part_h), _g(need), _g(least)),
+                                   anchor=a, measure=got, limit=least, context=context))
+            elif deep > need + layer + tol + _EPS:
+                out.append(finding(ctx['rule'], ctx['part'], 'FAIL',
+                                   'pocket %s at %s for %s prints %s deep in %s layers (first %s): more than one layer deeper than the %s it needs, the part sits loose or low'
+                                   % (_shape(segs), _at(a), what, _g(deep), _g(layer), _g(first), _g(need)),
+                                   anchor=a, measure=deep, limit=round(need + layer, 6), context=context))
+            continue
         if not whole(depth - base):
             out.append(finding(ctx['rule'], ctx['part'], 'FAIL',
                                'pocket %s at %s for %s is %s deep along the print axis: not a whole number of %s layers%s. It prints %s or %s; the part is %s high and needs %s'
@@ -4515,14 +5132,8 @@ def print_z_layers(facts, params, ctx):
                                % (_shape(segs), _at(a), what, _g(down), round((down - base) / layer), _g(layer), ' above the %s first layer' % _g(first) if from_bed else '',
                                   _g(part_h), _g(clear)),
                                anchor=a, measure=depth, limit=least, context=context))
-        elif mouth is None:
-            out.append(_not_run(ctx, 'pocket %s at %s: the extent of the part along the print axis is not known (no bounding box in the census), so its faces were not placed on layers' % (_shape(segs), _at(a)), anchor=a))
-        elif not on_layer(mouth) or not on_layer(floor):
-            off, word = (mouth, 'opens') if not on_layer(mouth) else (floor, 'has its floor')
-            out.append(finding(ctx['rule'], ctx['part'], 'FAIL',
-                               'pocket %s at %s for %s %s %s above the bed face: not where a layer ends (first layer %s, then %s each), so its depth of %s does not print as modelled'
-                               % (_shape(segs), _at(a), what, word, _g(off), _g(first), _g(layer), _g(depth)),
-                               anchor=a, measure=off, limit=near(off), context=dict(context, mouth=mouth)))
+        else:
+            out.append(_not_run(ctx, 'pocket %s at %s: the extent of the part along the print axis is not known (no bounding box in the census), so what its layers print was not worked out' % (_shape(segs), _at(a)), anchor=a))
     return out
 
 
@@ -4940,7 +5551,11 @@ def washers_landing(facts, params, ctx):
     gone, over an edge that is no slot, or over a slot nearly as wide as itself, it fails as before.
     A clamp washer ("on_bearing": the bearing ref it bears on) is meant to bridge: it bears on its ring and must NOT
     land on anything else. It reaches at least washers.ring_overlap_min over its ring ("ring_overlap"), else FAIL; facts
-    without "ring_overlap" are ONE NOT_RUN row for the part. The share rule is not applied to it. Every other cover nearer to its face than
+    without "ring_overlap" are ONE NOT_RUN row for the part. Where the census shows the bearing (a seat whose coaxial
+    bodies name it) and the bearings table has its ring (designation in the ref's own name, "rings": da_min, Da_max),
+    the lap it needs is no more than the face that ring offers: (D - Da_max) / 2 for the outer ring, (da_min - d) / 2
+    for the inner one (_ring_land), and it is judged to bearings.contact_gap_max: a 608 outer ring offers 1.0, and a
+    2.0 lap would reach over the shield. The share rule is not applied to it. Every other cover nearer to its face than
     bearings.clamp_room_washer is a FAIL: measure = that gap (the set-back that is there), limit = bearings.clamp_room_washer,
     by = [the cover]. This is the washer's own view of bearings.clamp_room and does not depend on where the ring was
     sampled. A clamp washer without its "covers" list: NOT_RUN.
@@ -4950,7 +5565,7 @@ def washers_landing(facts, params, ctx):
     that part's washer: judged there, not here (the cam cap a washer lies on, not the cam under the cap)."""
     share_min, gap_max, clearance = pv(params, 'washers.landing_share_min'), pv(params, 'washers.landing_gap_max'), pv(params, 'washers.spot_face_clearance')
     room, land_min = pv(params, 'bearings.clamp_room_washer'), pv(params, 'washers.slot_land_min')
-    lap_min, no_lap = params.get('washers.ring_overlap_min'), []
+    lap_min, no_lap, contact = params.get('washers.ring_overlap_min'), [], params.get('bearings.contact_gap_max')
     washers, out = _rows(facts, 'washers', ctx)
     for w in washers:
         a, land, od = _anchor(w.get('anchor')), w.get('landing'), w.get('od')
@@ -4967,9 +5582,15 @@ def washers_landing(facts, params, ctx):
         if ring:
             covers = land.get('covers')
             lap = land.get('ring_overlap')
-            if _num(lap) and _num(lap_min) and lap < lap_min - _LAP_STEP - _EPS:      # the unit finds each end of the lap to 0.02
-                out.append(finding(ctx['rule'], ctx['part'], 'FAIL', '%s clamps %s but reaches only %s mm over the ring (it needs %s): the ring is held at its chamfer'
-                                   % (label, ring, _g(lap), _g(lap_min)), anchor=a, measure=lap, limit=lap_min, by=[str(ring)],
+            need, step, which = lap_min, _LAP_STEP, None
+            rl = _ring_land(w, ring, ctx)
+            if rl is not None and _num(lap_min) and _num(contact):
+                which, face = rl
+                need, step = min(lap_min, face), contact  # the ring offers only its face: a 608 outer ring 1.0, not the 2.0 of a 6816
+            if _num(lap) and _num(need) and lap < need - step - _EPS:      # the unit finds each end of the lap to 0.02
+                out.append(finding(ctx['rule'], ctx['part'], 'FAIL', '%s clamps %s but reaches only %s mm over the%s ring (it needs %s%s): the ring is held at its chamfer'
+                                   % (label, ring, _g(lap), (' %s' % which) if which else '', _g(need),
+                                      ', its face is %s wide' % _g(rl[1]) if rl else ''), anchor=a, measure=lap, limit=need, by=[str(ring)],
                                    context={'od': od, 'clamps': ring, 'ring_overlap': lap}))
             elif 'ring_overlap' not in land:
                 no_lap.append(label)
@@ -5011,17 +5632,51 @@ def washers_landing(facts, params, ctx):
     return out
 
 
+def _ring_land(w, ring, ctx):
+    """("outer" | "inner", the width of that ring's face a washer can clamp on) for a clamp washer on bearing `ring`
+    (the name of its ref), or None: the bearings table row of the designation in the ref's own name and its "rings"
+    row (da_min, Da_max), and the axis of the census hole whose coaxial bodies name that ref. The washer clamps the
+    outer ring when its centre lies further from that axis than the middle of the bearing's section, (d + D) / 4."""
+    table = _table(ctx, 'bearings')
+    sizes, aliases, rings = table.get('sizes') or {}, table.get('aliases') or {}, table.get('rings') or {}
+    key = None
+    for word in re.findall(r'(?<![\w.])(\d{3,5}(?:ZZ|-2RS|-2Z)?)(?![\w.])', _own(ring)):
+        k = word if word in sizes else aliases.get(word)
+        if isinstance(k, str) and isinstance(sizes.get(k), dict):
+            key = k
+            break
+    row, rr = (sizes.get(key), rings.get(key)) if key else (None, None)
+    if not (isinstance(row, dict) and isinstance(rr, dict) and all(_num(row.get(k)) for k in ('d', 'D')) and _num(rr.get('da_min')) and _num(rr.get('Da_max'))):
+        return None
+    a = _anchor(w.get('anchor'))
+    census = ctx.get('census') if isinstance(ctx.get('census'), dict) else {}
+    seat = next((h for h in _list(census.get('holes')) if isinstance(h, dict) and any(isinstance(c, dict) and c.get('name') == ring for c in _list(h.get('coaxial')))), None)
+    L = _hole_line(seat) if seat is not None else None
+    if a is None or L is None:
+        return None
+    r0 = _near_on_line(a['point'], L[0], L[1])[1]
+    if r0 > (row['d'] + row['D']) / 4.0:
+        return 'outer', round((row['D'] - rr['Da_max']) / 2.0, 3)
+    return 'inner', round((rr['da_min'] - row['d']) / 2.0, 3)
+
+
 @judge
 def washers_proud(facts, params, ctx):
     """Rule washers.proud. Reads fusion_screws facts: "washers"[].proud ({"height", "nearest": {"name", "kind", "part",
     "gap"} or None}), .screw, .landing.covers. Parameter washers.gap_to_neighbour. nearest.gap under the limit: FAIL,
     by = [nearest.name]. nearest None = nothing stands near: nothing. A washer without "proud", or a nearest body
     without a gap: NOT_RUN.
+    A gap known only by a bounding box (nearest "approx" or kind "mesh", or a mesh of "mesh_near" under the limit) is
+    no measurement, neither a FAIL nor a pass: ONE NOT_RUN row for the part names them. A body that matches
+    access.overlay_pattern (an old version laid over the model) is not a neighbour; when it was the nearest in facts
+    collected before the pattern, the body behind it is not known: NOT_RUN too.
     Not a neighbour: the body the washer heels on, set back behind its face (the nearest body is a cover of its landing
     at the same gap: washers.landing and bearings.clamp_room judge that set-back); and nothing is proud of a washer with
     no screw on it ("screw" null: a spacer on a rod, no head stack)."""
     need = pv(params, 'washers.gap_to_neighbour')
     washers, out = _rows(facts, 'washers', ctx)
+    overlay = _acc_overlay(params, ctx, out)
+    unknown = []                                     # washers whose nearest neighbour is known only by a box: one NOT_RUN for the part
     for w in washers:
         a, proud = _anchor(w.get('anchor')), w.get('proud')
         label = 'washer %s D%s at %s' % (w.get('ref') or w.get('id') or '', _g(w.get('od')), _at(a))
@@ -5029,10 +5684,21 @@ def washers_proud(facts, params, ctx):
             out.append(_not_run(ctx, '%s: what stands near it was not measured' % label, a))
             continue
         near = proud['nearest']
-        if near is None:
-            continue
         if w.get('screw') is None and 'screw' in w:
             continue                                 # no screw on it: a spacer washer, no head stands proud
+        meshes = [m for m in _list(proud.get('mesh_near')) if isinstance(m, dict) and _num(m.get('box_gap')) and m['box_gap'] < need - _EPS
+                  and not (overlay is not None and overlay.search(str(m.get('name') or '')))]
+        if isinstance(near, dict) and overlay is not None and overlay.search(str(near.get('name') or '')):
+            unknown.append((w, a, label, near.get('name'), 'it was measured before access.overlay_pattern named it, so the body behind it was not'))
+            continue
+        if isinstance(near, dict) and (near.get('approx') or near.get('kind') == 'mesh') and _num(near.get('gap')) and near['gap'] < need - _EPS:
+            unknown.append((w, a, label, near.get('name'), 'known only by its bounding box (a mesh, or a body the distance could not be measured to)'))
+            continue
+        if meshes and (near is None or (_num(near.get('gap')) and near['gap'] >= need - _EPS)):
+            unknown.append((w, a, label, meshes[0].get('name'), 'a mesh %s mm away by its box, known by its box only' % _g(meshes[0]['box_gap'])))
+            continue
+        if near is None:
+            continue
         land = w.get('landing') if isinstance(w.get('landing'), dict) else {}
         heel = [c for c in _list(land.get('covers')) if isinstance(c, dict) and _num(c.get('gap')) and (c.get('part') or c.get('name')) == (near.get('part') or near.get('name') if isinstance(near, dict) else None)]
         if isinstance(near, dict) and _num(near.get('gap')) and heel and any(abs(c['gap'] - near['gap']) <= 0.05 for c in heel):
@@ -5045,6 +5711,12 @@ def washers_proud(facts, params, ctx):
         name = _names([near])[0]
         out.append(finding(ctx['rule'], ctx['part'], 'FAIL', '%s stands %s mm proud with its head and comes within %s mm of %s, under %s' % (label, _g(proud.get('height')), _g(near['gap']), name, _g(need)),
                            anchor=a, measure=near['gap'], limit=need, by=[name], context={'height': proud.get('height'), 'gap': near['gap'], 'by': name}))
+    if unknown:
+        names = sorted({str(x[3]) for x in unknown})
+        out.append(_not_run(ctx, '%d washer%s with %s head%s: the nearest neighbour is %s (%s; first %s), so the gap to the parts around is not measured. Make that body a solid, or have the owner '
+                                 'name it in access.overlay_pattern when it is an old version laid over the model, and collect the screw facts again'
+                            % (len(unknown), '' if len(unknown) == 1 else 's', 'its' if len(unknown) == 1 else 'their', '' if len(unknown) == 1 else 's',
+                               _some_names(names), unknown[0][4], unknown[0][2]), unknown[0][1]))
     return out
 
 
@@ -5114,6 +5786,14 @@ def hardware_recognised(facts, params, ctx):
                            '%d washer%s on this part: the screw on %s is no row of the screws of the part (%s; first screw: %s). The head sits on the washer and was not measured: collect the screw facts again' % (
                                len(lone), ' lies' if len(lone) == 1 else 's lie', 'it' if len(lone) == 1 else 'each', places, lone[0]['screw']),
                            context={'lone_washers': sorted(str(w.get('ref') or w.get('id')) for w in lone)}))
+    taken = [r for r in _list(facts.get('screws')) if isinstance(r, dict) and _bought_as_screw(r)]
+    if taken:
+        out.append(finding(ctx['rule'], ctx['part'], 'NOT_RUN',
+                           'the screw facts hold %d bought part%s that %s no screw as screws (%s): the probe took %s for a screw by the name of %s component, and a real screw on %s axis '
+                           'may be merged into %s and not judged. Collect the screw facts of this part again (fusion_screws 0.3.1 no longer does this)' % (
+                               len(taken), '' if len(taken) == 1 else 's', 'is' if len(taken) == 1 else 'are', _some_names([str(r.get('ref')) for r in taken]),
+                               'it' if len(taken) == 1 else 'them', 'its' if len(taken) == 1 else 'their', 'its' if len(taken) == 1 else 'their', 'it' if len(taken) == 1 else 'them'),
+                           context={'not_screws': sorted(str(r.get('ref')) for r in taken)}))
     rejected = [r for r in _list(facts.get('rejected')) if isinstance(r, dict)]
     if rejected:
         r = rejected[0]
@@ -5150,6 +5830,16 @@ def _own_screw(s):
     return s.get('role') in ('head', 'both') or (s.get('head') is None and s.get('role') == 'thread')
 
 
+def _head_on_other_part(s, washers, ctx):
+    """Does a screw row of this part have its head here only on paper: none of its seat ring bears on this part
+    (seat share 0) and the washer under it lands on another printed part (_on_other_part)? fusion_screws 0.3.0 counted
+    a part 1 mm under such a washer as the head's; the screw is judged on the part its washer lies on."""
+    seat = s.get('seat') if isinstance(s.get('seat'), dict) else {}
+    wash = washers.get(s['washer']) if isinstance(s.get('washer'), str) else None
+    wl = wash.get('landing') if isinstance(wash, dict) and isinstance(wash.get('landing'), dict) else {}
+    return _num(seat.get('share')) and seat['share'] <= _EPS and _on_other_part(wl, ctx)
+
+
 @judge
 def screws_family_lengths(facts, params, ctx):
     """Rule screws.family_lengths. Reads fusion_screws facts: "screws"[] ({"ref", "role", "head", "head_h", "size",
@@ -5165,9 +5855,12 @@ def screws_family_lengths(facts, params, ctx):
     screws, out = _rows(facts, 'screws', ctx)
     allowed = _families_allowed(params.get('screws.family'))
     table = _table(ctx, 'screws')
+    washers = {w.get('id'): w for w in _list(facts.get('washers')) if isinstance(w, dict) and isinstance(w.get('id'), str)}
     for s in screws:
         if not _own_screw(s) or s.get('why'):
             continue
+        if _head_on_other_part(s, washers, ctx):
+            continue                                 # its head and washer bear on another printed part: that part judges the screw once
         a, ref = _anchor(s.get('anchor')), str(s.get('ref') or 'a screw')
         fam = _screw_family(s, params)
         if fam is None or fam not in allowed:
@@ -5230,6 +5923,7 @@ def screws_head_seat_full_ring(facts, params, ctx):
     share, limit = 1.0, unit share. A head with a washer is the washer's (washers.landing); a share of 0 is a head that
     does not bear on this part. A seat without a share: NOT_RUN."""
     screws, out = _rows(facts, 'screws', ctx)
+    slots = []
     for s in screws:
         seat = s.get('seat')
         if s.get('role') not in ('head', 'both') or not isinstance(seat, dict) or s.get('washer'):
@@ -5240,10 +5934,60 @@ def screws_head_seat_full_ring(facts, params, ctx):
             continue
         if share <= _EPS or share >= 1.0 - _EPS:
             continue
+        slot = _u_slot_seat(s, seat, params, ctx)
+        if slot:
+            slots.append((s, a, slot))               # the ring is open over one strip only, and the head bears on both of its flanks
+            continue
         out.append(finding(ctx['rule'], ctx['part'], 'FAIL', '%s: its head bears on %s of its ring (%s seat): a head bears on a full ring of plastic. Move the screw inward, add a boss, or make the seat a U-slot that bears on both flanks' % (
             _screw(s, a), _pct(share), seat.get('kind') or '?'), anchor=a, measure=share, limit=1.0, unit='share', by=[str(s.get('ref'))],
             context={'ref': s.get('ref'), 'share': share, 'kind': seat.get('kind')}))
+    if slots:
+        out.append(finding(ctx['rule'], ctx['part'], 'INFO', '%d head%s sit%s in a U-slot: the seat ring is open over one strip from the axis only (%s wide at most) and the head bears on both '
+                           'flanks, %s or more each: a full seat (%s)' % (len(slots), '' if len(slots) == 1 else 's', 's' if len(slots) == 1 else '', _g(max(x[2]['width'] for x in slots)),
+                                                                          _g(min(x[2]['flank'] for x in slots)), _some_names([str(x[0].get('ref')) for x in slots])),
+                           context={'u_slots': sorted(str(x[0].get('ref')) for x in slots)}))
     return out
+
+
+def _u_slot_seat(s, seat, params, ctx):
+    """{"width", "flank"} when the seat samples of a head ("ring": [angle deg, radius, 1 on material / 0 in air], from
+    fusion_screws 0.3.1: the two rings of the share and 32 points just inside the edge of the head) show a U-slot: every point in air lies in ONE half-strip that starts at the axis (width at
+    most the clearance hole of its size + 0.2: the slot of the shank, open towards one end), no point on material lies
+    inside that strip, material stands on both sides of it, and each flank, (head diameter - slot width) / 2, is at
+    least washers.slot_land_min. A head over an edge (air on a whole side), a slot through the middle of the seat (air on
+    both ends of the strip) and facts without the samples: None."""
+    ring = seat.get('ring')
+    size = s.get('size') if isinstance(s.get('size'), str) else None
+    row = ((_table(ctx, 'screws').get('sizes') or {}).get(size) or {}) if size else {}
+    clear, head_d, land_min = row.get('clearance_d'), s.get('head_d'), params.get('washers.slot_land_min')
+    if not (isinstance(ring, list) and len(ring) >= 8 and _num(clear) and _num(head_d) and _num(land_min)):
+        return None
+    pts = []
+    for r in ring:
+        if not (isinstance(r, list) and len(r) == 3 and _num(r[0]) and _num(r[1]) and r[2] in (0, 1)):
+            return None
+        t = math.radians(r[0])
+        pts.append((r[1] * math.cos(t), r[1] * math.sin(t), r[2]))
+    air, mat = [p for p in pts if not p[2]], [p for p in pts if p[2]]
+    if not air or not mat or max(r[1] for r in ring) < head_d / 2.0 - 0.3:
+        return None                                  # no samples near the edge of the head: its flanks are not known
+    half = (clear + 0.2) / 2.0
+    for k in range(360):
+        t = math.radians(k)
+        dx, dy = math.cos(t), math.sin(t)
+        cross = lambda p: -p[0] * dy + p[1] * dx
+        dot = lambda p: p[0] * dx + p[1] * dy
+        if not all(abs(cross(p)) <= half + _EPS and dot(p) >= -_EPS for p in air):
+            continue
+        if any(abs(cross(p)) < half - 0.2 - _EPS and dot(p) > 0.2 for p in mat):
+            continue                                 # material inside the strip: no slot there
+        if not (any(cross(p) > half for p in mat) and any(cross(p) < -half for p in mat)):
+            continue                                 # plastic on one flank only: a head over an edge
+        flank = (head_d - clear) / 2.0
+        if flank < land_min - _EPS:
+            return None
+        return {'width': round(clear, 3), 'flank': round(flank, 3)}
+    return None
 
 
 @judge
@@ -5255,7 +5999,9 @@ def hardware_refs_present(facts, params, ctx):
     - a screw hole (clearance, counterbore, countersink) with no screw and no bought body on its axis: FAIL, one per hole;
       a hole on the line of another fastener hole of the part that has its screw is a piece of that screw's channel (a
       head or key channel cut in segments): not a row;
-    - a screw of this part (_own_screw) that stands in no census hole and no census opening of the part: FAIL;
+    - a screw of this part (_own_screw) that stands in no census hole and no census opening of the part: FAIL. A hole
+      broken open over part of its circle is no census hole, the census lists it under "partial": a screw standing in
+      one (_in_partial_hole) has its hole, and screws.head_seat_full_ring judges the broken wall;
     - no fastener holes in the facts and no census: NOT_RUN.
     A pocket for a bought part (_bought_pocket) and a wood screw's hole are no insert pockets here. A blind hole
     shallower than the least thread engagement holds no fastener (a marker, a spigot socket): not a row."""
@@ -5301,11 +6047,33 @@ def hardware_refs_present(facts, params, ctx):
                 continue
             if any(_on_axis(sa, _anchor(o['anchor']), tol=max([x for x in _list(o.get('size')) if _num(x)] or [0.6]) / 2.0) for o in opens):
                 continue                             # it stands in a slot or a window of the part
+            if _in_partial_hole(s, sa, census):
+                continue                             # its hole is cut and broken open: screws.head_seat_full_ring judges the broken wall
             out.append(finding(ctx['rule'], ctx['part'], 'FAIL', '%s stands in no hole of this part: a ref left over after the hole moved, or a hole that was never cut' % _screw(s, sa),
                                anchor=sa, by=[str(s.get('ref'))], context={'ref': s.get('ref'), 'no_hole': True}))
     return out
 
 
+
+
+def _in_partial_hole(s, sa, census):
+    """Does a screw stand in a hole the census lists under "partial" (a cylinder whose wall stands over 9 or 10
+    sixteenths of its circle): on the screw's axis (within 0.6), a diameter from the screw's thread to its head (a
+    clearance or head bore, not a fillet of another radius), an arc of at least half the circle, and a length along the
+    axis that overlaps the screw's shank?"""
+    td, hd, ln = s.get('thread_d'), s.get('head_d'), s.get('length')
+    if not (_num(td) and _num(hd) and _num(ln)):
+        return False
+    for p in _list(census.get('partial')):
+        pa = _anchor(p.get('anchor')) if isinstance(p, dict) else None
+        if pa is None or not (_num(p.get('d')) and _num(p.get('len')) and _num(p.get('arc'))) or not _on_axis(sa, pa):
+            continue
+        if not (td - _EPS <= p['d'] <= hd + _EPS) or p['arc'] < 0.5 - _EPS:
+            continue
+        sp = sum((pa['point'][i] - sa['point'][i]) * sa['axis'][i] for i in range(3))
+        if sp - p['len'] < -_EPS and sp + p['len'] > -ln + _EPS:
+            return True
+    return False
 
 
 @judge
@@ -5324,8 +6092,16 @@ def access_key_swing(facts, params, ctx):
     - less, and the straight path is free (a straight long key or a T key from above): INFO, the build notes name it;
     - the part itself leaves the key less than the swing AND blocks the straight path: FAIL per head, measure = the swing
       the part itself leaves, by = its blocking bodies;
-    - otherwise only other bodies or approximations stand in the way: measured solid bodies go into ONE assembly.order
-      question for the part (_acc_grouped), a mesh, box or hidden body is NOT_RUN per body.
+    - the straight path is blocked only by other measured bodies: access.screw_path asks those covers for the head, and
+      once they are off a straight key reaches it: ONE INFO row for the part lists such heads and the bodies in their
+      swing; nothing of them goes into the assembly question here;
+    - the straight path is known only as a mesh, a box or sample points: ONE NOT_RUN row for the part lists such heads
+      (whether a key reaches them is not known); the bodies in their swing are not asked about;
+    - otherwise (the part itself takes part of the swing and a straight key is free of it, or blocked by bodies and
+      the part) only other bodies or approximations stand in the way: measured solid bodies go into ONE assembly.order
+      question for the part (_acc_grouped), a mesh or box is NOT_RUN per body. A hidden body that is a part of the
+      census (a printed part with its light bulb off) is a measured body, as for access.screw_path; a hidden body of no
+      part is an approximation.
     A head row without "swing" (facts of an older probe): ONE NOT_RUN row for the part with the count. A swing measured
     with another key than today's (a shorter long arm, another short arm, a thinner side clearance) or without "blocks"
     (it cannot tell the part from a mesh): NOT_RUN for that head."""
@@ -5335,7 +6111,7 @@ def access_key_swing(facts, params, ctx):
     rows, out = _rows(facts, 'openings', ctx)
     overlay = _acc_overlay(params, ctx, out)
     groups = {'body': {}, 'approx': {}, 'overlay': {}}
-    unmeasured = []
+    unmeasured, straight_after, known_not = [], [], []
 
     def sort(hits, reach, wall=False):
         """('free' | 'self' | 'body' | 'approx', {kind: [hits]}) of the hits of one path."""
@@ -5343,8 +6119,8 @@ def access_key_swing(facts, params, ctx):
         if wall:
             s['self'] = [h for h in s['self'] if not (_num(h.get('at')) and h['at'] <= gap + _EPS)]
         for h in list(s['body']):
-            if h.get('kind') == 'hidden':
-                s['body'].remove(h); s['approx'].append(h)
+            if h.get('kind') == 'hidden' and not (h.get('part') and not h.get('approx')):
+                s['body'].remove(h); s['approx'].append(h)     # a hidden body of no part of the census proves nothing; a hidden printed part is measured
         return ('self' if s['self'] else 'body' if s['body'] else 'approx' if s['approx'] else 'free'), s
 
     for o in rows:
@@ -5399,10 +6175,38 @@ def access_key_swing(facts, params, ctx):
                                % (what, _g(own), _g(need)), anchor=a, measure=own, limit=need, unit='deg', by=names,
                                context={'swing': own, 'straight': False, 'by': names}))
             continue
+        if tkind == 'body':
+            # the straight path is blocked only by other measured bodies: access.screw_path asks those covers for this
+            # head. Once they are off a straight key reaches it, which is this rule's own INFO case: no second question
+            straight_after.append((label, blocked))
+            _acc_note(groups, 'approx', tsrt['approx'], label)
+            _acc_note(groups, 'overlay', tsrt['overlay'], label)
+            continue
+        if tkind == 'approx':
+            # the straight path is known only as a mesh, a box or sample points: whether a key reaches the head is not
+            # known, so the bodies in the swing decide nothing yet. Not pooled into the assembly question
+            known_not.append((label, sorted({str(h.get('name')) for h in tsrt['approx'] if h.get('name')}), blocked))
+            _acc_note(groups, 'approx', tsrt['approx'], label)
+            _acc_note(groups, 'overlay', tsrt['overlay'], label)
+            continue
         for srt, kind in list(zip(sorted_, kinds)) + [(tsrt, tkind)]:
             _acc_note(groups, 'body', srt['body'], label)
             _acc_note(groups, 'approx', srt['approx'], label)
             _acc_note(groups, 'overlay', srt['overlay'], label)
+    if straight_after:
+        swing_by = sorted({n for _, names in straight_after for n in names})
+        out.append(finding(ctx['rule'], ctx['part'], 'INFO',
+                           '%d screw head%s: no L-key swing, and other bodies stand over %s; a straight key reaches %s once the covers that access.screw_path asks about are off '
+                           '(%s). In the swing: %s' % (len(straight_after), '' if len(straight_after) == 1 else 's', 'it' if len(straight_after) == 1 else 'them',
+                                                        'it' if len(straight_after) == 1 else 'them', '; '.join(x[0] for x in straight_after[:6]) + ('; ...' if len(straight_after) > 6 else ''),
+                                                        _some_names(swing_by) or 'nothing named'),
+                           by=swing_by, context={'straight_after_covers': sorted(x[0] for x in straight_after), 'swing_by': swing_by}))
+    if known_not:
+        names = sorted({n for _, ns, _ in known_not for n in ns})
+        out.append(_not_run(ctx, '%d screw head%s: the straight key path is known only as a mesh, a box or sample points (%s), so whether a key reaches %s is not known; '
+                                 'the bodies in the swing are not asked about until it is (%s)' % (
+                                     len(known_not), '' if len(known_not) == 1 else 's', _some_names(names) or 'unnamed', 'it' if len(known_not) == 1 else 'them',
+                                     '; '.join(x[0] for x in known_not[:6]) + ('; ...' if len(known_not) > 6 else ''))))
     if unmeasured:
         out.append(_not_run(ctx, '%d screw head%s of this part: the swing of the key was not measured (facts of a unit that did not sweep it, first: %s): collect the facts of this part again'
                             % (len(unmeasured), '' if len(unmeasured) == 1 else 's', unmeasured[0])))
@@ -6034,6 +6838,170 @@ def _moved_opening(old, openings):
     return best[1] if best else None
 
 
+def _seg_d_at(segs, t):
+    """The diameter of a stack of segments at depth t below its mouth (a cone in between its ends), None outside."""
+    at = 0.0
+    for sg in segs or []:
+        if at - _EPS <= t <= at + sg['len'] + _EPS:
+            d2 = sg['d2'] if _num(sg.get('d2')) else sg['d']
+            k = 0.0 if sg['len'] <= 0 else min(1.0, max(0.0, (t - at) / sg['len']))
+            return sg['d'] + (d2 - sg['d']) * k
+        at += sg['len']
+    return None
+
+
+def _same_line_holes(old, holes, tol=0.3, deg=2.0):
+    """Today's census holes on the line of a hole of the last census: an axis parallel or anti-parallel within `deg`,
+    the line within `tol` of BOTH the old mouth and the old far end, and a span along the line that overlaps the old
+    one. A through hole the census now names by its other mouth, or a stack it now holds as two (a cone that ends 0.1
+    mm before the next cylinder begins), comes back as all its pieces together."""
+    L = _hole_line(old)
+    if L is None:
+        return []
+    o, ax, depth, _ = L
+    far = [o[i] - ax[i] * depth for i in range(3)]
+    cos = math.cos(math.radians(deg))
+    out = []
+    for h in holes:
+        M = _hole_line(h) if isinstance(h, dict) else None
+        if M is None or abs(sum(ax[i] * M[1][i] for i in range(3))) < cos:
+            continue
+        t0, off0 = _near_on_line(o, M[0], M[1])
+        t1, off1 = _near_on_line(far, M[0], M[1])
+        if off0 > tol or off1 > tol:
+            continue
+        lo, hi = min(t0, t1), max(t0, t1)
+        if hi < -_EPS or lo > M[2] + _EPS:
+            continue                                 # on the line, but beside the old span
+        out.append(h)
+    return out
+
+
+def _profile_kept(old, union, grid=0.05):
+    """Does the union of today's holes on an old hole's line leave at least the old void: at every depth of the old
+    hole (sampled every 0.1 mm and at the ends of its segments, 0.06 in from them) the widest of today's diameters
+    there is no more than `grid` narrower than the old one? A counterbore filled to its hole, a seat that got narrower,
+    a stretch closed by a cap: False."""
+    L = _hole_line(old)
+    if L is None or not union:
+        return False
+    o, ax, depth, segs = L
+    marks, at = [], 0.0
+    for sg in segs:
+        marks += [at + 0.06, at + sg['len'] - 0.06]
+        at += sg['len']
+    k = 0.1
+    while k < depth:
+        marks.append(k)
+        k += 0.1
+    lines = [_hole_line(h) for h in union]
+    for t in sorted(x for x in marks if 0.0 <= x <= depth):
+        d_old = _seg_d_at(segs, t)
+        if d_old is None:
+            continue
+        p = [o[i] - ax[i] * t for i in range(3)]
+        best = 0.0
+        for M in lines:
+            if M is None:
+                continue
+            tn, _ = _near_on_line(p, M[0], M[1])
+            d = _seg_d_at(M[3], tn)
+            if d is not None:
+                best = max(best, d)
+        if best < d_old - grid - _EPS:
+            return False
+    return True
+
+
+def _moved_hole(old, holes):
+    """(today's hole, mm across, mm along) for a lost hole of the last census that moved across its axis: the same kind,
+    the same segments within 0.05 (only the diameter of a first segment of an insert pocket no longer than 0.6, its melt
+    relief, may change), an axis parallel within 2 deg the same way, at most 3.0 across and gate_features.TOL_ALONG
+    along. The nearest; None when there is none."""
+    L, a = _hole_line(old), _anchor(old.get('anchor'))
+    if L is None or a is None:
+        return None
+    o, ax, _, segs = L
+    best = None
+    for h in holes:
+        M, b = (_hole_line(h), _anchor(h.get('anchor'))) if isinstance(h, dict) else (None, None)
+        if M is None or b is None or b['kind'] != a['kind'] or sum(ax[i] * M[1][i] for i in range(3)) < math.cos(math.radians(2.0)):
+            continue
+        ns = M[3]
+        if len(ns) != len(segs):
+            continue
+        first_free = a['kind'] == 'insert_pocket' and segs[0]['len'] <= 0.6 + _EPS
+        if not _same_segments(segs[1:] if first_free else segs, ns[1:] if first_free else ns) or (first_free and abs(segs[0]['len'] - ns[0]['len']) > gate_features.GRID + _EPS):
+            continue
+        w = [M[0][i] - o[i] for i in range(3)]
+        along = sum(w[i] * ax[i] for i in range(3))
+        across = max(0.0, sum(x * x for x in w) - along * along) ** 0.5
+        if across <= 3.0 + _EPS and abs(along) <= gate_features.TOL_ALONG + _EPS and (best is None or across < best[1]):
+            best = (h, round(across, 3), round(along, 3))
+    return best
+
+
+def _doc(m, p, direction=False):
+    """A point (or a direction) of a part frame in the document frame, by the part's census matrix (16 numbers, row by
+    row, the translation in the last column); the point itself when there is no matrix."""
+    if not (isinstance(m, list) and len(m) == 16 and all(_num(x) for x in m)):
+        return list(p)
+    return [m[4 * r] * p[0] + m[4 * r + 1] * p[1] + m[4 * r + 2] * p[2] + (0.0 if direction else m[4 * r + 3]) for r in range(3)]
+
+
+def _mate_followed(pid, old_line, new_line, ctx):
+    """Did the printed part `pid` move its hole with this one: ctx["mates"][pid] says it changed since its last checked
+    geometry too, and of its census holes (document frame) one lies on the new line and none on the old line (within
+    0.3, parallel). False when ctx does not say (a judge called without the mates)."""
+    m = (ctx.get('mates') or {}).get(pid) if isinstance(ctx.get('mates'), dict) else None
+    if not isinstance(m, dict) or not m.get('changed'):
+        return False
+    mat = ctx.get('matrix')
+    on = lambda line, q: abs(sum(line[1][i] * q[1][i] for i in range(3))) >= 0.9994 and _near_on_line(q[0], line[0], line[1])[1] <= 0.3
+    lines = [q for q in _list(m.get('lines')) if isinstance(q, list) and len(q) == 2 and _xyz(q[0]) and _xyz(q[1])]
+    old_d = (_doc(mat, old_line[0]), _doc(mat, old_line[1], True))
+    new_d = (_doc(mat, new_line[0]), _doc(mat, new_line[1], True))
+    return any(on(new_d, q) for q in lines) and not any(on(old_d, q) for q in lines)
+
+
+def _refs_followed(old, new, ctx):
+    """(True, mating parts) when every bought or hardware ref on an old hole's axis stands on the moved hole's axis too
+    and every printed part on it moved its own hole the same way (_mate_followed); else (False, what did not follow).
+    A hole with nothing on its axis is (False, []): no ref says what it is for, so the move is asked."""
+    oc = [c for c in _list(old.get('coaxial')) if isinstance(c, dict)]
+    nc = [c for c in _list(new.get('coaxial')) if isinstance(c, dict)]
+    hw_new = {str(c.get('name')) for c in nc if c.get('kind') in ('hardware', 'bought')}
+    missing = sorted({str(c.get('name')) for c in oc if c.get('kind') in ('hardware', 'bought')} - hw_new)
+    mates = sorted({str(c.get('part')) for c in oc if c.get('kind') == 'printed' and c.get('part')})
+    parts_new = {str(c.get('part')) for c in nc if c.get('kind') == 'printed' and c.get('part')}
+    if not mates and not any(c.get('kind') in ('hardware', 'bought') for c in oc):
+        return False, []                             # nothing stood on its axis: nothing says what moved with it
+    lo, ln = _hole_line(old), _hole_line(new)
+    behind = [p for p in mates if p not in parts_new or not _mate_followed(p, lo[:2], ln[:2], ctx)]
+    return (not missing and not behind), (missing + behind if (missing or behind) else mates)
+
+
+def _opening_crossed(o, line, tol=0.3):
+    """Does the line (point, axis) of a hole pass through the outline of an opening of the same census (its centre,
+    face normal and size: within half its larger side of the centre, where the line meets the face), or does the hole's
+    mouth lie in it?"""
+    a = _anchor(o.get('anchor'))
+    size = o.get('size') if isinstance(o.get('size'), list) else []
+    if a is None or not (len(size) == 2 and all(_num(x) for x in size)) or line is None:
+        return False
+    c, n = a['point'], a['axis']
+    p, u = line[0], line[1]
+    reach = max(size) / 2.0 + tol
+    if sum((p[i] - c[i]) * n[i] for i in range(3)) ** 2 <= tol * tol and sum((p[i] - c[i]) ** 2 for i in range(3)) <= reach * reach:
+        return True
+    den = sum(u[i] * n[i] for i in range(3))
+    if abs(den) < 1e-6:
+        return False
+    k = sum((c[i] - p[i]) * n[i] for i in range(3)) / den
+    q = [p[i] + u[i] * k for i in range(3)]
+    return sum((q[i] - c[i]) ** 2 for i in range(3)) <= reach * reach
+
+
 @judge
 def regression_feature_lost(facts, params, ctx):
     """Rule regression.feature_lost. Reads fusion_census facts of the part and ctx["prev"] (the census of its last checked
@@ -6067,19 +7035,22 @@ def regression_feature_lost(facts, params, ctx):
         return [_not_run(ctx, 'the census of the last checked geometry cannot be read')]
     holes = [dict(h, anchor=_anchor(h.get('anchor'))) for h in holes]
     openings = [dict(o, anchor=_anchor(o.get('anchor'))) for o in openings]
-    reclassed = []
+    reclassed, relined, moved_ok, events = [], [], [], []
     for old in _list(prev.get('holes')):
         a = _anchor(old.get('anchor')) if isinstance(old, dict) else None
         if a is None:
             continue
         segs, now = _segments(old), gate_features.find(a, holes)
         what = 'insert pocket' if a['kind'] == 'insert_pocket' else 'hole'
+        line = _hole_line(old)
+        context = {'lost': a['kind'], 'segments': [[x['d'], x['len']] for x in segs or []], 'through': bool(old.get('through'))}
         if now is None:
             other = gate_features.find(dict(a, kind='hole' if a['kind'] == 'insert_pocket' else 'insert_pocket'), holes)
             if other is not None and _same_segments(segs, _segments(other)) and _same_ends(old, other):
                 reclassed.append((a, old, other))    # the same hole under another class: nothing changed in the part
                 continue
             text = '%s %s at %s is gone' % (what, _shape(segs), _at(a))
+            vector = None
             if other is not None and old.get('through') and not other.get('through'):
                 text = '%s %s at %s went through the part and is blind now (%s)' % (what, _shape(segs), _at(a), _shape(_segments(other)))
             elif other is not None and other.get('through') and not old.get('through'):
@@ -6089,12 +7060,40 @@ def regression_feature_lost(facts, params, ctx):
                         % (what, _shape(segs), _at(a), _g(old.get('floor')), _g(other.get('floor'))))
             elif other is not None:
                 text += ': a hole is still at that place (%s), it is no longer %s' % (_shape(_segments(other)), 'an insert pocket' if what == 'insert pocket' else 'a plain hole')
+            else:
+                union = _same_line_holes(old, holes)
+                moved = None if union else _moved_hole(old, holes)
+                if union:
+                    kinds = {(_anchor(h.get('anchor')) or {}).get('kind') for h in union}
+                    t_old, t_new = bool(old.get('through')), any(h.get('through') for h in union)
+                    kept = _profile_kept(old, union) and kinds == {a['kind']} and (t_new or not t_old)
+                    if kept and (t_old == t_new or a['kind'] == 'hole'):
+                        relined.append((a, old, union))   # the same void, named from its other mouth or held as several stacks
+                        continue
+                    now_shape = ' + '.join(_shape(_segments(h)) for h in union)
+                    text = '%s %s at %s changed: %s%s -> %s%s (one line, %d stack%s now)' % (
+                        what, _shape(segs), _at(a), _shape(segs), ' through' if t_old else ' blind', now_shape, ' through' if t_new else ' blind', len(union), '' if len(union) == 1 else 's')
+                    context = dict(context, changed=sorted([[x['d'], x['len']] for h in union for x in (_segments(h) or [])]), through_now=t_new)
+                elif moved is not None:
+                    new, across, along = moved
+                    ok, who = _refs_followed(old, new, ctx)
+                    vector = [round(new['anchor']['point'][k] - a['point'][k], 3) for k in range(3)]
+                    if ok:
+                        moved_ok.append((a, old, new, across, who))
+                        events.append({'line': line, 'ok': True, 'vector': vector, 'rows': [], 'with': []})
+                        continue
+                    text = '%s %s at %s moved %s mm across its axis%s, now at %s: %s' % (
+                        what, _shape(segs), _at(a), _g(across), (' and %s along it' % _g(along)) if abs(along) > _EPS else '', _at(_anchor(new.get('anchor'))),
+                        ('%s did not follow it' % _some_names(who)) if who else 'no ref stood on its axis to say what moved with it')
+                    context = dict(context, moved=round(across, 2), now=_anchor(new.get('anchor'))['point'])
         elif old.get('through') and not now.get('through'):
             text = '%s %s at %s went through the part and is blind now (%s)' % (what, _shape(segs), _at(a), _shape(_segments(now)))
+            vector = None
         else:
             continue
-        out.append(finding(ctx['rule'], ctx['part'], 'FAIL', text, anchor=a, ask='regression.intended',
-                           context={'lost': a['kind'], 'segments': [[s['d'], s['len']] for s in segs or []], 'through': bool(old.get('through'))}))
+        events.append({'line': line, 'ok': False, 'vector': vector, 'rows': [(a, text, context)], 'with': []})
+    out_open = []
+    folded_ok = []
     for old in _list(prev.get('openings')):
         a = _anchor(old.get('anchor')) if isinstance(old, dict) else None
         if a is None or gate_features.find(a, openings) is not None:
@@ -6103,17 +7102,71 @@ def regression_feature_lost(facts, params, ctx):
             continue                                 # the same through opening, named by its other mouth or with that mouth moved
         size = old.get('size') if isinstance(old.get('size'), list) else []
         moved = _moved_opening(old, openings)
+        host = next((e for e in events if e['line'] is not None and _opening_crossed(old, e['line'])), None)
+        wall = ''
+        if moved is not None and _num(old.get('wall')) and _num(moved.get('wall')) and abs(old['wall'] - moved['wall']) > gate_features.GRID + _EPS:
+            wall = ', its wall %s -> %s' % (_g(old['wall']), _g(moved['wall']))
+        if host is not None and moved is not None and host['ok'] and host['vector'] is not None:
+            vec = [moved['anchor']['point'][k] - a['point'][k] for k in range(3)]
+            same_size = all(abs(x - y) <= 0.1 + _EPS for x, y in zip(sorted(size), sorted(moved.get('size') or [])))
+            if sum((vec[k] - host['vector'][k]) ** 2 for k in range(3)) <= 0.09 + _EPS and same_size:
+                folded_ok.append('%s %s%s' % (old.get('shape') or 'opening', ' x '.join(_g(c) for c in size), wall))
+                continue                             # moved with its hole: one feature, one row
+        if host is not None and not host['ok']:
+            if moved is not None:
+                host['with'].append('%s %s -> %s at %s%s' % (old.get('shape') or 'opening', ' x '.join(_g(c) for c in size), ' x '.join(_g(c) for c in moved['size']),
+                                                            _at(_anchor(moved.get('anchor'))), wall))
+            else:
+                host['with'].append('%s %s, gone' % (old.get('shape') or 'opening', ' x '.join(_g(c) for c in size)))
+            continue                                 # the same change of the part: asked once, in the row of its hole
         if moved is not None:
             na = _anchor(moved.get('anchor'))
             far = _acc_off(a['point'], moved['anchor']['point'], moved['anchor']['axis'])
-            out.append(finding(ctx['rule'], ctx['part'], 'FAIL',
-                               '%s %s at %s changed: it is %s at %s now, %s mm off its old axis. Not gone, and the facts do not say whether the change was meant'
-                               % (old.get('shape') or 'opening', ' x '.join(_g(c) for c in size), _at(a), ' x '.join(_g(c) for c in moved['size']), _at(na), _g(far)),
-                               anchor=a, ask='regression.intended',
-                               context={'changed': old.get('shape'), 'size': size, 'now': moved['size'], 'through': True, 'off': round(far, 2)}))
+            out_open.append(finding(ctx['rule'], ctx['part'], 'FAIL',
+                                    '%s %s at %s changed: it is %s at %s now, %s mm off its old axis. Not gone, and the facts do not say whether the change was meant'
+                                    % (old.get('shape') or 'opening', ' x '.join(_g(c) for c in size), _at(a), ' x '.join(_g(c) for c in moved['size']), _at(na), _g(far)),
+                                    anchor=a, ask='regression.intended',
+                                    context={'changed': old.get('shape'), 'size': size, 'now': moved['size'], 'through': True, 'off': round(far, 2)}))
             continue
-        out.append(finding(ctx['rule'], ctx['part'], 'FAIL', '%s %s at %s is gone' % (old.get('shape') or 'opening', ' x '.join(_g(c) for c in size), _at(a)),
-                           anchor=a, ask='regression.intended', context={'lost': old.get('shape'), 'size': size, 'through': bool(old.get('through'))}))
+        out_open.append(finding(ctx['rule'], ctx['part'], 'FAIL', '%s %s at %s is gone' % (old.get('shape') or 'opening', ' x '.join(_g(c) for c in size), _at(a)),
+                                anchor=a, ask='regression.intended', context={'lost': old.get('shape'), 'size': size, 'through': bool(old.get('through'))}))
+    stations = []                                    # lost holes on one line (a head bore and its clearance hole, split by bridge steps) are one row
+    for e in [e for e in events if not e['ok']]:
+        st = next((x for x in stations if e['line'] is not None and x['line'] is not None and abs(sum(e['line'][1][k] * x['line'][1][k] for k in range(3))) >= 0.9994
+                   and _near_on_line(e['line'][0], x['line'][0], x['line'][1])[1] <= 0.3), None)
+        if st is None:
+            stations.append({'line': e['line'], 'rows': list(e['rows']), 'with': list(e['with'])})
+        else:
+            st['rows'] += e['rows']
+            st['with'] += e['with']
+    for st in stations:
+        a, text, context = st['rows'][0]
+        if len(st['rows']) > 1:
+            text = 'one station on one axis: ' + '; '.join(r[1] for r in st['rows'])
+            context = {'station': [r[2] for r in st['rows']]}
+        if st['with']:
+            text += '; with it: %s' % '; '.join(st['with'])   # the openings it took along are said, not part of the context: one change, one question
+        out.append(finding(ctx['rule'], ctx['part'], 'FAIL', text, anchor=a, ask='regression.intended', context=context))
+    out += out_open
+    if relined:
+        n = len(relined)
+        a, old, union = relined[0]
+        out.append(finding(ctx['rule'], ctx['part'], 'INFO',
+                           '%d hole%s of the last checked geometry %s on the same line as before and %s at least the same void (re-anchored at the other mouth, or held as several stacks): '
+                           'hole %s at %s is %s now%s. Nothing is lost'
+                           % (n, '' if n == 1 else 's', 'is' if n == 1 else 'are', 'leaves' if n == 1 else 'leave', _shape(_segments(old)), _at(a), ' + '.join(_shape(_segments(h)) for h in union),
+                              '' if n == 1 else '; and %d more' % (n - 1)),
+                           context={'relined': sorted(gate_features.anchor_key(x[0]) for x in relined)}))
+    if moved_ok:
+        n = len(moved_ok)
+        far = max(x[3] for x in moved_ok)
+        mates = sorted({w for x in moved_ok for w in x[4]})
+        out.append(finding(ctx['rule'], ctx['part'], 'INFO',
+                           '%d hole%s moved across %s axis with %s refs and mating part%s (largest offset %s mm; mating: %s)%s. Nothing is lost: the new places are judged by the '
+                           'screw, insert and access rules of both parts'
+                           % (n, '' if n == 1 else 's', 'its' if n == 1 else 'their', 'its' if n == 1 else 'their', '' if len(mates) == 1 else 's', _g(far), _some_names(mates) or 'none',
+                              ('; with them %d opening%s: %s' % (len(folded_ok), '' if len(folded_ok) == 1 else 's', '; '.join(sorted(set(folded_ok))))) if folded_ok else ''),
+                           context={'moved': sorted(gate_features.anchor_key(x[0]) for x in moved_ok), 'openings': sorted(folded_ok)}))
     if reclassed:
         a, old, other = reclassed[0]
         n = len(reclassed)

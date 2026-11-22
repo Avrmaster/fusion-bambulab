@@ -29,6 +29,7 @@ OVERRIDE_KEYS = ('value', 'tag', 'source', 'date')
 OVERRIDE_OPTIONAL = ('per', 'note', 'quote', 'measured_under')
 MEASURED_UNDER = ('nozzle', 'material', 'xy_hole_compensation', 'layer_height')     # what a fit was printed with
 TAG_SUFFIX = '#tag'             # values(): the tag of a fit parameter travels as "<name>#tag"
+PLACEHOLDER_SUFFIX = '#placeholder'   # values(): the value of a parameter still at a registry default that says "placeholder: ..."
 FUNCTIONS = {'max': max, 'min': min}
 _TOKEN = re.compile(r'\s*(?:(\d+\.?\d*(?:[eE][-+]?\d+)?|\.\d+)|([A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*)|(.))')
 _DATE = re.compile(r'^\d{4}-\d{2}-\d{2}$')
@@ -452,6 +453,9 @@ def values(resolved, names=None):
     """The flat form judges and Fusion probes get: {name: value}, plus one entry "name[key]" for every per-size value
     and, for every parameter of class "fit", one entry "name#tag" with its tag here ("M", "U", "D" or "S"): a rule that
     blocks on a fit that was never printed reads it, and a stamp judged with one tag is open again under another.
+    A parameter still at its registry default whose source says "placeholder: ..." (the size of a bought part nobody
+    measured) also has "name#placeholder": that value (a judge compares it with the value it is handed: equal means
+    nobody gave another); params_hash leaves it out, as it leaves the tags out.
     `names` limits it to those parameters (and the inputs of their formulas)."""
     want = None
     if names is not None:
@@ -472,6 +476,8 @@ def values(resolved, names=None):
             out['%s[%s]' % (name, k)] = v
         if resolved[name].get('class') == 'fit':
             out[name + TAG_SUFFIX] = resolved[name]['tag']
+        if resolved[name].get('from') == 'default' and str(resolved[name].get('source') or '').startswith('placeholder'):
+            out[name + PLACEHOLDER_SUFFIX] = resolved[name]['value']      # a size nobody measured: a judge says "measure it", not FAIL against it
     return out
 
 
@@ -493,7 +499,7 @@ def value(vals, name, key=None):
 def params_hash(resolved, names):
     """Hash over the values and tags of these parameters (and of what their formulas read): one input of a stamp's check."""
     vals = values(resolved, names)
-    return digest({k: [v, resolved[k]['tag'] if k in resolved else None] for k, v in vals.items() if not k.endswith(TAG_SUFFIX)})
+    return digest({k: [v, resolved[k]['tag'] if k in resolved else None] for k, v in vals.items() if not k.endswith((TAG_SUFFIX, PLACEHOLDER_SUFFIX))})
 
 
 def limit_text(entry, key=None):

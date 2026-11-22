@@ -1,0 +1,346 @@
+{
+ "judge": "access_key_swing",
+ "case": "the same cover, a printed part of the census whose light bulb is off: a measured body like any other (as access.screw_path takes it), not \"a mesh or sample points\": the same INFO row",
+ "incident": "a hidden printed part over four heads was \"known only as a mesh or by sample points\" for this rule, a measured body for access.screw_path",
+ "facts": {
+  "openings": [
+   {
+    "feature": "s1",
+    "of": "screw_head",
+    "ref": "ref HW / screw s1",
+    "anchor": {
+     "kind": "screw",
+     "axis": [
+      0,
+      0,
+      1
+     ],
+     "point": [
+      10.0,
+      0,
+      5
+     ]
+    },
+    "end": "mouth",
+    "paths": {
+     "own": {
+      "r": 2.75,
+      "reach": 60.0,
+      "free": 9.5,
+      "hits": [
+       {
+        "name": "Cover",
+        "kind": "hidden",
+        "at": 9.5,
+        "share": 1.0,
+        "approx": false,
+        "expected": false,
+        "part": "demo/cover"
+       }
+      ]
+     },
+     "tool": {
+      "r": 3.25,
+      "reach": 60.0,
+      "free": 9.5,
+      "hits": [
+       {
+        "name": "Cover",
+        "kind": "hidden",
+        "at": 9.5,
+        "share": 1.0,
+        "approx": false,
+        "expected": false,
+        "part": "demo/cover"
+       }
+      ]
+     }
+    },
+    "swing": {
+     "h": 20.0,
+     "r": 2.5,
+     "reach": 60.0,
+     "n": 12,
+     "from": [
+      1,
+      0,
+      0
+     ],
+     "free": [
+      60.0,
+      60.0,
+      60.0,
+      9.5,
+      9.5,
+      9.5,
+      60.0,
+      60.0,
+      9.5,
+      9.5,
+      9.5,
+      60.0
+     ],
+     "first": [
+      null,
+      null,
+      null,
+      "Cover",
+      "Cover",
+      "Cover",
+      null,
+      null,
+      "Cover",
+      "Cover",
+      "Cover",
+      null
+     ],
+     "blocks": [
+      [],
+      [],
+      [],
+      [
+       {
+        "name": "Cover",
+        "kind": "hidden",
+        "at": 9.5,
+        "share": 1.0,
+        "approx": false,
+        "part": "demo/cover"
+       }
+      ],
+      [
+       {
+        "name": "Cover",
+        "kind": "hidden",
+        "at": 9.5,
+        "share": 1.0,
+        "approx": false,
+        "part": "demo/cover"
+       }
+      ],
+      [
+       {
+        "name": "Cover",
+        "kind": "hidden",
+        "at": 9.5,
+        "share": 1.0,
+        "approx": false,
+        "part": "demo/cover"
+       }
+      ],
+      [],
+      [],
+      [
+       {
+        "name": "Cover",
+        "kind": "hidden",
+        "at": 9.5,
+        "share": 1.0,
+        "approx": false,
+        "part": "demo/cover"
+       }
+      ],
+      [
+       {
+        "name": "Cover",
+        "kind": "hidden",
+        "at": 9.5,
+        "share": 1.0,
+        "approx": false,
+        "part": "demo/cover"
+       }
+      ],
+      [
+       {
+        "name": "Cover",
+        "kind": "hidden",
+        "at": 9.5,
+        "share": 1.0,
+        "approx": false,
+        "part": "demo/cover"
+       }
+      ],
+      []
+     ]
+    }
+   },
+   {
+    "feature": "s2",
+    "of": "screw_head",
+    "ref": "ref HW / screw s2",
+    "anchor": {
+     "kind": "screw",
+     "axis": [
+      0,
+      0,
+      1
+     ],
+     "point": [
+      20.0,
+      0,
+      5
+     ]
+    },
+    "end": "mouth",
+    "paths": {
+     "own": {
+      "r": 2.75,
+      "reach": 60.0,
+      "free": 8.0,
+      "hits": [
+       {
+        "name": "Cover",
+        "kind": "hidden",
+        "at": 8.0,
+        "share": 1.0,
+        "approx": false,
+        "expected": false,
+        "part": "demo/cover"
+       }
+      ]
+     },
+     "tool": {
+      "r": 3.25,
+      "reach": 60.0,
+      "free": 8.0,
+      "hits": [
+       {
+        "name": "Cover",
+        "kind": "hidden",
+        "at": 8.0,
+        "share": 1.0,
+        "approx": false,
+        "expected": false,
+        "part": "demo/cover"
+       }
+      ]
+     }
+    },
+    "swing": {
+     "h": 20.0,
+     "r": 2.5,
+     "reach": 60.0,
+     "n": 12,
+     "from": [
+      1,
+      0,
+      0
+     ],
+     "free": [
+      60.0,
+      60.0,
+      60.0,
+      8.0,
+      8.0,
+      8.0,
+      60.0,
+      60.0,
+      8.0,
+      8.0,
+      8.0,
+      60.0
+     ],
+     "first": [
+      null,
+      null,
+      null,
+      "Cover",
+      "Cover",
+      "Cover",
+      null,
+      null,
+      "Cover",
+      "Cover",
+      "Cover",
+      null
+     ],
+     "blocks": [
+      [],
+      [],
+      [],
+      [
+       {
+        "name": "Cover",
+        "kind": "hidden",
+        "at": 8.0,
+        "share": 1.0,
+        "approx": false,
+        "part": "demo/cover"
+       }
+      ],
+      [
+       {
+        "name": "Cover",
+        "kind": "hidden",
+        "at": 8.0,
+        "share": 1.0,
+        "approx": false,
+        "part": "demo/cover"
+       }
+      ],
+      [
+       {
+        "name": "Cover",
+        "kind": "hidden",
+        "at": 8.0,
+        "share": 1.0,
+        "approx": false,
+        "part": "demo/cover"
+       }
+      ],
+      [],
+      [],
+      [
+       {
+        "name": "Cover",
+        "kind": "hidden",
+        "at": 8.0,
+        "share": 1.0,
+        "approx": false,
+        "part": "demo/cover"
+       }
+      ],
+      [
+       {
+        "name": "Cover",
+        "kind": "hidden",
+        "at": 8.0,
+        "share": 1.0,
+        "approx": false,
+        "part": "demo/cover"
+       }
+      ],
+      [
+       {
+        "name": "Cover",
+        "kind": "hidden",
+        "at": 8.0,
+        "share": 1.0,
+        "approx": false,
+        "part": "demo/cover"
+       }
+      ],
+      []
+     ]
+    }
+   }
+  ]
+ },
+ "params": {
+  "access.key_swing_deg": 180.0,
+  "access.key_long_arm": 60.0,
+  "access.free_height_over_head": 27.0,
+  "access.key_short_arm": 20.0,
+  "access.key_side_clearance": 5.0,
+  "access.min_blocked_share": 0.02,
+  "access.seal_gap": 0.2
+ },
+ "expect": [
+  {
+   "verdict": "INFO",
+   "by": [
+    "Cover"
+   ]
+  }
+ ]
+}

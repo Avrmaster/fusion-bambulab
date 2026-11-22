@@ -1,0 +1,87 @@
+{
+ "judge": "walls_thin_faces",
+ "case": "a 0.1 mm wide step D4.4 to D4.2 inside a hole, its circles about 0.003 mm apart: one ring",
+ "facts": {
+  "width_cap": 2.0,
+  "lumps": 1,
+  "non_manifold_edges": 0,
+  "seam_edges": 0,
+  "faces": [
+   {
+    "id": 20,
+    "anchor": {
+     "kind": "face",
+     "axis": [
+      0,
+      0,
+      1
+     ],
+     "point": [
+      10.03,
+      0.0,
+      17.0
+     ]
+    },
+    "width": 0.1,
+    "area": 1.35,
+    "shape": "strip",
+    "sides": [
+     [
+      13.823,
+      -90.0,
+      21
+     ],
+     [
+      13.195,
+      90.0,
+      22
+     ]
+    ]
+   }
+  ]
+ },
+ "params": {
+  "walls.min_face_width": 1.2,
+  "walls.strip_turn_max": 60,
+  "walls.artefact_width": 0.1,
+  "overhang.bridge_step": 0.3
+ },
+ "ctx": {
+  "census": {
+   "holes": [
+    {
+     "id": "h1",
+     "anchor": {
+      "kind": "hole",
+      "axis": [
+       0,
+       0,
+       1
+      ],
+      "point": [
+       10.0,
+       0.0,
+       20.0
+      ]
+     },
+     "segments": [
+      {
+       "d": 4.4,
+       "len": 3.0
+      },
+      {
+       "d": 4.2,
+       "len": 3.0
+      }
+     ],
+     "through": true
+    }
+   ]
+  }
+ },
+ "expect": [
+  {
+   "verdict": "INFO"
+  }
+ ]
+}

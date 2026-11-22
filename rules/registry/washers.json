@@ -80,7 +80,7 @@
     {
       "id": "washers.landing",
       "title": "A washer lies on its landing",
-      "statement": "Every washer lies on material over at least {washers.landing_share_min} of its ring, within {washers.landing_gap_max}, in its real seated position and at its measured outer diameter. The ring is counted outside the opening the washer sits over (its screw hole, a pocket mouth with its relief). A washer over a slot of the part bears on the two flanks of the slot: it passes when it reaches at least {washers.slot_land_min} over each flank and its ring is on material everywhere beside the slot. It fails when a flank is missing, and when the slot is nearly as wide as the washer. A spot face is at least {washers.spot_face_clearance} wider than the washer. A clamp washer on a bearing ring is the one washer that bridges: it bears on its ring, and everything else under it stays at least {bearings.clamp_room_washer} below its face. A clamp washer reaches at least {washers.ring_overlap_min} over its ring.",
+      "statement": "Every washer lies on material over at least {washers.landing_share_min} of its ring, within {washers.landing_gap_max}, in its real seated position and at its measured outer diameter. The ring is counted outside the opening the washer sits over (its screw hole, a pocket mouth with its relief). A washer over a slot of the part bears on the two flanks of the slot: it passes when it reaches at least {washers.slot_land_min} over each flank and its ring is on material everywhere beside the slot. It fails when a flank is missing, and when the slot is nearly as wide as the washer. A spot face is at least {washers.spot_face_clearance} wider than the washer. A clamp washer on a bearing ring is the one washer that bridges: it bears on its ring, and everything else under it stays at least {bearings.clamp_room_washer} below its face. A clamp washer reaches at least {washers.ring_overlap_min} over its ring, or the whole face of that ring where the ring offers less (the outer ring (D - Da_max) / 2, the inner one (da_min - d) / 2, from the bearings table), within {bearings.contact_gap_max}.",
       "why": "Six clamp washers landed on plastic beside the ring they were meant to clamp, once print shrink had used up a 0.3 mm set-back. A washer heeled on the edge of a spot face.",
       "params": [
         "washers.landing_share_min",
@@ -88,7 +88,8 @@
         "washers.spot_face_clearance",
         "bearings.clamp_room_washer",
         "washers.slot_land_min",
-        "washers.ring_overlap_min"
+        "washers.ring_overlap_min",
+        "bearings.contact_gap_max"
       ],
       "check": {
         "probe": "fusion_screws",
@@ -112,7 +113,8 @@
       "statement": "A washer with its screw head keeps at least {washers.gap_to_neighbour} to every body it does not clamp. The stack stands proud by the washer thickness plus the head height: 2.65 for a 1.0 washer under an M3 button head, 3.15 for a 1.5 washer. Where a fixed part is nearer than that, washer and head are sunk flush or the stationary part gets a groove.",
       "why": "Round washers hit a motor body in a model. Where a stationary plate stood 1.0 from the clamped face, a stack 2.65 proud had no room and was sunk flush.",
       "params": [
-        "washers.gap_to_neighbour"
+        "washers.gap_to_neighbour",
+        "access.overlay_pattern"
       ],
       "check": {
         "probe": "fusion_screws",

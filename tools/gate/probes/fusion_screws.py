@@ -102,14 +102,40 @@ def _scr_own_kind(body_name, pats):
     return None
 
 
+_SCR_NOT_FASTENER = r'(?i)(?<![a-z])(?:boards?|pcbs?|magnets?|sensors?|encoders?|switch(?:es)?|motors?|bearings?|cables?|connectors?)(?![a-z])'
+
+
+def _scr_bare(name):
+    """A body's own name without what stands in parentheses: what it IS, not what it belongs to."""
+    out, depth = [], 0
+    for ch in str(name or ''):
+        if ch == '(':
+            depth += 1
+        elif ch == ')':
+            depth = max(0, depth - 1)
+        elif depth == 0:
+            out.append(ch)
+    return ''.join(out)
+
+
 def _scr_pick(world, pats, kinds, taken=(), bought_only=False):
     """The candidate bodies of some kinds: a body whose own name says one of `kinds`, and a body whose own name says
-    nothing while its component name matches one of them. Never the part itself, a mesh, or a body in `taken` (ids)."""
+    nothing while its component name matches one of them. Never the part itself, a mesh, or a body in `taken` (ids).
+    A body whose own name (without its parentheses) says it is something else that is bought, a board, a magnet, a
+    sensor, a motor, a bearing (_SCR_NOT_FASTENER or the bearing pattern), is never taken by its component name: it is
+    picked with "_not_fastener", and _scr_refs lists it on its own with no profile, so it is refused and never joined
+    to a screw on one of its axes (a bundle "encoders (magnets, boards, screws, inserts)" made the board a countersunk
+    screw and hid the screw in it)."""
     out = []
     for r in world:
         if r['mesh'] or r['own'] or id(r) in taken or (bought_only and r['printed']):
             continue
-        if r['hw'] in kinds or (r['hw'] is None and any(gate_search(pats[k], r['comp']) for k in kinds)):
+        if r['hw'] in kinds:
+            out.append(r)
+        elif r['hw'] is None and any(gate_search(pats[k], r['comp']) for k in kinds):
+            bare = _scr_bare(r['body_name'])
+            if gate_search(_SCR_NOT_FASTENER, bare) or gate_search(pats.get('bearing'), bare):
+                r['_not_fastener'] = True                               # listed as refused, never measured or joined as one
             out.append(r)
     return out
 
@@ -128,6 +154,27 @@ def _scr_close(picked, boxes, reach=1.0, touch=0.5):
     return out
 
 
+def _scr_turned(circles, tol=0.05):
+    """Is a body turned about one axis, by its circles: False only when the axis with the most circles holds less than
+    half of them AND another axis holds at least half as many as it (a plate with several equal holes). The teeth of a
+    knurl or the arcs of a hex head give many small groups of one or two: the main axis still stands out."""
+    groups = []
+    for c, nrm, r in circles or []:
+        a = v_unit(nrm)
+        if v_len(a) < 0.5 or r <= 0:
+            continue
+        for g in groups:
+            if coaxial(g[0], g[1], c, a, tol):
+                g[2] += 1
+                break
+        else:
+            groups.append([c, a, 1])
+    if len(groups) < 2:
+        return True
+    counts = sorted((g[2] for g in groups), reverse=True)
+    return not (2 * counts[0] < sum(counts) and 2 * counts[1] >= counts[0])
+
+
 def _scr_refs(picked, slack):
     """Chosen bodies grouped into single parts: [{"key", "name", "recs", "box", "profile"}], sorted by key.
     slack None: every body is a part of its own (washers stacked on one axis stay apart).
@@ -142,16 +189,27 @@ def _scr_refs(picked, slack):
         try:
             circles = [_scr_circles(r['body']) for r in recs]
             profs = [revolve_profile(c) for c in circles]
-            turned = [i for i, p in enumerate(profs) if p]
+            # a turned part has most of its circles on one axis; a plate with four equal holes has a quarter on each
+            # and is no screw, washer or insert: it gets no profile, so it is listed and never joined to a screw on one of its axes
+            profs = [p if p and _scr_turned(c) else None for p, c in zip(profs, circles)]
+            alone = [i for i, p in enumerate(profs) if p and recs[i].get('_not_fastener')]     # a board on a screw's axis is never joined to it
+            turned = [i for i, p in enumerate(profs) if p and i not in alone]
             if slack is None:
                 groups = [[i] for i in turned]
             else:
                 groups = [[turned[k] for k in c] for c in
                           cluster_coaxial([(profs[i]['origin'], profs[i]['axis'], profs[i]['lo'], profs[i]['hi']) for i in turned], slack)]
+            groups += [[i] for i in alone]
             groups += [[i] for i, p in enumerate(profs) if not p]          # no circular edge: listed, with no profile
             made = [{'key': '%s|%s' % (path, recs[g[0]]['body_name']), 'name': recs[g[0]]['name'], 'recs': [recs[i] for i in g],
                      'box': box_of([c for i in g for c in recs[i]['box']]),
                      'profile': revolve_profile([c for i in g for c in circles[i]])} for g in groups]
+            for m in made:
+                if any(r.get('_not_fastener') for r in m['recs']):
+                    m['not_fastener'] = 'its own name says it is a bought part that is no fastener (a board, a magnet, a sensor, a bearing)'
+                if m['profile'] is None and any(circles[recs.index(r)] for r in m['recs']):
+                    m['unread'] = 'no turned part: its circles lie on several axes alike (a plate with holes)'
+
         except Exception as e:                                             # the bodies of one occurrence could not be read: each is listed with no
             why = 'its shape could not be read (%s: %s)' % (type(e).__name__, str(e)[:80])     # profile and the reason, never dropped
             made = [{'key': '%s|%s' % (path, r['body_name']), 'name': r['name'], 'recs': [r], 'box': r['box'], 'profile': None, 'unread': why} for r in recs]
@@ -523,8 +581,17 @@ def _scr_screw(g, job, world, own, inv, washers, threads, table, may_stop=False)
         r_mid = ws['id'] / 2.0 + 0.85 * (ws['od'] - ws['id']) / 2.0
         radii = [ws['id'] / 2.0 + 0.5 * (ws['od'] - ws['id']) / 2.0, r_mid]
     in_own = own['_inside']
+    # also a head drawn up to 1 mm above its seat. When the washer under the head lies on ANOTHER printed part (a cap
+    # on a cam), only plastic that begins where the washer lands counts (washers.landing_gap_max): the part 1 mm under
+    # that cap is no seat of the head. A clamp washer on a bearing ring keeps the deeper look: its part is set back
+    gap = float((job.get('params') or {}).get('washers.landing_gap_max', 0.05))
+    offs = (0.1, 0.6, 1.1)
+    if under:
+        near_pts = [p for r in radii for p in _scr_ring(v_sub(land, v_scale(A, gap + 0.05)), A, r)]
+        if any(r['printed'] and not r['own'] and not r['mesh'] and sum(1 for p in near_pts if r['_inside'](p)) >= 4 for r in others):
+            offs = (gap + 0.05,)
     head_on = (not sh['headless']) and any(sum(1 for p in _scr_ring(v_sub(land, v_scale(A, off)), A, r) if in_own(p)) >= 4
-                                           for r in radii for off in (0.1, 0.6, 1.1))      # also a head drawn up to 1 mm above its seat
+                                           for r in radii for off in offs)
     engagement, into, into_rec = _scr_engagement(sh, size, table, others, [t for t in threads if not any(id(r) in skip for r in t['recs'])],
                                                  gate_ref_patterns(job)['nut'])
     thread_on = False
@@ -563,10 +630,17 @@ def _scr_screw(g, job, world, own, inv, washers, threads, table, may_stop=False)
         out['under_head_min'] = round(min(lens), 2)
         d_ring = sh['head_r'] - sh['shank_r']
         pts = _scr_ring(v_sub(land, v_scale(A, 0.05)), A, sh['shank_r'] + 0.45 * d_ring) + _scr_ring(v_sub(land, v_scale(A, 0.05)), A, sh['shank_r'] + 0.9 * d_ring, 8, 0.5)
-        share = round(sum(1 for p in pts if in_own(p)) / float(len(pts)), 3)
+        hit = [in_own(p) for p in pts]
+        share = round(sum(1 for x in hit if x) / float(len(pts)), 3)
+        # where the seat ring lies on material, point by point, so the judge can tell a U-slot that bears on both flanks
+        # from a head over an edge: [angle in degrees in the frame of the axis, radius mm, 1 on material / 0 in air]
+        ring = [[round(45.0 * (k % 8) + (22.5 if k >= 8 else 0.0), 1), round(sh['shank_r'] + (0.9 if k >= 8 else 0.45) * d_ring, 3), 1 if hit[k] else 0]
+                for k in range(len(pts))]
+        r_out = max(sh['shank_r'] + 0.5, sh['head_r'] - 0.1)            # and 32 points just inside the edge of the head: its flanks
+        ring += [[round(11.25 * k, 2), round(r_out, 3), 1 if in_own(p) else 0] for k, p in enumerate(_scr_ring(v_sub(land, v_scale(A, 0.05)), A, r_out, 32))]
         top = along(sh['top'], land, A)                                  # head top above the landing
         if sh['countersunk']:
-            out['seat'] = {'kind': 'countersink', 'd': round(2 * sh['head_r'], 2), 'recess': 0.0, 'share': share}
+            out['seat'] = {'kind': 'countersink', 'd': round(2 * sh['head_r'], 2), 'recess': 0.0, 'share': share, 'ring': ring}
         else:
             u, v = axis_frame(A)
             dirs = [v_add(v_scale(u, math.cos(k * math.pi / 4)), v_scale(v, math.sin(k * math.pi / 4))) for k in range(8)]
@@ -580,9 +654,9 @@ def _scr_screw(g, job, world, own, inv, washers, threads, table, may_stop=False)
                     p = v_add(land, v_scale(d, rw + 0.3))
                     runs = runs_along(lambda s, p=p: 'own' if in_own(v_add(p, v_scale(A, s))) else None, 0.05, top + 5.0, 0.5, 0.02)
                     hs.append((runs[0][2]) if (runs and runs[0][1] <= 0.3) else 0.0)
-                out['seat'] = {'kind': 'counterbore', 'd': round(2 * rw, 2), 'recess': round(_scr_median(hs) - top, 2), 'share': share}
+                out['seat'] = {'kind': 'counterbore', 'd': round(2 * rw, 2), 'recess': round(_scr_median(hs) - top, 2), 'share': share, 'ring': ring}
             else:
-                out['seat'] = {'kind': 'flat', 'd': round(2 * sh['head_r'], 2), 'recess': round(-top, 2), 'share': share}
+                out['seat'] = {'kind': 'flat', 'd': round(2 * sh['head_r'], 2), 'recess': round(-top, 2), 'share': share, 'ring': ring}
         r_g = max(0.9 * sh['head_r'], sh['shank_r'] + 1.0)
         span = along(land, tip, A)
 
@@ -674,7 +748,18 @@ def _scr_washer(w, job, world, own, inv, screws, threads, touch):
         probe_at = v_add(face, v_scale(down, touch / 2.0 + 0.02))
         R_, n = sp['od'] / 2.0, max(2, int(math.ceil((sp['od'] / 2.0) / 0.25)))
         best_run = 0.0
-        for d in dirs:
+        lap_dirs = list(dirs)
+        try:                                                             # and the exact radial line of the bearing through the washer, both ways:
+            bp = revolve_profile(_scr_circles(brg['body']))               # 16 fixed directions miss a washer at 60 deg by 7.5 deg (0.04 mm of lap)
+            if bp:
+                w_ = v_sub(centre, bp['origin'])
+                w_ = v_sub(w_, v_scale(bp['axis'], v_dot(w_, bp['axis'])))
+                w_ = v_sub(w_, v_scale(A, v_dot(w_, A)))
+                if v_len(w_) > 0.1:
+                    lap_dirs += [v_unit(w_), v_scale(v_unit(w_), -1.0)]
+        except Exception:
+            pass
+        for d in lap_dirs:
             on = lambda r_: brg['_inside'](v_add(probe_at, v_scale(d, r_)))
             hits_ = [on(R_ * k / n) for k in range(n + 1)]
             k = 0
@@ -714,18 +799,30 @@ def _scr_washer(w, job, world, own, inv, screws, threads, touch):
     env_box = gate_bbox(env)
     lying = set(id(c['_rec']) for c in covers if c['gap'] <= touch)
     lying |= set(id(r) for t in threads for r in t['recs'] if t['profile'] and coaxial(centre, A, t['profile']['origin'], t['profile']['axis'], 0.3))
-    mm, nearest = adsk.core.Application.get().measureManager, None
+    # the other washers of the same screw stack (two washers under one head) are the stack, not its neighbours
+    for r in world:
+        if r.get('hw') == 'washer' and id(r) not in mine and on_it:
+            c = tuple((r['box'][0][i] + r['box'][1][i]) / 2.0 for i in range(3))
+            if off_axis(c, face, A) <= 0.3 and -0.1 <= along(c, face, A) <= height + 0.1:
+                lying.add(id(r))
+    overlay = str((job.get('params') or {}).get('access.overlay_pattern') or '')
+    mm, nearest, mesh_near = adsk.core.Application.get().measureManager, None, []
     for r in world:
         if id(r) in skip or id(r) in lying or box_gap(r['box'][0], r['box'][1], env_box[0], env_box[1]) > _SCR_NEAR:
             continue
+        if overlay and gate_search(overlay, r['name']):
+            continue                                                    # an old version laid over the model (the owner named it)
         gap, approx = box_gap(r['box'][0], r['box'][1], env_box[0], env_box[1]), True       # never more than the real gap
-        if not r['mesh']:
-            try:                                                        # whether the measure manager takes a temporary body is not sure:
-                gap, approx = mm.measureMinimumDistance(env, r['body']).value * 10.0, False     # when it does not, the boxes stand
-            except Exception:
-                pass
+        if r['mesh']:                                                   # a mesh is known by its box only: a lower bound that would
+            mesh_near.append({'name': r['name'], 'box_gap': round(gap, 2)})     # beat every measured gap and hide the real neighbour
+            continue
+        try:                                                            # whether the measure manager takes a temporary body is not sure:
+            gap, approx = mm.measureMinimumDistance(env, r['body']).value * 10.0, False     # when it does not, the boxes stand
+        except Exception:
+            pass
         if gap <= _SCR_NEAR and (nearest is None or gap < nearest['gap']):
             nearest = {'name': r['name'], 'kind': r['kind'], 'part': r['part'], 'gap': round(gap, 2), 'approx': approx}
+    mesh_near.sort(key=lambda m: (m['box_gap'], m['name']))
     best = covers[0]
     return {'id': w['id'], 'ref': w['name'], 'od': round(sp['od'], 2), 'id_d': round(sp['id'], 2), 't': round(sp['t'], 2),
             'anchor': {'kind': 'face', 'axis': [round(c, 4) for c in v_unit(mat_vector(inv, A))], 'point': [round(c, 2) for c in mat_point(inv, face)]},
@@ -733,7 +830,7 @@ def _scr_washer(w, job, world, own, inv, screws, threads, touch):
                         'open_d': open_d, 'ring_shares': ring_shares, 'on_bearing': on_bearing, 'ring_overlap': ring_overlap, 'look': look,
                         'on': best['part'] or best['name'], 'spot_face_d': round(2 * min(walls), 2) if walls else None,
                         'wall_angles': len(walls), 'covers': [{k: c[k] for k in c if not k.startswith('_')} for c in covers]},
-            'proud': {'height': round(height, 2), 'nearest': nearest}, 'screw': on_it[0]['name'] if on_it else None}
+            'proud': {'height': round(height, 2), 'nearest': nearest, 'mesh_near': mesh_near[:5]}, 'screw': on_it[0]['name'] if on_it else None}
 
 
 def _scr_holes(job, world, m, screws, known, pats):
@@ -802,7 +899,10 @@ def probe(job):
                                "gap": 0.0, "on": "demo/housing" | name of what it lies on, "spot_face_d": 13.2 or None},
                    "proud": {"height": 3.15 (washer + head above the landing),
                              "nearest": {"name": "...", "kind": "printed" | "bought" | "hardware", "part": id or None,
-                                         "gap": 0.6} or None}}]
+                                         "gap": 0.6, "approx": false} or None,
+                             "mesh_near": [{"name", "box_gap"}]}}]   meshes within reach, by their boxes only (0.3.1):
+                                         a mesh never sets "nearest"; nor does another washer of the same screw stack,
+                                         nor a body that matches access.overlay_pattern when the job hands it over
 
     How the values are meant:
       "length" is measured (under the head; a countersunk screw with its head); "named_length" and "named_size" are what
@@ -889,6 +989,8 @@ def probe(job):
         ok, why, size, _ = screw_claim(shape, table, named[0], own_name)
         if ok and all(r['printed'] for r in g['recs']) and (shape is None or screw_size(shape, table)[0] is None):
             ok, why = False, 'a printed body that carries the word, and no screw of the table by its shape'     # "Leadscrew cover"
+        if ok and g.get('not_fastener'):
+            ok, why = False, g['not_fastener']
         if not ok:
             not_screws.append(g['name'])
             rejected.append({'name': g['name'], 'as': 'screw', 'why': g.get('unread') or why})

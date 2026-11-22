@@ -1,0 +1,151 @@
+{
+ "judge": "access_hole_closed",
+ "case": "the same pocket with a screw long enough to run on through the floor: the cap is in its way, FAIL",
+ "facts": {
+  "openings": [],
+  "closed": [
+   {
+    "anchor": {
+     "kind": "insert_pocket",
+     "axis": [
+      0,
+      1,
+      0
+     ],
+     "point": [
+      -30.0,
+      53.2,
+      486.0
+     ]
+    },
+    "behind": {
+     "d": 3.6,
+     "name": "Demo tongue",
+     "what": "ref"
+    },
+    "cap": 1.4,
+    "hole": "h1"
+   }
+  ],
+  "screws": [
+   {
+    "ref": "ref pulley screws / M3x10 DIN 912 head #3",
+    "holes": [
+     "h1"
+    ],
+    "seated": false,
+    "head": "cap",
+    "size": "M3",
+    "n": 1,
+    "by": "name",
+    "under": {
+     "kind": "printed",
+     "name": "Demo pulley",
+     "part": "demo/pulley"
+    }
+   }
+  ],
+  "screws_cut": false,
+  "cap_max": 2.0
+ },
+ "params": {
+  "access.cap_max": 2.0,
+  "overhang.bridge_step": 0.3,
+  "overhang.max_angle": 45
+ },
+ "ctx": {
+  "part": "demo/bracket",
+  "census": {
+   "holes": [
+    {
+     "id": "h1",
+     "anchor": {
+      "kind": "insert_pocket",
+      "axis": [
+       0,
+       1,
+       0
+      ],
+      "point": [
+       -30.0,
+       53.2,
+       486.0
+      ]
+     },
+     "segments": [
+      {
+       "d": 7.5,
+       "len": 0.545
+      },
+      {
+       "d": 4.4,
+       "len": 1.5
+      },
+      {
+       "d": 3.6,
+       "len": 5.015
+      }
+     ],
+     "depth": 7.06,
+     "through": false,
+     "floor": 1.4,
+     "exit": null,
+     "class": {
+      "table": "inserts",
+      "kind": "M3x4x5",
+      "role": "insert_pocket",
+      "match": "exact"
+     },
+     "coaxial": [
+      {
+       "name": "Demo pulley",
+       "kind": "printed",
+       "part": "demo/pulley",
+       "span": [
+        0.0,
+        6.0
+       ]
+      },
+      {
+       "name": "Demo tongue",
+       "kind": "printed",
+       "part": "demo/tongue",
+       "span": [
+        -21.5,
+        -10.5
+       ]
+      },
+      {
+       "name": "ref pulley screws / M3x10 DIN 912 shank #4",
+       "kind": "hardware",
+       "part": null,
+       "span": [
+        -9.0,
+        5.0
+       ]
+      },
+      {
+       "name": "ref pulley screws / insert M3x4x5 #2",
+       "kind": "hardware",
+       "part": null,
+       "span": [
+        -4.0,
+        0.0
+       ]
+      }
+     ]
+    }
+   ],
+   "openings": [],
+   "partial": [],
+   "counts": {}
+  }
+ },
+ "expect": [
+  {
+   "verdict": "FAIL",
+   "measure": 1.4,
+   "limit": 2.0
+  }
+ ]
+}

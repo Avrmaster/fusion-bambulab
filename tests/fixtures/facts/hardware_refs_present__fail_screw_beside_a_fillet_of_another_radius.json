@@ -1,0 +1,85 @@
+{
+ "judge": "hardware_refs_present",
+ "case": "the same screw, but the partial cylinder on its axis is a D8 fillet (wider than its head): no hole of the screw, FAIL",
+ "facts": {
+  "fastener_holes": [],
+  "screws": [
+   {
+    "ref": "ref HW / M3x10 DIN 912 head (bar end)",
+    "size": "M3",
+    "thread_d": 3.0,
+    "length": 10.0,
+    "named_length": 10.0,
+    "named_size": "M3",
+    "head": "cap",
+    "head_h": 3.0,
+    "head_d": 5.5,
+    "anchor": {
+     "kind": "screw",
+     "axis": [
+      0,
+      0,
+      1
+     ],
+     "point": [
+      25.11,
+      14.5,
+      33.0
+     ]
+    },
+    "role": "head",
+    "under_head": 5.99,
+    "seat": {
+     "kind": "flat",
+     "share": 0.75,
+     "d": 5.5
+    },
+    "engagement": 4.0,
+    "into": {
+     "kind": "insert",
+     "name": "ref HW / insert M3x4x5"
+    },
+    "tip_room": 2.5,
+    "air_gap": 0.0,
+    "washer": null
+   }
+  ],
+  "washers": []
+ },
+ "params": {
+  "inserts.ref_pattern": "(?i)insert",
+  "screws.min_engagement": 3.2
+ },
+ "ctx": {
+  "census": {
+   "holes": [],
+   "openings": [],
+   "counts": {},
+   "partial": [
+    {
+     "anchor": {
+      "kind": "hole",
+      "axis": [
+       0,
+       0,
+       1
+      ],
+      "point": [
+       25.1,
+       14.5,
+       33.0
+      ]
+     },
+     "arc": 0.562,
+     "d": 8.0,
+     "len": 6.0
+    }
+   ]
+  }
+ },
+ "expect": [
+  {
+   "verdict": "FAIL"
+  }
+ ]
+}

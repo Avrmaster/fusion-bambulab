@@ -46,6 +46,16 @@
       "class": "limit",
       "formula": null,
       "description": "how far the axis of a fit hole (insert pocket, bought pocket, pin pocket, bearing seat) may be off the print axis"
+    },
+    "print.fit_ledge_max": {
+      "default": 1.0,
+      "unit": "mm",
+      "looser": "higher",
+      "measured_on": "decided, nobody measured it: the widest flat ring a ceiling inside a recess that opens on the bed face may hang out from its wall with nothing under it; the owner confirms the number",
+      "class": "limit",
+      "formula": null,
+      "tag": "D",
+      "description": "how wide a flat ring may be that a blind fit pocket opening on the bed face prints as a ceiling (the step from a wider to a narrower diameter, held at its outer edge only)"
     }
   },
   "rules": [
@@ -92,7 +102,7 @@
     {
       "id": "print.z_layers",
       "title": "A depth for a bought part is a whole number of layers",
-      "statement": "A depth along the print axis that a bought part must fit (a pocket depth) is a whole number of layers of {target.layer_height}, and its two faces lie where a layer ends: the first layer is {target.initial_layer_print_height} high, every later one {target.layer_height}, counted from the bed face of the part in its print orientation. Rounded down to whole layers it is still the height of the bought part plus {print.z_clearance}. A height within {print.z_layer_tol} of a layer counts as on it.",
+      "statement": "A depth along the print axis that a bought part must fit (a pocket depth) prints as deep as the part plus {print.z_clearance} and not more than one layer deeper. What prints is counted from the bed face of the part in its print orientation: the first layer is {target.initial_layer_print_height} high, every later one {target.layer_height}, and the slicer cuts each layer at its middle, so a layer is open where its middle lies inside the pocket. Where the part's place along the print axis is not known, the depth is a whole number of layers (within {print.z_layer_tol}), and rounded down to whole layers it still holds the part plus {print.z_clearance}. A height of a bought part that is still the registry's placeholder is measured first: nothing is judged against it.",
       "why": "A 1.7 mm pocket for a 1.59 mm magnet was printed in 0.3 mm layers. 1.7 is not a whole number of layers: it prints 1.5 or 1.8, and at 1.5 the magnet stands proud.",
       "params": [
         "target.layer_height",
@@ -195,10 +205,13 @@
     {
       "id": "print.fit_axis",
       "title": "Fit holes print upright and open upwards",
-      "statement": "Every hole a fit is cut for (an insert pocket, a pocket or pin pocket of a bought part, a bearing seat) prints with its axis within {print.fit_axis_deg} of the print axis, and a blind one opens upwards, away from the bed. The bed face is the one measured on the saved project, or the build table's until the part is placed.",
+      "statement": "Every hole a fit is cut for (an insert pocket, a pocket or pin pocket of a bought part, a bearing seat) prints with its axis within {print.fit_axis_deg} of the print axis. A blind one opens upwards, away from the bed, or opens in the bed face itself: then each step inside it from a wider to a narrower diameter is a ceiling ring held at its outer edge only and is at most {print.fit_ledge_max} wide, and its floor is a bridge of at most {overhang.max_bridge}. A blind fit hole that opens downwards out of a face above the bed (more than {print.z_layer_tol} above it) is never right: its floor prints as a bridge over air. The bed face is the one measured on the saved project, or the build table's until the part is placed.",
       "why": "The locating pegs of a small cradle lay horizontal over air, and a seat printed on its side sagged: the bearing did not go on. Insert pockets open on top faces.",
       "params": [
         "print.fit_axis_deg",
+        "print.fit_ledge_max",
+        "print.z_layer_tol",
+        "overhang.max_bridge",
         "sensors.magnet_pocket_d",
         "sensors.magnet_pocket_depth",
         "sensors.magnet_d6_pocket_d",
@@ -225,7 +238,8 @@
         "print.accurate_faces",
         "bearings.seat_prints_upward",
         "print.bed_face"
-      ]
+      ],
+      "note": "A pocket in the bed face prints its diameter in the plane it was measured in; its floor is a short bridge and may print up to one layer short, which matters for a magnet, a bearing seat or a blind pin pocket and is said in one INFO row per part."
     },
     {
       "id": "print.warp_flat_plates",

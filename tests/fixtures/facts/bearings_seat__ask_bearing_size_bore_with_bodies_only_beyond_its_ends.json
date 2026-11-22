@@ -1,0 +1,106 @@
+{
+ "judge": "bearings_seat",
+ "case": "a D14 x 10 through bore (the outer diameter of a 605) with a screw-in carrier and its magnet on its axis, both beyond its mouth in a socket: nothing in the bore, it is asked what it is, not \"rename the bearing ref\"",
+ "incident": "a key bore behind a threaded socket had the outer diameter of a 605 and was reported as a seat with an unrecognised bearing in it",
+ "facts": {
+  "bearings": [],
+  "seats_without_bearing": [
+   {
+    "hole": "h1",
+    "anchor": {
+     "kind": "hole",
+     "axis": [
+      0,
+      1,
+      0
+     ],
+     "point": [
+      0.0,
+      56.7,
+      124.0
+     ]
+    },
+    "d": 14.0,
+    "designation": "605",
+    "match": "exact",
+    "bodies": [
+     "ref sensors / magnet carrier M16x1.5 x 8.5, printed",
+     "ref sensors / magnet D6x2.5"
+    ]
+   }
+  ]
+ },
+ "params": {
+  "bearings.seat_d_tol": 0.3,
+  "bearings.seat_taper": 0.25,
+  "bearings.seat_taper_thick_base": 0.5,
+  "bearings.contact_gap_max": 0.05,
+  "bearings.seat_form": "any",
+  "bearings.seat_taper_tol": 0.05,
+  "bearings.seat_lead_in": 0.3
+ },
+ "ctx": {
+  "part": "demo/base",
+  "census": {
+   "holes": [
+    {
+     "id": "h1",
+     "anchor": {
+      "kind": "hole",
+      "axis": [
+       0,
+       1,
+       0
+      ],
+      "point": [
+       0.0,
+       56.7,
+       124.0
+      ]
+     },
+     "segments": [
+      {
+       "d": 14.0,
+       "len": 10.0
+      }
+     ],
+     "depth": 10.0,
+     "through": true,
+     "class": {
+      "table": "bearings",
+      "kind": "605",
+      "role": "bearing_seat",
+      "match": "exact"
+     },
+     "coaxial": [
+      {
+       "name": "ref sensors / magnet carrier M16x1.5 x 8.5, printed",
+       "kind": "bought",
+       "part": null,
+       "span": [
+        1.5,
+        10.0
+       ]
+      },
+      {
+       "name": "ref sensors / magnet D6x2.5",
+       "kind": "bought",
+       "part": null,
+       "span": [
+        7.39,
+        9.89
+       ]
+      }
+     ]
+    }
+   ],
+   "openings": [],
+   "counts": {}
+  }
+ },
+ "expect": [
+  {
+   "verdict": "INFO"
+  }
+ ]
+}

@@ -1,6 +1,6 @@
 {
  "judge": "access_key_swing",
- "case": "an STL ref beside the head is known by its box only, and an old hidden body lies in the swing: NOT_RUN per body, never a FAIL",
+ "case": "an STL ref beside the head is known by its box only, and an old hidden body lies in the swing: NOT_RUN per body, never a FAIL; and one NOT_RUN row for the two heads whose straight key path is known only that way",
  "facts": {
   "openings": [
    {
@@ -346,6 +346,9 @@
    "by": [
     "ref wrist stl"
    ]
+  },
+  {
+   "verdict": "NOT_RUN"
   }
  ]
 }

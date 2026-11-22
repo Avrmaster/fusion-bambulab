@@ -1,6 +1,6 @@
 {
  "judge": "print_z_layers",
- "case": "the depth is 6 whole layers, but the face the pocket opens in is 6.1 above the bed face: neither face of the pocket lies on a layer",
+ "case": "the incident placed: the same 1.7 deep pocket opening at 6.05 above the bed, its floor at 4.35: the layers whose middles lie in it are five, it prints 1.5 and the 1.6 magnet does not go in",
  "facts": {
   "holes": [
    {
@@ -15,16 +15,16 @@
      "point": [
       10.0,
       0.0,
-      6.1
+      6.05
      ]
     },
     "segments": [
      {
       "d": 4.2,
-      "len": 1.8
+      "len": 1.7
      }
     ],
-    "depth": 1.8,
+    "depth": 1.7,
     "through": false,
     "floor": 2.0,
     "exit": null,
@@ -72,8 +72,8 @@
  "expect": [
   {
    "verdict": "FAIL",
-   "measure": 6.1,
-   "limit": 6.0
+   "measure": 1.5,
+   "limit": 1.8
   }
  ]
 }

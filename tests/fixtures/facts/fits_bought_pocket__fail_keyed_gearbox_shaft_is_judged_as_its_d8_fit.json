@@ -1,0 +1,59 @@
+{
+ "judge": "fits_bought_pocket",
+ "case": "a blind D8 x 16 bore with \"bought gear motor / GM20 shaft D8h7 (key 3 x 3 x 14)\" on its axis: the shaft is D8, not D3 from its key; the bore is its press fit, never printed (FAIL), and no stock length is asked of a gearbox shaft",
+ "incident": "the D8h7 output shaft of a bought gearbox was read as a D3 x 14 pin from the size of its key, so its printed bore was called a passage and never judged",
+ "facts": {
+  "holes": [
+   {
+    "id": "h1",
+    "anchor": {
+     "kind": "hole",
+     "axis": [
+      1,
+      0,
+      0
+     ],
+     "point": [
+      40.0,
+      0.0,
+      10.0
+     ]
+    },
+    "segments": [
+     {
+      "d": 8.0,
+      "len": 16.0
+     }
+    ],
+    "depth": 16.0,
+    "through": false,
+    "floor": 3.0,
+    "exit": null,
+    "class": null,
+    "coaxial": [
+     {
+      "name": "bought gear motor (motor, gearbox) / GM20 shaft D8h7 (key 3 x 3 x 14)",
+      "kind": "bought",
+      "part": null
+     }
+    ],
+    "arc": 1.0
+   }
+  ],
+  "openings": [],
+  "counts": {}
+ },
+ "params": {
+  "fits.pin_slip_extra": 0.05,
+  "fits.pin_slip_extra#tag": "D",
+  "fits.pin_press_extra#tag": "D",
+  "fits.pin_running_extra#tag": "D",
+  "fits.pin_press_extra": 0.0,
+  "fits.pin_running_extra": 0.3
+ },
+ "expect": [
+  {
+   "verdict": "FAIL"
+  }
+ ]
+}

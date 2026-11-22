@@ -1,6 +1,6 @@
 {
  "judge": "walls_thin_faces",
- "case": "the bridge steps of a counterbore that opens on the bed face (strips 0.3 above its floor, then a 3.4 square) touch faces of a step that was cut 0.01 below the floor and look the other way: the steps are counted as steps, the faces of the cut stay one place and FAIL",
+ "case": "the bridge steps of a counterbore that opens on the bed face (strips 0.3 above its floor, then a 3.4 square) touch faces of a step that was cut 0.01 below the floor and look the other way: the steps are counted as steps, the faces of the cut stay one place and FAIL; the two 3.4 x 1.55 risers are no narrow faces by their true width (one INFO row)",
  "incident": "bridge steps were failed with the leftover faces that touched them",
  "facts": {
   "faces": [
@@ -880,6 +880,7 @@
  "params": {
   "walls.min_face_width": 1.2,
   "walls.strip_turn_max": 60.0,
+  "walls.artefact_width": 0.1,
   "overhang.bridge_step": 0.3
  },
  "ctx": {
@@ -1027,6 +1028,11 @@
    "verdict": "FAIL",
    "measure": 0.005,
    "limit": 1.2
+  },
+  {
+   "verdict": "INFO",
+   "measure": null,
+   "limit": null
   },
   {
    "verdict": "INFO",

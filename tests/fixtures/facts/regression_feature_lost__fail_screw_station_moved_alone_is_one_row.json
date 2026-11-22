@@ -1,0 +1,188 @@
+{
+ "judge": "regression_feature_lost",
+ "case": "a head bore and its clearance hole on one axis, split by bridge steps, and the window where the head bore leaves a 45 degree skirt, all moved 2 mm with no ref on the axis to say why: ONE row for the station, the window with it",
+ "incident": "a column of screw stations moved 2 mm across on purpose, with their screws, inserts and the mating part, was called gone, three rows per screw",
+ "facts": {
+  "holes": [
+   {
+    "id": "h1",
+    "anchor": {
+     "kind": "hole",
+     "axis": [
+      1,
+      0,
+      0
+     ],
+     "point": [
+      105.4,
+      35.0,
+      80.0
+     ]
+    },
+    "segments": [
+     {
+      "d": 3.4,
+      "len": 5.4
+     }
+    ],
+    "depth": 5.4,
+    "through": true,
+    "floor": null,
+    "exit": null,
+    "class": null,
+    "coaxial": []
+   },
+   {
+    "id": "h2",
+    "anchor": {
+     "kind": "hole",
+     "axis": [
+      1,
+      0,
+      0
+     ],
+     "point": [
+      114.25,
+      35.0,
+      80.0
+     ]
+    },
+    "segments": [
+     {
+      "d": 6.5,
+      "len": 8.55
+     }
+    ],
+    "depth": 8.55,
+    "through": true,
+    "floor": null,
+    "exit": null,
+    "class": null,
+    "coaxial": []
+   }
+  ],
+  "openings": [
+   {
+    "id": "o1",
+    "anchor": {
+     "kind": "face",
+     "axis": [
+      0.7071,
+      0.7071,
+      0
+     ],
+     "point": [
+      111.0,
+      35.0,
+      80.0
+     ]
+    },
+    "shape": "window",
+    "size": [
+     7.27,
+     7.12
+    ],
+    "through": true,
+    "depth": null,
+    "wall": 0.74
+   }
+  ],
+  "counts": {}
+ },
+ "ctx": {
+  "prev": {
+   "holes": [
+    {
+     "id": "h1",
+     "anchor": {
+      "kind": "hole",
+      "axis": [
+       1,
+       0,
+       0
+      ],
+      "point": [
+       105.4,
+       33,
+       80
+      ]
+     },
+     "segments": [
+      {
+       "d": 3.4,
+       "len": 5.4
+      }
+     ],
+     "depth": 5.4,
+     "through": true,
+     "floor": null,
+     "exit": null,
+     "class": null,
+     "coaxial": []
+    },
+    {
+     "id": "h2",
+     "anchor": {
+      "kind": "hole",
+      "axis": [
+       1,
+       0,
+       0
+      ],
+      "point": [
+       114.25,
+       33,
+       80
+      ]
+     },
+     "segments": [
+      {
+       "d": 6.5,
+       "len": 8.55
+      }
+     ],
+     "depth": 8.55,
+     "through": true,
+     "floor": null,
+     "exit": null,
+     "class": null,
+     "coaxial": []
+    }
+   ],
+   "openings": [
+    {
+     "id": "o1",
+     "anchor": {
+      "kind": "face",
+      "axis": [
+       0.7071,
+       0.7071,
+       0
+      ],
+      "point": [
+       111.0,
+       33.0,
+       80.0
+      ]
+     },
+     "shape": "window",
+     "size": [
+      7.27,
+      7.12
+     ],
+     "through": true,
+     "depth": null,
+     "wall": 1.01
+    }
+   ],
+   "counts": {}
+  },
+  "mates": {},
+  "matrix": null
+ },
+ "expect": [
+  {
+   "verdict": "FAIL"
+  }
+ ]
+}

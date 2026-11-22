@@ -1,0 +1,55 @@
+{
+ "judge": "washers_proud",
+ "case": "facts of 0.3.1: no solid near the washer, a mesh 0.1 mm away by its box: NOT_RUN",
+ "facts": {
+  "screws": [],
+  "washers": [
+   {
+    "id": "w1",
+    "ref": "ref washer M3 DIN 125",
+    "od": 7.0,
+    "id_d": 3.2,
+    "t": 0.5,
+    "anchor": {
+     "kind": "face",
+     "axis": [
+      0,
+      0,
+      1
+     ],
+     "point": [
+      10.0,
+      0.0,
+      6.0
+     ]
+    },
+    "landing": {
+     "share": 1.0,
+     "gap": 0.0,
+     "on": "demo/bracket",
+     "spot_face_d": null
+    },
+    "proud": {
+     "height": 4.5,
+     "nearest": null,
+     "mesh_near": [
+      {
+       "name": "ref motor (STL)",
+       "box_gap": 0.1
+      }
+     ]
+    },
+    "screw": "ref HW / M3x12 DIN 912 (1)"
+   }
+  ]
+ },
+ "params": {
+  "washers.gap_to_neighbour": 0.5,
+  "access.overlay_pattern": null
+ },
+ "expect": [
+  {
+   "verdict": "NOT_RUN"
+  }
+ ]
+}

@@ -281,14 +281,17 @@ def _opn_within(path):
 
 def _opn_blocks(hits):
     """What blocks one swing direction, for the judge to sort as it sorts every path (access.screw_path): each body
-    once, nearest hit first, [{"name", "kind", "at", "share", "approx", "part"}]. "approx" is true for a mesh, a box and
-    a body sampled with points: such a hit proves nothing."""
+    once, nearest hit first, [{"name", "kind", "at", "share", "approx", "part", "in"}]. "approx" is true for a mesh, a
+    box and a body sampled with points: such a hit proves nothing. "in" (when the hit has it: the assembly path of a
+    body inside a bought assembly) travels along, so the judge names "Gearbox / Motor / Rotor", not "Rotor"."""
     rows = {}
     for h in sorted(hits, key=lambda h: h.get('at') or 0.0):
         if h['name'] in rows:
             continue
         rows[h['name']] = {'name': h['name'], 'kind': h.get('kind'), 'at': h.get('at'), 'share': h.get('share'), 'part': h.get('part'),
                            'approx': bool(h.get('approx') or h.get('by_box') or h.get('by_points') or h.get('kind') == 'mesh')}
+        if h.get('in'):
+            rows[h['name']]['in'] = h['in']
     return sorted(rows.values(), key=lambda r: (r['at'] if isinstance(r['at'], (int, float)) else 0.0, r['name']))
 
 

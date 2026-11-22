@@ -29,6 +29,14 @@ def template(path):
     return path
 
 
+def no_tmp(out):
+    """The output with the temporary folder taken out of the paths it prints: a TMPDIR whose name holds "gate" (a
+    scratch folder of a gate task) must not read as a line of the gate."""
+    for t in sorted({tempfile.gettempdir(), os.path.realpath(tempfile.gettempdir())}, key=len, reverse=True):
+        out = out.replace(t, '<tmp>').replace(t.lower(), '<tmp>')
+    return out
+
+
 def quiet(fn, *a, **kw):
     """Run fn and return (its result, what it printed)."""
     out = io.StringIO()
@@ -101,7 +109,7 @@ class NoGate(unittest.TestCase):
                 mock.patch.object(gate_guard, 'check', side_effect=AssertionError('must not run')):
             _, out = quiet(lambda: (bambu3mf.new_project(tpl, proj), bambu3mf.build(proj, os.path.join(d, 'stl'), PLATES[:1])))
             self.assertIsNone(bambu3mf._before_save(proj, {}))
-        self.assertNotIn('gate', out.lower()); self.assertNotIn('ledger', out.lower())
+        self.assertNotIn('gate', no_tmp(out).lower()); self.assertNotIn('ledger', no_tmp(out).lower())
         self.assertEqual(sorted(os.listdir(d)), ['bambulab', 'stl', 't.3mf']); self.assertEqual(os.listdir(os.path.dirname(proj)), ['p.3mf'])
         self.assertEqual(gate_guard.check(proj, []), {'gated': False})
         self.assertEqual(bambu3mf.record_writes(proj, []), [])
@@ -113,7 +121,7 @@ class Observe(Guarded):
     def test_unstamped_meshes_are_logged_one_line_each_and_the_save_goes_on(self):
         out = self.build()
         self.assertEqual(self.objects(), ['bracket', 'cover'])
-        lines = [l for l in out.splitlines() if 'gate' in l]
+        lines = [l for l in no_tmp(out).splitlines() if 'gate' in l]
         self.assertEqual(len(lines), 2, out)                                # one summary line for the whole build, and the line of what has no stamp
         self.assertRegex(lines[0], r'^gate guard \[observe\] bambulab/Demo.3mf: 2 mesh\(es\), 2 new, 2 without a stamp \(bracket, cover\) - written anyway')
         self.assertEqual(lines[1], gate_guard.unchecked_line('bambulab/Demo.3mf', ['bracket', 'cover']))
@@ -134,7 +142,7 @@ class Observe(Guarded):
         self.ledger(); self.stamp_both(); self.build(); before = self.log()
         hit, out = quiet(bambu3mf.set_settings, self.proj, 'bracket', [('brim_type', 'no_brim')])
         self.assertEqual((hit, out), (['bracket'], '')); self.assertEqual(self.log(), before)
-        self.assertNotIn('gate', self.build())                              # the same stamped STLs again, template first: all carried
+        self.assertNotIn('gate', no_tmp(self.build()))                      # the same stamped STLs again, template first: all carried
         self.assertEqual(self.log(), before)
 
     def test_what_has_no_stamp_is_said_at_every_save_and_an_observe_write_is_never_carried(self):

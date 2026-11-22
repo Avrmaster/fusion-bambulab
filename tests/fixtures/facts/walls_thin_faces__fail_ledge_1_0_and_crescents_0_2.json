@@ -41,7 +41,7 @@
   "seam_edges": 0,
   "sides_unread": 3
  },
- "params": {"walls.min_face_width": 1.2},
+ "params": {"walls.min_face_width": 1.2, "walls.artefact_width": 0.1},
  "expect": [
   {"verdict": "FAIL", "measure": 1.0, "limit": 1.2},
   {"verdict": "FAIL", "measure": 0.2},

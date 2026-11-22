@@ -2,6 +2,63 @@
 
 What each version of the plugin changes. Skills update with the plugin; the tools copied into a project do not. Read the section of a version before you refresh a project with `python3 <plugin>/tools/setup_project.py <dir> --update-tools`, and review `git diff` afterwards.
 
+## 0.3.1
+
+False classes found in the first full run of 0.3.0 on a real project, closed. Each change keeps the real case of its rule failing, and each has a fixture for the false case and one for the real case. Some fixes are in the probes and only take effect when the part is measured again in Fusion: they are marked **re-measure**. Until then the judges read the stored facts as described.
+
+### Fixed: walls.thin_faces
+
+- **Rings cut a few hundredths off centre.** An annular face (a relief floor, a lead-in shoulder, a step on a post) whose two circles lie 0.002 to 0.03 mm apart, from a cut placed on a rounded centre, was a "strip" because the probe skipped only rings whose circles were 0.001 mm apart. The probe now skips a ring whose circles are at most 0.05 mm and a quarter of its width apart, and lists a ring further off centre as shape `"ring"` with `"ecc"` and its narrowest side as its width (**re-measure**: `fusion_thin`). On stored facts the judge tells such a ring from its two full-circle sides, its area, and a census hole on its axis, and estimates the offset from the centroid; a ring that is really off centre still fails.
+- **Modelling artefacts.** A place whose narrow faces are all narrower than the new parameter `walls.artefact_width` (0.1 mm, tag D, the owner confirms it), none of them the land of a rib and none touching a wider narrow face (bridge steps included), is one INFO row per part with the places listed, not one FAIL each.
+- **Four-sided bands.** A face with four sides, the long ones equal within 5 % and the short ones within 1 %, is judged by area / long side, not by 2 x area / perimeter: a 45 degree bevel 1.202 wide no longer reads 1.18, the 1.5 x 1.2 wall of a slot no longer reads 0.67. A face that tapers is judged as before.
+
+### Fixed: holes the census splits
+
+- `probes/_geom.py` `stack_holes`: axes within 0.05 mm (was 0.02) are one stack, so a relief or a deepening cut 0.03 mm off a pocket's axis is one hole with it (**re-measure**: `fusion_census`).
+- On stored facts the judges join the two shapes such a split leaves (`_joined_holes`): a stub of the same diameter that continues the far end of a through hole and opens into it, and a short wider step of a relief diameter in front of an insert pocket's mouth. `inserts.pocket_shape`, `inserts.mouth_reachable`, `inserts.relief_missing`, `fits.bought_part_pocket` and `census.unknown_hole` read the joined hole: no "0.64 short" pocket, no iron path that starts at the relief floor and hits the relief wall, no "what goes in" for the pieces. Two holes that each open on a face of their own are never joined. An insert-band hole that opens into another hole on its axis and is not joined is NOT_RUN ("stack not followed"), not a pocket judgement.
+
+### Fixed: fits and print
+
+- `fits.bought_part_pocket`: the size of a pin is read from its own name without what stands in parentheses, from an explicit `D8`, `D8h7` or `5m6` first, and never from the size of a key (`shaft D8h7 (key 3 x 3 x 14)` is D8, not D3 x 14). A bearing whose note names a shaft is no pin. The output shaft of a bought assembly is judged by its diameter fit only, with no stock-length question.
+- `print.fit_axis`: a blind fit pocket whose mouth lies on the bed face is no "opens towards the bed": its ceilings are judged instead. A step from a wider to a narrower diameter that is a ring held at its outer edge only fails when it is wider than the new parameter `print.fit_ledge_max` (1.0 mm, tag D; a melt relief's own step is the insert table's), its floor when it is longer than `overhang.max_bridge`; the rest is one INFO row that says a magnet, bearing or pin floor may print up to one layer short. A pocket opening downwards above the bed still fails.
+- `print.z_layers`: where the pocket lies on the bed is known, what prints decides (the layers whose middles lie in it): too shallow for the part, or more than one layer deeper, fails; the whole-layer test is kept for a pocket whose place is not known. A part height that is still a registry placeholder is NOT_RUN ("measure the part in hand"), never a FAIL. `gate_params.values()` hands such a parameter over as `name#placeholder`.
+
+### Fixed: regression.feature_lost
+
+- A hole that is the same void on the same line, named from its other mouth or held as several stacks, is one INFO row, judged by its diameter profile along the old hole (a filled head bore, a narrowed seat or a closed stretch still fails, as "changed: old -> new", never "gone"). Blind to through is INFO for a plain hole and asked for an insert pocket.
+- A hole that moved across its axis (up to 3 mm, same segments, only a relief diameter may change) with every ref on its axis and every mating printed part moving its own hole along is one INFO row. `judge_part` hands the judge the hole lines of those mating parts (`ctx["mates"]`). A mating part that did not follow, or nothing on the axis to say why, is "moved X mm, now at P", asked.
+- The rows of one screw station (a head bore and its clearance hole split by bridge steps) are one row, and an opening the hole's line crosses goes with it: silently when it moved by the same vector and kept its size (its wall change is said), else in the text of the hole's row.
+
+### Fixed: screws and washers
+
+- `hardware.refs_present`: a screw that stands in a hole the census lists under "partial" (broken open, a clearance or head diameter, at least half a circle, over the shank) has its hole.
+- A board, magnet, sensor or bearing is never a screw by the name of its component (`fusion_screws`, **re-measure**); a body whose circles lie on several axes alike is no turned part and is never joined to a screw. On stored facts such a screw row is left out of the screw judges and `hardware.recognised` gives one NOT_RUN: a screw may be hidden in it.
+- `screws.family_lengths`: a head that bears nowhere on this part and whose washer lies on another printed part is judged on that part only. The probe counts plastic under a washer only where that washer lands when it lies on another printed part (**re-measure**).
+- `screws.head_seat_full_ring`: a head in a U-slot (air in one half-strip from the axis no wider than the clearance + 0.2, plastic on both flanks, each at least `washers.slot_land_min`) is a full seat. The probe now stores where its seat samples lie on material, with a ring just inside the head's edge (**re-measure**; stored facts fail as before).
+- `washers.proud`: a mesh never sets the nearest neighbour; meshes are listed in `mesh_near` by their boxes, a washer of the same screw stack is not a neighbour, and a body of `access.overlay_pattern` is skipped (**re-measure**). A gap known only by a box, or a nearest body that is an overlay, is one NOT_RUN per part, never a FAIL.
+- `washers.landing`: the lap a clamp washer needs is no more than the face its ring offers ((D - Da_max) / 2 outer, (da_min - d) / 2 inner, from the bearings table, with the seat from the census), judged within `bearings.contact_gap_max`. The probe also measures the lap along the bearing's own radial line (**re-measure**).
+
+### Fixed: bearings
+
+- `_geom_rings.seat_scan` probes the material side near the nominal radius first, so a sleeve 0.5 thick round a pin is the seat, not the pin inside it (**re-measure**: `fusion_bearings`).
+- `bearings.seat`: a seat that is a taper nominal within `bearings.seat_taper_tol` where it grips gives no off-nominal INFO; a seat of bearing size with bought bodies only beyond its ends is asked what it is (INFO), not NOT_RUN "rename the bearing".
+
+### Fixed: access
+
+- `access.key_swing`: heads whose straight path only other measured bodies block are one INFO row (access.screw_path asks those covers); heads whose straight path is known only as a mesh are one NOT_RUN row, never pooled into the assembly question; a hidden printed part of the census is a measured body. `fusion_openings` keeps the assembly path of a swing block ("in").
+- `access.hole_covered`: a bore that is a piece of the key channel of a head behind it on its axis (the head's straight path followed through it, no wall of the part between) is left to access.screw_path.
+- `access.mouth_sealed`: the end of a bore that holds the head of a screw already seated in it is left to access.screw_path; the other end is judged as before.
+- `access.hole_closed`: the floor of an insert pocket whose own screw comes in at the mouth and ends inside it is closed by design, whatever lies behind it on the axis (one INFO row).
+
+### Tests
+
+- `tests/test_guard.py` takes the temporary folder out of the printed paths before it looks for the word "gate": a TMPDIR whose name holds it failed three tests.
+- `tests/test_fit_settings.py` follows the printed-depth rule of print.z_layers.
+
+### Re-measure after updating the tools
+
+`fusion_thin` (every part), `fusion_census` (every part: the stack tolerance), `fusion_screws` (every part with screws, washers or a board near it), `fusion_bearings` (parts with a thin sleeve on a pin), `fusion_openings` (parts with heads beside bought assemblies). The next `gate.py run --changed` measures them again, because the probe texts changed.
+
 ## 0.3.0
 
 The checks no longer depend on an agent remembering the project's instructions: hooks mark every change made in Fusion and hold the end of the turn until the changed parts are checked, the gate's own state can no longer be written by a tool call, an owner decision needs the owner's own words and a one-time ticket, and the .3mf writer gives no amnesty in enforce mode to what lies in the file.

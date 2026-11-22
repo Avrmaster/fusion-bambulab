@@ -1,0 +1,103 @@
+{
+ "judge": "screws_family_lengths",
+ "case": "a M3x18 whose washer lands on the cap (another printed part) and whose head bears nowhere on this part (seat share 0): the screw is judged on the cap, not again here",
+ "incident": "the head of a clamp screw was counted on the part 1.05 mm under its washer too, so its stock length was asked twice",
+ "facts": {
+  "screws": [
+   {
+    "ref": "ref clamp / screw M3x18 DIN 912 (clamp)",
+    "size": "M3",
+    "length": 18.0,
+    "named_length": 18.0,
+    "named_size": "M3",
+    "head": "cap",
+    "head_h": 3.0,
+    "head_d": 5.5,
+    "anchor": {
+     "kind": "screw",
+     "axis": [
+      0,
+      0,
+      1
+     ],
+     "point": [
+      0,
+      6,
+      22.9
+     ]
+    },
+    "role": "head",
+    "under_head": 4.0,
+    "seat": {
+     "kind": "flat",
+     "d": 5.5,
+     "recess": 0.0,
+     "share": 0.0
+    },
+    "engagement": 4.0,
+    "into": null,
+    "tip_room": 1.0,
+    "air_gap": 0.0,
+    "washer": "w1"
+   }
+  ],
+  "washers": [
+   {
+    "id": "w1",
+    "ref": "ref clamp / washer M3 DIN 125",
+    "screw": "ref clamp / screw M3x18 DIN 912 (clamp)",
+    "anchor": {
+     "kind": "washer",
+     "axis": [
+      0,
+      0,
+      1
+     ],
+     "point": [
+      0,
+      6,
+      22.4
+     ]
+    },
+    "landing": {
+     "on": "demo/cap",
+     "covers": [
+      {
+       "kind": "printed",
+       "part": "demo/cap",
+       "share": 0.507,
+       "gap": 0.0
+      },
+      {
+       "kind": "printed",
+       "part": "demo/bracket",
+       "share": 0.0,
+       "gap": 1.05
+      }
+     ]
+    }
+   }
+  ]
+ },
+ "params": {
+  "screws.family": "hex socket: cap DIN 912, button ISO 7380, set screws DIN 916",
+  "screws.wood_pattern": "(?i)wood|chipboard|self[- ]?tapping|tapping screw|spax"
+ },
+ "tables": {
+  "screws": {
+   "stock_lengths": {
+    "M3": [
+     6,
+     8,
+     10,
+     12,
+     14,
+     16,
+     20,
+     25
+    ]
+   }
+  }
+ },
+ "expect": []
+}

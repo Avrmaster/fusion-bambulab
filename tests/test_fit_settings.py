@@ -683,12 +683,17 @@ class Pocket(Settings):
         self.assertIn('no registered .3mf project names a build table', self.frame()['why'])
 
     def test_the_incident_pocket_fails_both_rules(self):
+        self.facts(dict(POCKET, anchor={'kind': 'hole', 'axis': [1.0, 0.0, 0.0], 'point': [42.1, 6.0, 3.0]}))    # 1.7 deep from 42.1: the layers whose middles lie in it give 1.5
         fit, layers = self.judged()
         self.assertEqual([(f['verdict'], f['measure'], f['by']) for f in fit], [('FAIL', None, ['sensors.magnet_pocket_d', 'sensors.magnet_pocket_depth'])])
         self.assertIn('sensors.magnet_pocket_d = 4.2 (tag D)', fit[0]['text'])
         self.assertIn('a disc magnet', fit[0]['text']); self.assertIn('Print the coupon first', fit[0]['text']); self.assertIn('coupon', fit[0]['fix'][0])
-        self.assertEqual([(f['verdict'], f['measure'], f['limit']) for f in layers], [('FAIL', 1.7, 1.8)])
-        self.assertIn('not a whole number of 0.3 layers. It prints 1.5 or 1.8; the part is 1.6 high and needs 1.7', layers[0]['text'])
+        self.assertEqual([(f['verdict'], f['measure'], f['limit']) for f in layers], [('FAIL', 1.5, 1.8)])
+        self.assertIn('is 1.7 deep and prints 1.5 deep in 0.3 layers (first 0.3), from 40.4 to 42.1 above the bed: the part is 1.6 high and needs 1.7', layers[0]['text'])
+        self.facts(POCKET)                                                                          # the same 1.7 from 42.0 prints 1.8 and holds the magnet
+        self.assertEqual(self.judged()[1], [])
+        self.facts(dict(POCKET, anchor={'kind': 'hole', 'axis': [1.0, 0.0, 0.0], 'point': [42.1, 6.0, 3.0]}))
+        self.judged()
         v = gate_plan.part_verdict(self.d, self.reg, LEVER)
         self.assertEqual(v['verdict'], 'fail'); self.assertEqual({'fits.bought_part_pocket', 'print.z_layers'} - {f['rule'] for f in v['open']}, set())
 
@@ -700,22 +705,25 @@ class Pocket(Settings):
         fit, layers = self.judged(printed, dict(FULL, xy_hole_compensation=0.0))                    # the owner changes the declared target: that fit is open again
         self.assertEqual(([(f['verdict'], f['by']) for f in fit], layers), ([('FAIL', ['sensors.magnet_pocket_d'])], []))
         self.facts(dict(POCKET, segments=[{'d': 4.2, 'len': 1.8}], depth=1.8, anchor={'kind': 'hole', 'axis': [1.0, 0.0, 0.0], 'point': [41.9, 6.0, 3.0]}))
-        fit, layers = self.judged(printed)                                                          # whole layers deep, but opening between two layers
-        self.assertEqual([(f['verdict'], f['measure'], f['limit']) for f in layers], [('FAIL', 41.9, 42.0)])
+        fit, layers = self.judged(printed)                                                          # whole layers deep, opening between two layers: it still prints 1.8
+        self.assertEqual(layers, [])
 
     def test_the_layers_are_counted_from_the_first_layer(self):
         printed = {'sensors.magnet_d_extra': {'value': 0.2, 'tag': 'U', 'source': 'owner, in chat', 'date': '2026-03-06'},
                    'sensors.magnet_depth_extra': {'value': 0.1, 'tag': 'U', 'source': 'owner, in chat', 'date': '2026-03-06'}}
         first = dict(FULL, initial_layer_print_height=0.2)                                          # 0.2, 0.5, 0.8, ...: the 42.0 top face is between 41.9 and 42.2
         self.facts(dict(POCKET, segments=[{'d': 4.2, 'len': 1.8}], depth=1.8))
-        fit, layers = self.judged(printed, first)
-        self.assertEqual([(f['verdict'], f['measure'], f['limit']) for f in layers], [('FAIL', 42.0, 41.9)])
-        self.assertIn('opens 42 above the bed face: not where a layer ends (first layer 0.2, then 0.3 each)', layers[0]['text'])
+        fit, layers = self.judged(printed, first)                                                   # the top face prints at 41.9, the floor at 40.1: 1.8 still
+        self.assertEqual(layers, [])
+        self.facts(dict(POCKET, segments=[{'d': 4.2, 'len': 1.5}], depth=1.5))
+        layers = self.judged(printed, first)[1]                                                     # 1.5 from 42.0: 40.4 .. 41.9 open, 1.5: under the magnet
+        self.assertEqual([(f['verdict'], f['measure']) for f in layers], [('FAIL', 1.5)])
+        self.assertIn('(first 0.2)', layers[0]['text'])
         self.facts(dict(POCKET, segments=[{'d': 4.2, 'len': 1.8}], depth=1.8, anchor={'kind': 'hole', 'axis': [1.0, 0.0, 0.0], 'point': [41.9, 6.0, 3.0]}))
         self.assertEqual(self.judged(printed, first)[1], [])                                        # 41.9 and 40.1 both end a layer
         self.facts(dict(POCKET, segments=[{'d': 4.2, 'len': 1.7}], depth=1.7, anchor={'kind': 'hole', 'axis': [-1.0, 0.0, 0.0], 'point': [0.0, 6.0, 3.0]}))
         self.assertEqual(self.judged(printed, first)[1], [])                                        # in the bed face: 1.7 is the first layer plus five layers
-        self.assertEqual([(f['verdict'], f['measure'], f['limit']) for f in self.judged(printed)[1]], [('FAIL', 1.7, 1.8)])       # with a 0.3 first layer it is not
+        self.assertEqual(self.judged(printed)[1], [])                                               # with a 0.3 first layer it prints 1.8: the magnet fits too
 
     def test_an_unknown_bed_face_or_layer_height_is_not_a_pass(self):
         self.table(None, 'PLATES = make_plates()\n')

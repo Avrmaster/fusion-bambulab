@@ -22,18 +22,32 @@ The count of edges that do not join exactly two faces is split: an edge with ONE
 face meets itself, a clean solid has such edges), an edge with more than two is where two volumes touch on an edge."""
 
 
-def _thn_annulus(face):
+_THN_ECC_MM = 0.05        # the circles of one ring may lie this far apart (and a quarter of its width): a cut placed on a rounded centre
+
+
+def _thn_ring(face):
+    """(offset of the two centres, outer radius, inner radius), all in mm, of a planar face bounded by exactly two
+    loops of one full circle each, else None."""
     if face.loops.count != 2:
-        return False
+        return None
     c = []
     for lp in face.loops:
         if lp.edges.count != 1:
-            return False
+            return None
         g = lp.edges.item(0).geometry
         if gate_geo(g) != 'Circle3D':
-            return False
-        c.append(g.center)
-    return c[0].distanceTo(c[1]) < 1e-4
+            return None
+        c.append((g.center, g.radius * 10.0))
+    (c0, r0), (c1, r1) = c
+    return c0.distanceTo(c1) * 10.0, max(r0, r1), min(r0, r1)
+
+
+def _thn_annulus(face):
+    """Is the face an annulus (a lead-in, a counterbore floor): two full circles whose centres lie at most _THN_ECC_MM
+    apart and at most a quarter of the ring's width. A cut placed at a centre rounded to 0.01 mm leaves circles 0.002 to
+    0.03 mm apart; nothing of that prints. A ring further off centre is a crescent at its narrow side: listed as "ring"."""
+    ring = _thn_ring(face)
+    return ring is not None and ring[0] <= min(_THN_ECC_MM, 0.25 * (ring[1] - ring[2])) + 1e-9
 
 
 def _thn_disc(face):
@@ -94,13 +108,16 @@ def probe(job):
 
     Returns {"facts": {...}, "done": bool, "cursor", "sig": gate_signature(body)} with facts
       "faces": [{"anchor": {"kind": "face", "axis": outward normal, "point": centroid}, "width": 0.3, "area": 1.2 (mm2),
-                 "shape": "strip" | "annulus" | "disc",
+                 "shape": "strip" | "disc" | "ring",
+                 "ecc": 0.3                 only for "ring": mm between the centres of its two circles; its "width" is then
+                                            the narrowest side, R - r - ecc
                  "id": 4711                 the face's id inside this body (tempId): only to tie rows of these facts together
                  "sides": [[6.0, 90.0, 4712], [6.0, -90.0, 4698], ...]}]       _thn_sides: length, turn, neighbour id
       "width_cap": 2.0, "lumps": 1, "shells": 1
 
-    As in thin(): an annular face is never listed, a disc only under 0.9 mm radius (shape "disc"); every other thin
-    planar face is a "strip". Without args.width_cap the cap is 2.0, or 1.5 x walls.min_face_width when that is more.
+    As in thin(): an annular face is never listed (_thn_annulus: its circles at most 0.05 mm and a quarter of its width
+    apart), a disc only under 0.9 mm radius (shape "disc"); a face of two full circles further apart is a "ring"; every
+    other thin planar face is a "strip". Without args.width_cap the cap is 2.0, or 1.5 x walls.min_face_width when that is more.
     "id" and "sides" are left out for a face where Fusion does not answer one of the calls behind them; "sides_unread"
     counts those faces.
     More than the contract lists: "n_faces" (faces of the body) and, on the last call only, "non_manifold_edges" (edges
@@ -133,6 +150,7 @@ def probe(job):
         f = faces.item(i)
         if gate_geo(f.geometry) != 'Plane' or _thn_annulus(f):
             continue
+        ring = _thn_ring(f)                             # two circles further apart than a rounding: judged at the narrow side
         disc = _thn_disc(f)
         if disc is not None and disc >= 0.9:
             continue
@@ -145,6 +163,8 @@ def probe(job):
         if per <= 0:
             continue
         width = 2.0 * f.area / per * 10.0
+        if ring is not None:
+            width = max(0.0, ring[1] - ring[2] - ring[0])   # the mean width of a ring does not change with its offset; its narrowest side does
         if width > cap:
             continue
         ok, nv = f.evaluator.getNormalAtPoint(f.pointOnFace)
@@ -156,7 +176,9 @@ def probe(job):
             c = f.pointOnFace
         normal = v_unit((nv.x, nv.y, nv.z))
         row = {'anchor': {'kind': 'face', 'axis': [round(x, 4) for x in normal], 'point': [round(x, 2) for x in gate_mm(c)]},
-               'width': round(width, 3), 'area': round(f.area * 100.0, 2), 'shape': 'disc' if disc is not None else 'strip'}
+               'width': round(width, 3), 'area': round(f.area * 100.0, 2), 'shape': 'disc' if disc is not None else 'ring' if ring is not None else 'strip'}
+        if ring is not None:
+            row['ecc'] = round(ring[0], 4)
         try:
             fid = f.tempId
             row['sides'] = _thn_sides(body, fid, normal, edges)

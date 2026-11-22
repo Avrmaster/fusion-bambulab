@@ -7,6 +7,6 @@
   "lumps": 1,
   "shells": 1
  },
- "params": {"walls.min_face_width": 1.2},
+ "params": {"walls.min_face_width": 1.2, "walls.artefact_width": 0.1},
  "expect": []
 }

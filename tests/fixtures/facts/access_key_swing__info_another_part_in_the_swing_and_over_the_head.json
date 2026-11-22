@@ -1,6 +1,6 @@
 {
  "judge": "access_key_swing",
- "case": "another printed part stands beside two heads in the swing and over them in the straight path: whether it is in the way depends on the assembly order, so ONE assembly.order question for the part, not a FAIL per head",
+ "case": "another printed part stands beside two heads in the swing and over them in the straight path: access.screw_path asks whether it is mounted later; once it is off a straight key reaches the heads, so this rule adds no second question: one INFO row for the part",
  "incident": "a key swing check gave one FAIL per head for a cover that the screw path rule rightly asked about once",
  "facts": {
   "openings": [
@@ -337,8 +337,7 @@
  },
  "expect": [
   {
-   "verdict": "FAIL",
-   "ask": "assembly.order",
+   "verdict": "INFO",
    "by": [
     "Cover"
    ]

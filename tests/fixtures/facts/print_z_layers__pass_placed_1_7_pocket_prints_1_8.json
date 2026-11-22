@@ -1,6 +1,6 @@
 {
  "judge": "print_z_layers",
- "case": "first layer 0.2, then 0.3: a top face at 4.8 is 16 whole layers of 0.3 and still lies between two printed layers (4.7 and 5.0)",
+ "case": "the same 1.7 deep pocket opening at 6.0, on a layer: it prints 1.8, the magnet fits; what prints decides, not whether the model is whole layers",
  "facts": {
   "holes": [
    {
@@ -15,35 +15,7 @@
      "point": [
       10.0,
       0.0,
-      4.8
-     ]
-    },
-    "segments": [
-     {
-      "d": 4.2,
-      "len": 1.8
-     }
-    ],
-    "depth": 1.8,
-    "through": false,
-    "floor": 2.0,
-    "exit": null,
-    "class": null,
-    "coaxial": []
-   },
-   {
-    "id": "h2",
-    "anchor": {
-     "kind": "hole",
-     "axis": [
-      -1,
-      0,
-      0
-     ],
-     "point": [
-      0.0,
-      5.0,
-      3.0
+      6.0
      ]
     },
     "segments": [
@@ -71,7 +43,7 @@
   "target.layer_height": 0.3,
   "print.z_clearance": 0.1,
   "print.z_layer_tol": 0.02,
-  "target.initial_layer_print_height": 0.2
+  "target.initial_layer_print_height": 0.3
  },
  "ctx": {
   "part": "demo/lever",
@@ -80,7 +52,7 @@
    "line_width": 0.45,
    "material": "PETG",
    "layer_height": 0.3,
-   "initial_layer_print_height": 0.2,
+   "initial_layer_print_height": 0.3,
    "xy_hole_compensation": 0.125,
    "xy_contour_compensation": 0.0,
    "elefant_foot_compensation": 0.15,
@@ -97,11 +69,5 @@
    "why": null
   }
  },
- "expect": [
-  {
-   "verdict": "FAIL",
-   "measure": 4.8,
-   "limit": 4.7
-  }
- ]
+ "expect": []
 }
