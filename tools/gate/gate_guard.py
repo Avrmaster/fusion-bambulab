@@ -294,7 +294,11 @@ def _judge_mesh(root, mesh, model, ctx):
         state, why, name = gate_coupons.holds(root, model, ctx.get('target'))
         if state != 'none':
             return state, why, None, name
-        return 'none', 'no stamp for the geometry of %s: export the part through the gate (gate.py export)' % _shown(root, stl), None, None
+        shown = _shown(root, stl)
+        if str(shown).replace(os.sep, '/').startswith('gate/proposals/coupons/'):
+            return 'none', ('no coupon stamp holds the geometry of %s (a coupon no `gate.py coupons` has on record): take it off the plate, '
+                            'or make the coupons again (gate.py coupons --for KEY) and place the new STL' % shown), None, None
+        return 'none', 'no stamp for the geometry of %s: export the part through the gate (gate.py export)' % shown, None, None
     base = os.path.basename(stl)
     cands.sort(key=lambda s: os.path.basename(str(s.get('stl') or '')) != base)     # identical bodies: the one of this file first
     if 'reg' not in ctx:
@@ -571,6 +575,8 @@ def _check(root, path, meshes, files=None, asked=None, via=None):
         from probes import project_bed
         with (project_bed.pending(path, files, entry.get('key') if entry else None) if isinstance(files, dict) else _nothing()):
             res = _check_meshes(root, path, meshes, project, layout, entry, res, prel, via)
+            if isinstance(files, dict) and (entry is not None or mode == 'enforce'):
+                _not_rigid_line(root, files, mode, res, prel)
             # an unregistered file or one outside the tree is judged like a registered project in enforce mode (no declared
             # target, no slice record of its own): the overhang pre-check runs on it all the same
             used = entry if entry is not None else ({} if mode == 'enforce' else None)
@@ -596,6 +602,45 @@ class _nothing(object):
 
     def __exit__(self, *exc):
         return False
+
+
+def not_rigid(files):
+    """[(object name, why)] of the printable objects of an archive whose build item does not only turn and move them:
+    scaled, sheared or mirrored (probes.project_bed.is_rotation). A stamp holds the geometry of its STL; such an object
+    prints at another size or as its mirror image, and its bed face is not measured (the print rules of the stamp do
+    not see it). Raises when the archive cannot be read as a project."""
+    from probes import project_bed
+    out = []
+    for o in project_bed.read_placed(files)['objects']:
+        M = o.get('linear')
+        if not o.get('printable', True) or project_bed.is_rotation(M):
+            continue
+        rows = (M[0:3], M[3:6], M[6:9])
+        det = project_bed._dot(rows[0], project_bed._cross(rows[1], rows[2]))
+        size = ', '.join('%.4g' % (project_bed._norm((M[i], M[3 + i], M[6 + i])) * 100) for i in range(3))
+        out.append((o['name'], ('mirrored (determinant %.3g)' % det) if det < 0 else ('scaled or sheared (axes at %s %%)' % size)))
+    return out
+
+
+def _not_rigid_line(root, files, mode, res, prel):
+    """Refuse in enforce mode a save that places an object scaled, sheared or mirrored by its build item (not_rigid),
+    whatever its stamp says; one loud line in observe mode (the object is let through unchecked)."""
+    bad = not_rigid(files)
+    if not bad:
+        return
+    rows = [{'object': n, 'state': 'none', 'why': 'its build item is %s: the stamp holds the geometry of its STL, and every pocket, seat '
+             'and hole would print at another size or mirrored, its bed face not measured' % why, 'part': None, 'stl': None} for n, why in bad]
+    text = ('gate guard [%s] %s: %d object(s) not placed as a rigid copy of their STL: %s'
+            % (mode, prel, len(bad), '; '.join('%s %s' % (n, why) for n, why in bad[:6]) + (' ...' if len(bad) > 6 else '')))
+    log(root, text)
+    if mode == 'enforce':
+        raise GuardRefusal(text + '\nNothing was written (enforce mode): set the scale back to 100 % and undo any mirror in Bambu Studio, or '
+                           'export the part at the size you want through the gate (gate.py export PART).', rows)
+    print(text + ' - written anyway (observe mode; enforce refuses this save)')
+    res['not_rigid'] = [n for n, _ in bad]
+    res['unchecked'] = list(dict.fromkeys(list(res.get('unchecked') or []) + res['not_rigid']))
+    for n in res['not_rigid']:
+        res.get('stamps', {}).pop(n, None)
 
 
 def _turned(root, path, files, res, outside):
@@ -743,7 +788,16 @@ def _check_meshes(root, path, meshes, project, layout, entry, res, prel, via=Non
             continue
         from_disk = pose in on_disk or (name, vset) in welded   # the second: the same vertices with other triangles (a weld, a repair)
         if from_disk and mode != 'enforce':
-            res['unchecked'].append(name)                   # the owner's hand work, or older than the gate: passes in observe, said every time
+            # the owner's hand work, or older than the gate: passes in observe. A valid stamp of its geometry backs it as it
+            # would in enforce (a part exported since whose mesh did not change); the rest is said every time
+            try:
+                state, _why, _part, stamp = _judge_mesh(root, m, model, ctx) if stl else ('none', None, None, None)
+            except Exception:
+                state, stamp = 'none', None
+            if state == 'valid':
+                res['stamps'][name] = stamp
+                continue
+            res['unchecked'].append(name)
             plates.add(m.get('plate_index'))
             continue
         try:
@@ -754,7 +808,8 @@ def _check_meshes(root, path, meshes, project, layout, entry, res, prel, via=Non
             state, why, part, stamp = 'none', 'could not be judged: %s: %s' % (type(e).__name__, e), None, None
         if from_disk and state != 'valid':
             why = ('it lies in the file on disk and nothing on record backs it (no stamp of its geometry that still verifies): enforce lets nothing '
-                   'through because it was there before. Export the part through the gate (gate.py export PART) and swap it in; %s' % why)
+                   'through because it was there before. %s; %s' % ('A coupon' if str(why).startswith('no coupon stamp') else
+                                                                      'Export the part through the gate (gate.py export PART) and swap it in', why))
         res['new'].append(name)
         res['rows'].append({'object': name, 'state': state, 'why': why, 'part': part, 'stl': _shown(root, stl)})
         if state == 'valid':

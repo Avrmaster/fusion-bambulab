@@ -419,6 +419,36 @@ def _print_entry_errors(e, where):
     return out
 
 
+def table_row_key(table, row, reg):
+    """The one key a row of gate/owner/tables.json is stored and read under: a pin diameter as '%g' ("5.0" -> "5"),
+    a screw size as "M%g" ("M3.0" -> "M3"), a bearing alias as its designation. Anything that cannot be read so is
+    returned as it is (project_table_errors says what is wrong with it)."""
+    text = str(row)
+    if table == 'pins':
+        try:
+            return '%g' % float(text)
+        except ValueError:
+            return text
+    if table in ('screws', 'screws_set', 'stock_lengths', 'stock_lengths_set'):
+        m = re.match(r'^M(\d+(?:\.\d+)?)$', text)
+        return 'M%g' % float(m.group(1)) if m else text
+    if table == 'bearings':
+        b = (reg.get('tables') or {}).get('bearings') or {}
+        if text in (b.get('sizes') or {}):
+            return text
+        return (b.get('aliases') or {}).get(text, text)
+    return text
+
+
+def _spellings(rows, table, reg):
+    """Texts of the rows that name one row twice ("5" and "5.0", an alias next to its designation): which one the
+    registry would read is the order of the file, so it is refused."""
+    seen = {}
+    for k in sorted(rows, key=str):
+        seen.setdefault(table_row_key(table, k, reg), []).append(str(k))
+    return ['%s (one row written as %s: keep one)' % (key, ' and '.join('"%s"' % x for x in ks)) for key, ks in sorted(seen.items()) if len(ks) > 1]
+
+
 def project_table_errors(overrides, reg):
     """Every problem of gate/owner/tables.json as texts, [] when sound. What a project may set:
       pins      {"sizes": {"<d>": {"lengths": [mm, ...]}}}                     the pins it stocks (a new diameter too)
@@ -445,8 +475,11 @@ def project_table_errors(overrides, reg):
             v = o[k]
             if not isinstance(v, dict):
                 errors.append('%s.%s: must be an object' % (where, k)); continue
+            if name == 'pins' or (name == 'bearings' and k == 'measured') or name == 'screws':
+                for text in _spellings(v, 'bearings' if name == 'bearings' else k if name == 'screws' else 'pins', reg):
+                    errors.append('%s.%s: %s' % (where, k, text))
             if name == 'pins':
-                for d, row in sorted(v.items()):
+                for d, row in sorted(v.items(), key=lambda kv: str(kv[0])):
                     try:
                         ok = float(d) > 0
                     except ValueError:
@@ -454,13 +487,13 @@ def project_table_errors(overrides, reg):
                     if not ok or not isinstance(row, dict) or not _numbers(row.get('lengths')) or not set(row) <= {'lengths', 'source', 'date', 'note'}:
                         errors.append('%s.sizes.%s: a pin row is {"lengths": [mm, ...]} under its diameter' % (where, d))
             elif name == 'screws':
-                for size, lengths in sorted(v.items()):
+                for size, lengths in sorted(v.items(), key=lambda kv: str(kv[0])):
                     if not isinstance(size, str) or not re.match(r'^M\d+(?:\.\d+)?$', size) or not _numbers(lengths):
                         errors.append('%s.%s.%s: a stock row is "M3": [mm, ...]' % (where, k, size))
             elif name == 'bearings' and k == 'measured':
                 sizes = tables.get('bearings', {}).get('sizes') or {}
                 aliases = tables.get('bearings', {}).get('aliases') or {}
-                for des, row in sorted(v.items()):
+                for des, row in sorted(v.items(), key=lambda kv: str(kv[0])):
                     w = '%s.measured.%s' % (where, des)
                     if des not in sizes and des not in aliases:
                         errors.append('%s: no row of the bearings table is called %s (add the standard row first)' % (w, des)); continue
@@ -475,7 +508,7 @@ def project_table_errors(overrides, reg):
                     errors += _print_entry_errors(e, '%s.seat_fit.measured_under[%d]' % (where, i))
             elif name == 'inserts':
                 kinds = tables.get('inserts', {}).get('kinds') or {}
-                for kind, prints in sorted(v.items()):
+                for kind, prints in sorted(v.items(), key=lambda kv: str(kv[0])):
                     w = '%s.measured_under.%s' % (where, kind)
                     if kind not in kinds:
                         errors.append('%s: no insert kind %s in the inserts table' % (w, kind)); continue
@@ -520,6 +553,7 @@ def with_project_tables(reg, root):
         elif name == 'screws':
             for k in ('stock_lengths', 'stock_lengths_set'):
                 for size, lengths in (o.get(k) or {}).items():
+                    size = table_row_key(k, size, reg)              # "M3.0" is the row M3 of the judges
                     t['screws'].setdefault(k, {})[size] = sorted(float(x) for x in lengths)
                     t['screws'].setdefault('stock_from_project', []).append('%s %s' % (k, size))
         elif name == 'bearings':

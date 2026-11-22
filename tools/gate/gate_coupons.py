@@ -19,7 +19,9 @@ row it tests and how to record the result.
 Each coupon STL also gets a coupon stamp (gate/stamps/_coupons/<KEY>.json): its geometry hash and the declared target
 of KEY. The .3mf guard takes it like a part's stamp, so the coupon plate can be written in enforce mode: a mesh passes
 as a coupon only when it is the geometry of a coupon this command made (its name does not count) and the project it
-goes into is declared with the same target. A new `gate.py coupons` for the same KEY replaces the stamps of the last. Nothing in gate/owner/ is written: a coupon that fits is recorded by the
+goes into is declared with the same target. A new `gate.py coupons` for the same KEY adds its stamps to those of the
+earlier runs, each with the target it was made for: a coupon plate already in the project stays saveable after one of
+its fits is recorded and the rest are made again. Nothing in gate/owner/ is written: a coupon that fits is recorded by the
 owner (`gate.py owner param NAME VALUE --tag M` for a parameter; a print of an insert profile or a seat fit in
 gate/owner/tables.json). No Fusion call and no .3mf write: the STLs are laid on one plate of the target project with
 the Bambu tools, like any other part.
@@ -306,11 +308,20 @@ def meshes(c):
 
 def write(root, key, target, coupons):
     """Write the STLs and coupons.json under gate/proposals/coupons/<key>/, and the coupon stamps of those STLs
-    (gate/stamps/_coupons/<key>.json). Returns the folder."""
+    (gate/stamps/_coupons/<key>.json). The stamps of earlier runs for the key stay, each with the target it was made
+    for (a coupon printed before is still in the project). Returns the folder."""
     folder = gate_common.gate_path(root, 'proposals', 'coupons', key)
     os.makedirs(folder, exist_ok=True)
     meshid = gate_common.sibling('meshid')
     listing, stamps = [], {}
+    try:
+        before = gate_common.read_json(stamp_path(root, key), {}) or {}
+    except (GateError, OSError):
+        before = {}
+    if isinstance(before, dict) and before.get('kind') == 'coupons' and isinstance(before.get('coupons'), dict):
+        for geom, entry in before['coupons'].items():
+            if isinstance(entry, dict):
+                stamps[geom] = dict(entry, target=entry.get('target', before.get('target')), time=entry.get('time', before.get('time')))
     for c in coupons:
         files = []
         for name, tris, what in meshes(c):
@@ -321,7 +332,8 @@ def write(root, key, target, coupons):
                 f.write(stl_bytes(tris, name))
             files.append({'stl': name, 'what': what})
             ids = meshid.stl_ids(path)
-            stamps[ids['geom_hash']] = {'coupon': c['id'], 'stl': gate_common.rel(root, path), 'stl_sha256': ids['sha256'], 'what': what}
+            stamps[ids['geom_hash']] = {'coupon': c['id'], 'stl': gate_common.rel(root, path), 'stl_sha256': ids['sha256'], 'what': what,
+                                        'target': target, 'time': gate_common.now()}
         listing.append(dict({k: v for k, v in c.items() if k not in ('stack',)}, files=files))
     gate_common.write_json(stamp_path(root, key), {
         'about': 'Coupon stamps written by gate.py coupons: the geometry of each coupon STL of %s and the target it was made for. The .3mf guard lets '
@@ -400,11 +412,12 @@ def holds(root, geom, target):
     if not found:
         return 'none', 'no coupon stamp holds this geometry', None
     for key, entry, data in found:
-        if _printed_alike(data.get('target'), target):
+        if _printed_alike(entry.get('target', data.get('target')), target):     # the target the coupon was made for
             return 'valid', 'coupon %s of the coupon plate of %s (%s)' % (entry.get('coupon'), key, entry.get('stl')), stamp_name(key, entry, geom)
     key, entry, data = found[0]
     return 'stale', ('a coupon of %s, made for its declared target (%s): this project is declared as %s. Make the coupons of this project '
-                     '(gate.py coupons --for KEY)' % (key, gate_stamp._target_text(data.get('target')), gate_stamp._target_text(target) if target else 'no target')), None
+                     '(gate.py coupons --for KEY)' % (key, gate_stamp._target_text(entry.get('target', data.get('target'))),
+                                                     gate_stamp._target_text(target) if target else 'no target')), None
 
 
 def cmd_coupons(root, args):

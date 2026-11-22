@@ -1022,6 +1022,30 @@ def _slice_owed(root, layout):
     return out
 
 
+def first_export_parts(root, parts, census=None):
+    """The parts of `parts` that were never exported through the gate and have an STL in the folder (an older
+    exporter's): before their first export the bed face is taken from that file as it is. An export that writes other
+    geometry asks print.bed_face once (gate_plan.print_frame: "earlier geometry"), and the next export uses the STL it
+    wrote (gate_stamp._kept_export)."""
+    import gate_plan, gate_stamp
+    census = census if census is not None else gate_common.load_census(root)
+    stamped = {s.get('part') for s in gate_stamp.all_stamps(root)}
+    out = []
+    for pid in parts:
+        e = census['parts'].get(pid) or {}
+        if pid in stamped or not e.get('stl') or e.get('source') == 'generated' or gate_plan._exported_geometry(root, pid, e.get('sig')):
+            continue
+        if os.path.isfile(os.path.join(root, *str(e['stl']).replace(os.sep, '/').split('/'))):
+            out.append(pid)
+    return out
+
+
+def first_export_line(parts, rows=None):
+    return ('  first export of %d part(s) never exported through the gate (%s): the bed face is taken from the STL in the folder. An export '
+            'that writes other geometry (an older exporter, a model changed since) stops once at print.bed_face: answer it, then export '
+            'again (the STL it wrote is used, not exported twice)' % (len(parts), ', '.join(parts) if rows is None else _some(parts)))
+
+
 def status(root, reg=None, hash_budget_s=None):
     """The state of the project from files only: {"mode", "parts": n, "changed": [part ids with no stamp for their
     current signature], "open": [findings of the latest judgement that block], "questions": [open questions],
@@ -1111,7 +1135,7 @@ def status(root, reg=None, hash_budget_s=None):
             'registered': len(layout.get('documents') or []) + len(layout.get('generators') or []), 'waiting': waiting,
             'inherited_parts': len(inherited_parts), 'inherited_ids': inherited_parts, 'over_budget': over,
             'waiting_call': gate_plan.waiting_line(root), 'unchecked_why': why, 'checked_ids': checked, 'stamped_ids': stamped,
-            'measure_again': dict(again, work_s=round(again['work_s'], 1)),
+            'measure_again': dict(again, work_s=round(again['work_s'], 1)), 'first_export': first_export_parts(root, checked, census),
             'stale_references': [line for k in sorted(census['docs']) for line in gate_plan.stale_references(census, k)]}
 
 
@@ -1187,6 +1211,9 @@ def _status_lines(st, rows=None):
     passed = [p for p in st['changed'] if p not in st['unchecked'] and p not in settled]
     if passed:
         out.append('  checked, no stamp yet (not exported): %s' % (', '.join(passed) if rows is None else _some(passed)))
+    first = [p for p in st.get('first_export') or [] if p in passed]
+    if first:
+        out.append(first_export_line(first, rows))
     if st['unstamped_stls']:
         out.append('  STLs without a valid stamp: %s' % (', '.join(st['unstamped_stls']) if rows is None else _some(st['unstamped_stls'])))
     unknown = [p for p, s in st['stl_states'].items() if s == 'unknown']

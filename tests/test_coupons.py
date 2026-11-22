@@ -166,11 +166,39 @@ class CouponPlate(G.Guarded):
         data = gate_common.read_json(gate_coupons.stamp_path(self.d, 'main'))
         self.assertEqual((data['for'], data['target'], len(data['coupons'])), ('main', TARGET, 1))
 
+    def test_a_coupons_run_after_one_fit_was_recorded_keeps_the_plate_saveable(self):
+        magnet = {'id': 'magnet_d4', 'kind': 'pockets', 'holes': [4.15, 4.2, 4.25], 'depth': 2.1, 'tests': 'a D4 x 2 magnet',
+                  'parts': [PART], 'record': 'gate.py owner param fits.magnet_press --tag M --under main'}
+        insert = {'id': 'insert_M3x4x5', 'kind': 'insert', 'stack': [(7.5, 7.5, 0.54), (4.4, 4.4, 1.5), (3.6, 3.6, 5.0)], 'tests': 'the M3x4x5 profile',
+                  'parts': [PART], 'record': 'gate.py owner table inserts M3x4x5 --under main'}
+        gate_coupons.write(self.d, 'main', TARGET, [insert, magnet])
+        self.plate = [('coupons', [('insert coupon', 'insert_M3x4x5.stl', False), ('magnet coupon 1', 'magnet_d4_1_d4p15.stl', False)])]
+        self.place()
+        gate_coupons.write(self.d, 'main', TARGET, [magnet])            # the insert fit is recorded: only the magnet coupon is made again
+        infos, files = bambu3mf.load(self.proj)
+        G.quiet(bambu3mf.save, self.proj, files, infos)                 # the plate already in the project: a plain re-save goes through
+        data = gate_common.read_json(gate_coupons.stamp_path(self.d, 'main'))
+        self.assertEqual(sorted(e['coupon'] for e in data['coupons'].values()), ['insert_M3x4x5'] + ['magnet_d4'] * 3)
+        self.assertTrue(all(e['target'] == TARGET for e in data['coupons'].values()))
+        # a coupon made for another target before keeps that target: it does not pass for this one
+        other = dict(TARGET, xy_hole_compensation=0.15)
+        gate_coupons.write(self.d, 'main', other, [magnet])
+        geom = next(g for g, e in gate_common.read_json(gate_coupons.stamp_path(self.d, 'main'))['coupons'].items() if e['coupon'] == 'insert_M3x4x5')
+        self.assertEqual(gate_coupons.holds(self.d, geom, TARGET)[0], 'valid')
+        self.assertEqual(gate_coupons.holds(self.d, geom, other)[0], 'stale')
+
+    def test_a_coupon_no_run_has_on_record_says_to_take_it_off(self):
+        os.remove(gate_coupons.stamp_path(self.d, 'main'))
+        with self.assertRaises(G.GuardRefusal) as c:
+            self.place()
+        self.assertIn('a coupon no `gate.py coupons` has on record', str(c.exception))
+        self.assertNotIn('Export the part through the gate', str(c.exception))
+
     def test_a_mesh_with_a_coupon_name_and_other_geometry_is_refused(self):
         write_stl(os.path.join(self.folder, 'insert_M3x4x5.stl'), *plate())      # the coupon's file name, another mesh
         with self.assertRaises(G.GuardRefusal) as c:
             self.place()
-        self.assertIn('insert coupon', str(c.exception)); self.assertIn('no stamp for the geometry', str(c.exception))
+        self.assertIn('insert coupon', str(c.exception)); self.assertIn('no coupon stamp holds the geometry', str(c.exception))
 
     def test_a_coupon_of_another_target_is_refused(self):
         self.set_project('enforce', targets={'main': dict(TARGET, xy_hole_compensation=0.15)})

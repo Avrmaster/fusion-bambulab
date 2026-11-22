@@ -495,6 +495,9 @@ def _owner_table(root, args):
     if not isinstance(raw, dict):
         raise GateError('gate/owner/tables.json must be an object of table -> rows')
     data = copy.deepcopy(raw)
+    base = gate_registry.load(judges=set(gate_judges.JUDGES))
+    if row is not None and table in ('pins', 'bearings', 'screws', 'screws_set'):
+        row = gate_registry.table_row_key(table, row, base)      # one spelling per row ("5.0" is "5", an alias is its designation)
     today = datetime.date.today().isoformat()
     source = str(args.source or '').strip()
     if not source:
@@ -528,19 +531,23 @@ def _owner_table(root, args):
     else:
         if under:
             raise GateError('--under goes with a print (inserts, seat_fit), not with %s; nothing was written' % table)
+        def put(rows, value):
+            # the row under its one key; the same row under another spelling (an earlier command) is replaced by this one
+            for k in [k for k in rows if k != row and gate_registry.table_row_key(table, k, base) == row]:
+                rows.pop(k)
+            rows[row] = value
         if table == 'bearings':
             d, D, B = _numbers_of(value, 'a measured bearing', 3)
-            data.setdefault('bearings', {}).setdefault('measured', {})[row] = {'d': d, 'D': D, 'B': B, 'source': source, 'date': today}
+            put(data.setdefault('bearings', {}).setdefault('measured', {}), {'d': d, 'D': D, 'B': B, 'source': source, 'date': today})
             said = 'bearing %s measured: d %s, D %s, B %s' % (row, d, D, B)
         elif table == 'pins':
             lengths = _numbers_of(value, 'a pin stock row')
-            data.setdefault('pins', {}).setdefault('sizes', {})[row] = {'lengths': sorted(lengths), 'source': source, 'date': today}
+            put(data.setdefault('pins', {}).setdefault('sizes', {}), {'lengths': sorted(lengths), 'source': source, 'date': today})
             said = 'pins D%s in stock: %s' % (row, ', '.join(str(x) for x in sorted(lengths)))
         else:
             lengths = _numbers_of(value, 'a screw stock row')
-            data.setdefault('screws', {}).setdefault('stock_lengths' if table == 'screws' else 'stock_lengths_set', {})[row] = sorted(lengths)
+            put(data.setdefault('screws', {}).setdefault('stock_lengths' if table == 'screws' else 'stock_lengths_set', {}), sorted(lengths))
             said = '%s %s in stock: %s' % ('screws' if table == 'screws' else 'set screws', row, ', '.join(str(x) for x in sorted(lengths)))
-    base = gate_registry.load(judges=set(gate_judges.JUDGES))
     errors = gate_registry.project_table_errors({k: v for k, v in data.items()}, base)
     if errors:
         raise GateError('table row refused, nothing written:\n  ' + '\n  '.join(errors))
@@ -721,6 +728,8 @@ def read_bundle(path):
                             '({"support_e", "top_z", "pose"} from gate/proposals/support_baseline.json): the apply refuses when the slice record moved since' % i)
         if e['kind'] == 'table' and e['table'] not in TABLE_ROWS:
             raise GateError('entry %d (table): "table" must be one of %s' % (i, ', '.join(TABLE_ROWS)))
+        if e['kind'] == 'table' and e.get('row') is not None and not isinstance(e['row'], str):
+            raise GateError('entry %d (table): "row" must be a text, as on the command line ("5", "608", "M3"), not %r' % (i, e['row']))
         if e['kind'] == 'decide' and e['decision'] not in DECISIONS:
             raise GateError('entry %d (decide): "decision" must be one of %s' % (i, ', '.join(DECISIONS)))
     return data

@@ -275,7 +275,8 @@ def stale_units(root, reg, resolved=None, census=None, parts=None, target_key=No
                 res[u['probe']] = str(err)
                 continue
             doc = census['docs'].get(e.get('doc')) or {}
-            res[u['probe']] = gate_deps.why_stale(stored, e, job, doc.get('world'), u['probe'], worlds, fusion=doc.get('fusion'))
+            res[u['probe']] = gate_deps.why_stale(stored, e, job, doc.get('world'), u['probe'], worlds, fusion=doc.get('fusion'),
+                                                  whole_tables=reg.get('tables') or {})
         out[pid] = res
     return out
 
@@ -761,7 +762,7 @@ def run_units(root, reg, resolved, plan, wall_s=20.0, transport=None, pinger=Non
         data = load_facts(root, u['part'], u['sig'])
         doc = census['docs'].get(u['doc']) or {}
         why = gate_deps.why_stale((data.get('probes') or {}).get(u['probe']), census['parts'].get(u['part']) or {}, job_for(u),
-                                  doc.get('world'), u['probe'], fusion=doc.get('fusion'))
+                                  doc.get('world'), u['probe'], fusion=doc.get('fusion'), whole_tables=reg.get('tables') or {})
         if why is not None:
             u['why'] = why
             return False
@@ -1995,6 +1996,12 @@ def _finish(root, reg, resolved, run, args, parts, verdicts, plan, intent, unrea
         asked = gate_report.group_rows([f for f in report['findings'] if f['state'] == 'asked'])
         for line in gate_report.group_lines(opened, gate_report.RUN_LINES) + gate_report.group_lines(asked, gate_report.RUN_LINES // 2, word='ASK'):
             print(line)
+        try:
+            first = gate_report.first_export_parts(root, [v['part'] for v in verdicts if v.get('verdict') in ('pass', 'pass_attested')])
+        except Exception:
+            first = []
+        if first:
+            print(gate_report.first_export_line(first, rows=4))
     for line in lines:
         print('  UNREACHABLE  %s (its parts keep their stamps; nothing new was checked)' % line)
     for line in over_lines(report.get('over_budget') or []):     # a unit over its budget is a defect of a probe: never silent

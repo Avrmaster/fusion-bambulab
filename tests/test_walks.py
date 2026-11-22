@@ -729,5 +729,201 @@ class TwoProjectsTwoFaces(Walk):
         self.assertIsNone(self.stamp(FOOT))
 
 
+
+ITEM = r'(<item objectid="\d+"[^>]*?transform=")([^"]+)'
+
+
+def _linear(model, fn):
+    """The 3D model text with the 3 x 3 part of the first build item's transform replaced by fn(nine floats)."""
+    return re.sub(ITEM, lambda m: m.group(1) + ' '.join('%.6g' % c for c in fn([float(c) for c in m.group(2).split()[:9]])) + ' '
+                  + ' '.join(m.group(2).split()[9:]), model, count=1)
+
+
+def _scaled(lin):
+    return [c * 1.03 for c in lin]
+
+
+def _mirrored(lin):
+    lin = list(lin)
+    lin[0], lin[3], lin[6] = -lin[0], -lin[3], -lin[6]
+    return lin
+
+
+class NotRigidPlacement(Walk):
+    """A stamped part whose build item scales, shears or mirrors it prints every pocket and seat at another size, or as
+    its mirror image, while its stamp holds the geometry of the STL. Before, such a save was carried in enforce mode
+    whenever print.bed_face had been answered with a label (a part exported before it was placed, or the first export
+    over an older STL): the face was no longer measured, the print rules judged INFO, and the stamp stayed valid."""
+    FOOT_ONLY = [('first plate', [('Lamp foot', 'lamp_foot.stl', False)])]
+
+    def enforce(self):
+        gate_common.write_json(self.path('gate', 'project.json'), dict(self.read('gate', 'project.json'), mode='enforce'))
+
+    def exported_before_it_was_placed(self):
+        self.ready()
+        code, out, err = self.gate('export', FOOT, '--wall', '60')
+        if code == 2:
+            self.answer_all(); code, out, err = self.gate('export', FOOT, '--wall', '60')
+        self.assertEqual(code, 0, out + err)
+        G.quiet(lambda: (bambu3mf.new_project(self.path('bambulab', 'template.3mf'), self.proj), bambu3mf.build(self.proj, self.stl_dir, self.FOOT_ONLY)))
+        self.assertEqual(gate_stamp.verify(self.root, gate_registry.load_default(self.root), self.stamp(FOOT))[0], 'valid')
+
+    def saved_with(self, fn):
+        infos, files = bambu3mf.load(self.proj)
+        model = files['3D/3dmodel.model'].decode()
+        changed = _linear(model, fn)
+        self.assertNotEqual(changed, model)
+        return G.quiet(bambu3mf.save, self.proj, dict(files, **{'3D/3dmodel.model': changed.encode()}), infos)
+
+    def test_a_scaled_build_item_is_refused_in_enforce(self):
+        self.exported_before_it_was_placed(); self.enforce()
+        before = self.raw()
+        with self.assertRaises(GuardRefusal) as c:
+            self.saved_with(_scaled)
+        self.assertIn('Lamp foot scaled or sheared (axes at 103, 103, 103 %)', str(c.exception))
+        self.assertIn('Nothing was written', str(c.exception))
+        self.assertEqual(self.raw(), before)
+
+    def test_a_mirrored_build_item_is_refused_in_enforce(self):
+        self.exported_before_it_was_placed(); self.enforce()
+        with self.assertRaises(GuardRefusal) as c:
+            self.saved_with(_mirrored)
+        self.assertIn('Lamp foot mirrored (determinant -1)', str(c.exception))
+
+    def test_the_first_export_over_an_older_stl_then_a_scaled_save_is_refused(self):
+        H.write_stl(os.path.join(self.stl_dir, 'lamp_foot.stl'), E.MESHES['foot v2']())
+        G.quiet(lambda: (bambu3mf.new_project(self.path('bambulab', 'template.3mf'), self.proj), bambu3mf.build(self.proj, self.stl_dir, self.FOOT_ONLY)))
+        self.model(foot='v3', hub='v1', clip='v1')
+        self.assertEqual(self.gate('scan')[0], 0)
+        self.facts(FOOT, fusion_census=E.foot_census(), fusion_inserts=E.foot_pocket(4.2)); self.facts(HUB); self.facts(CLIP)
+        self.near(); self.run_gate()
+        for part, mesh in ((FOOT, E.MESHES['foot v3']()), (HUB, E.MESHES['hub']()), (CLIP, H.box(30, 20, 5))):
+            self.fusion.set_export(part, E.stl_bytes(mesh, NAMES[part]))
+        self.answer_all(); self.run_gate('--offline')
+        self.assertEqual(self.gate('export', FOOT, '--wall', '60')[0], 2)            # print.bed_face asked: answered with a label
+        self.answer_all()
+        self.assertEqual(self.gate('export', FOOT, '--wall', '60')[0], 0)
+        self.enforce()
+        G.quiet(bambu3mf.build, self.proj, self.stl_dir, self.FOOT_ONLY)
+        with self.assertRaises(GuardRefusal):
+            self.saved_with(_scaled)
+
+    def test_observe_writes_it_and_says_so(self):
+        self.exported_before_it_was_placed()
+        _, out = self.saved_with(_scaled)
+        self.assertIn('1 object(s) not placed as a rigid copy of their STL: Lamp foot scaled or sheared', out)
+        self.assertIn('written anyway (observe mode; enforce refuses this save)', out)
+        saves = self.read('gate', 'run', 'saves.json') or {}
+        self.assertIn('Lamp foot', saves['projects']['bambulab/DeskLamp.3mf']['unchecked'])
+
+    def test_a_turn_alone_is_no_scale(self):
+        self.exported_before_it_was_placed(); self.enforce()
+        turned = lambda lin: [lin[3], lin[4], lin[5], -lin[0], -lin[1], -lin[2], lin[6], lin[7], lin[8]]      # 90 deg about z
+        self.saved_with(turned)
+
+
+class OldRecordsAndARealTableChange(Walk):
+    """Unit records of a pre-release 0.3.0 build digested the tables whole, and carry no "tv". The probe view differs
+    from that digest by itself, a tool reason that kills no stamp. A real edit of the table differs from it too: that is
+    the model's business, and the stamp goes stale until the unit is measured again."""
+
+    def test_a_measured_bearing_on_old_records_makes_the_stamp_stale(self):
+        import gate_deps
+        self.ready()
+        self.assertEqual(self.gate('export', FOOT, '--wall', '60')[0], 0)
+        s = self.stamp(FOOT)
+        reg = gate_registry.load_default(self.root)
+        path = gate_common.facts_path(self.root, FOOT, s['sig'])
+        data = gate_common.read_json(path)
+        data['probes']['fusion_bearings']['deps']['tables'] = {'bearings': None}
+        for e in data['probes'].values():                   # every record as a pre-release build wrote it: no "tv", whole tables
+            d = e.get('deps') if isinstance(e, dict) else None
+            if isinstance(d, dict):
+                d.pop('tv', None)
+                d['tables'] = {n: gate_common.digest(reg['tables'] if n == '*' else reg['tables'].get(n)) for n in (d.get('tables') or {})}
+        gate_common.write_json(path, data)
+        why = gate_plan.stale_units(self.root, reg)[FOOT]['fusion_bearings']
+        self.assertTrue(gate_deps.tool_reason(why), why)                                       # nothing edited: only the view differs
+        self.assertEqual(gate_stamp.verify(self.root, reg, s)[0], 'valid')
+        des = sorted(reg['tables']['bearings']['sizes'])[0]
+        row = reg['tables']['bearings']['sizes'][des]
+        tables = self.read('gate', 'owner', 'tables.json') or {}
+        tables['bearings'] = {'measured': {des: {'d': row['d'] + 0.05, 'D': row['D'] - 0.04, 'B': row['B'], 'source': 'calliper on the batch', 'date': '2031-01-01'}}}
+        gate_common.write_json(self.path('gate', 'owner', 'tables.json'), tables)
+        reg2 = gate_registry.load_default(self.root)
+        why = gate_plan.stale_units(self.root, reg2)[FOOT]['fusion_bearings']
+        self.assertEqual(why, 'table bearings changed'); self.assertFalse(gate_deps.tool_reason(why))
+        self.assertEqual(gate_stamp.verify(self.root, reg2, s)[0], 'stale')
+
+
+class UpgradeInObserve(Walk):
+    """Every STL of the project comes from an older exporter and is placed. The turntable did not change; the foot did."""
+
+    def place_old(self):
+        H.write_stl(os.path.join(self.stl_dir, 'lamp_foot.stl'), E.MESHES['foot v2']())
+        H.write_stl(os.path.join(self.stl_dir, 'turntable.stl'), E.MESHES['hub']())
+        H.write_stl(os.path.join(self.stl_dir, 'cable_clip.stl'), H.box(30, 20, 5))
+        G.quiet(lambda: (bambu3mf.new_project(self.path('bambulab', 'template.3mf'), self.proj), bambu3mf.build(self.proj, self.stl_dir, E.WITH_CLIP)))
+        self.model(foot='v3', hub='v1', clip='v1')
+        self.assertEqual(self.gate('scan')[0], 0)
+        self.facts(FOOT, fusion_census=E.foot_census(), fusion_inserts=E.foot_pocket(4.2)); self.facts(HUB); self.facts(CLIP)
+        self.near(); self.run_gate()
+        for part, mesh in ((FOOT, E.MESHES['foot v3']()), (HUB, E.MESHES['hub']()), (CLIP, H.box(30, 20, 5))):
+            self.fusion.set_export(part, E.stl_bytes(mesh, NAMES[part]))
+        self.answer_all()
+        self.assertEqual(self.run_gate('--offline')[0], 0)
+
+    def test_a_stamped_part_whose_mesh_did_not_change_is_not_called_unstamped(self):
+        self.place_old()
+        for p in (FOOT, HUB, CLIP):
+            code = self.gate('export', p, '--wall', '60')[0]
+            if code == 2:
+                self.answer_all(); code = self.gate('export', p, '--wall', '60')[0]
+            self.assertEqual(code, 0)
+        for _ in range(2):
+            open(self.path('gate', 'reports', 'guard.log'), 'w').close()
+            _, out = G.quiet(bambu3mf.build, self.proj, self.stl_dir, E.WITH_CLIP)
+            self.assertNotIn('have no stamp', out + self.guard_log())
+            self.assertEqual((self.read('gate', 'run', 'saves.json') or {})['projects']['bambulab/DeskLamp.3mf']['unchecked'], [])
+        self.assertNotIn('have no stamp', gate_report.digest(self.root))
+
+    def test_a_from_disk_object_without_a_valid_stamp_is_still_said(self):
+        self.place_old()
+        _, out = G.quiet(bambu3mf.build, self.proj, self.stl_dir, E.WITH_CLIP)
+        self.assertIn('have no stamp', out)
+        self.assertEqual(sorted((self.read('gate', 'run', 'saves.json') or {})['projects']['bambulab/DeskLamp.3mf']['unchecked']),
+                         ['Cable clip', 'Lamp foot', 'Turntable'])
+
+    def test_the_first_export_is_said_before_and_its_question_costs_no_second_fusion_export(self):
+        self.place_old()
+        st = gate_report.status(self.root)
+        self.assertEqual(sorted(st['first_export']), sorted([FOOT, HUB, CLIP]))
+        self.assertIn('first export of 3 part(s) never exported through the gate', '\n'.join(gate_report._status_lines(st)))
+        n = self.exports()
+        code, out, err = self.gate('export', FOOT, '--wall', '60')
+        self.assertEqual(code, 2, out + err)                                                   # the foot changed: print.bed_face
+        self.assertEqual(self.exports(), n + 1)
+        self.answer_all()
+        code, out, err = self.gate('export', FOOT, '--wall', '60')
+        self.assertEqual(code, 0, out + err)
+        self.assertEqual(self.exports(), n + 1)                                                # the STL in quarantine was judged again
+        self.assertTrue(self.stamp(FOOT))
+        self.assertEqual(gate_stamp.verify(self.root, gate_registry.load_default(self.root), self.stamp(FOOT))[0], 'valid')
+        self.assertNotIn(FOOT, gate_report.status(self.root)['first_export'])
+
+    def test_a_changed_part_is_exported_from_fusion_again(self):
+        self.place_old()
+        self.assertEqual(self.gate('export', FOOT, '--wall', '60')[0], 2)
+        self.answer_all()
+        n = self.exports()
+        self.model(foot='v4', hub='v1', clip='v1')                                            # the part changed after the stop
+        self.assertEqual(self.gate('scan')[0], 0)
+        self.facts(FOOT, fusion_census=E.foot_census(), fusion_inserts=E.foot_pocket(4.2)); self.near(); self.run_gate(); self.answer_all()
+        self.run_gate('--offline')
+        self.fusion.set_export(FOOT, E.stl_bytes(E.MESHES['foot v3'](), NAMES[FOOT]))
+        self.gate('export', FOOT, '--wall', '60')
+        self.assertEqual(self.exports(), n + 1)
+
+
 if __name__ == '__main__':
     unittest.main()

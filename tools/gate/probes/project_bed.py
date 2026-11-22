@@ -531,7 +531,10 @@ def placed_now(root, layout, stl_rel, geometry=None, sources=None):
                 continue
             o = next((o for o in data['objects'] if o['name'] == r.get('object') and o['pose'] == r.get('pose')), None)
             Rm = r.get('R')
-            if o is None or not (isinstance(Rm, list) and len(Rm) == 9 and all(isinstance(c, (int, float)) for c in Rm)) or not is_rotation(o['linear']):
+            if o is not None and not is_rotation(o['linear']):
+                problems.append('%s: %s is scaled or sheared by its build item: its bed face is not measured' % (rel_file, o['name']))
+                continue
+            if o is None or not (isinstance(Rm, list) and len(Rm) == 9 and all(isinstance(c, (int, float)) for c in Rm)):
                 continue                                 # a memory without the motion of its mesh (an older gate) cannot follow a turn: not used
             # the stored vertices are the same (same pose), so R still sends the STL frame onto them; the build item may have
             # been turned since (a hand turn in the slicer lives there): the face on the bed follows the turn of today

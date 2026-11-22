@@ -388,14 +388,17 @@ def _diff_bodies(was, now):
     return None
 
 
-def why_stale(stored, entry, job, world_lines, probe, worlds=None, fusion=None):
+def why_stale(stored, entry, job, world_lines, probe, worlds=None, fusion=None, whole_tables=None):
     """None when the stored facts of one unit (the probe's entry of the facts file) still hold for the model as the
     census has it and for the job the host would send now; else a short text: why the unit must run again.
 
     stored  facts["probes"][probe] or None      entry  the part's census entry
     job     the job the host would send now (its params, tables and inputs; cursor and ids do not matter)
     worlds  a cache {id(world_lines): World} for many calls on one census
-    fusion  the version of Fusion the last scan of the document ran in (census docs[key]["fusion"]), or None"""
+    fusion  the version of Fusion the last scan of the document ran in (census docs[key]["fusion"]), or None
+    whole_tables  the registry's tables as the judges get them (job["tables"] is the probe view of them). A record
+            without "tv" digested a table whole: it is taken as an older copy of the gate only while its digest is
+            the one of today's whole table; any other difference is a real change of the table (None: always)"""
     if not isinstance(stored, dict) or not isinstance(stored.get('facts'), dict):
         return 'not measured at this geometry'
     d = stored.get('deps')
@@ -427,9 +430,11 @@ def why_stale(stored, entry, job, world_lines, probe, worlds=None, fusion=None):
     tables = job.get('tables') or {}
     for name, v in sorted((d.get('tables') or {}).items()):
         if (digest(tables) if name == '*' else digest(tables.get(name))) != v:
-            if d.get('tv') != TABLES_VIEW:
+            if d.get('tv') != TABLES_VIEW and isinstance(whole_tables, dict) and \
+                    (digest(whole_tables) if name == '*' else digest(whole_tables.get(name))) == v:
                 # recorded before the probes got the tables without what only the judges read (probe_tables): the digest
-                # is of the whole table, so it differs once by itself. A tool reason: measured again, no stamp killed by it
+                # is of the whole table, and that whole table is the same today; only the view differs. A tool reason:
+                # measured again, no stamp killed by it. A whole table that changed too is the model's business
                 return 'its record holds the tables as an older copy of the gate digested them (%s): measured again' % ('all' if name == '*' else 'table %s' % name)
             return 'the tables changed' if name == '*' else 'table %s changed' % name
     if d.get('all'):

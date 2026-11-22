@@ -249,6 +249,38 @@ class OwnerTable(Base):
         reg = gate_registry.load_default(self.d)
         self.assertEqual(reg['tables']['pins']['sizes']['5']['lengths'], [16.0, 20.0]); self.assertEqual(reg['tables']['bearings']['sizes']['608']['B'], 7.1)
 
+    def test_one_row_has_one_spelling_and_the_last_command_is_the_one_read(self):
+        def table(*argv):
+            code, out, err = self.gate('owner', 'table', *argv, '--source', 'the stock box', '--quote', 'yes')
+            self.assertEqual((code, err), (0, ''), out)
+        table('pins', '5.0', '--value', '20'); table('pins', '5', '--value', '16')
+        table('screws', 'M3.0', '--value', '8'); table('screws', 'M3', '--value', '10')
+        table('bearings', '683-2RS', '--value', '3,7,3'); table('bearings', '683ZZ', '--value', '3.01,7,3')
+        t = self.tables()
+        self.assertEqual(sorted(t['pins']['sizes']), ['5']); self.assertEqual(t['pins']['sizes']['5']['lengths'], [16])
+        self.assertEqual(t['screws']['stock_lengths'], {'M3': [10]})
+        self.assertEqual(sorted(t['bearings']['measured']), ['683ZZ']); self.assertEqual(t['bearings']['measured']['683ZZ']['d'], 3.01)
+        import gate_registry
+        reg = gate_registry.load_default(self.d)
+        self.assertEqual(reg['tables']['pins']['sizes']['5']['lengths'], [16.0]); self.assertEqual(reg['tables']['screws']['stock_lengths']['M3'], [10.0])
+        self.assertEqual(reg['tables']['bearings']['sizes']['683ZZ']['d'], 3.01)
+
+    def test_a_file_that_names_one_row_twice_is_refused(self):
+        import gate_judges, gate_registry
+        base = gate_registry.load(judges=set(gate_judges.JUDGES))
+        errors = gate_registry.project_table_errors({'pins': {'sizes': {'5.0': {'lengths': [20]}, '5': {'lengths': [16]}}},
+                                                     'bearings': {'measured': {'683-2RS': {'d': 3, 'D': 7, 'B': 3, 'source': 's', 'date': 'd'},
+                                                                               '683ZZ': {'d': 3, 'D': 7, 'B': 3, 'source': 's', 'date': 'd'}}}}, base)
+        self.assertTrue(any('"5" and "5.0"' in e or '"5.0" and "5"' in e for e in errors), errors)
+        self.assertTrue(any('683ZZ (one row written as' in e for e in errors), errors)
+
+    def test_a_bundle_row_given_as_a_number_is_refused_with_a_line(self):
+        code, out, err = self.gate('owner', 'table', 'pins', '5', '--value', '16', '--source', 'box', '--quote', 'yes')
+        self.assertEqual(code, 0, err)
+        entries = [{'kind': 'table', 'table': 'pins', 'row': 6, 'value': [20], 'source': 'box'}]
+        code, out, err = self.gate('owner', 'bundle', self.proposal(entries), '--dry-run')
+        self.assertEqual(code, 4); self.assertIn('"row" must be a text', err)
+
     def test_a_row_the_registry_would_not_read_is_refused_and_nothing_is_written(self):
         for argv, said in ((('bearings', '9999', '--value', '8,22,7'), 'no row of the bearings table is called 9999'),
                            (('bearings', '608', '--value', '8,22'), 'a measured bearing takes --value with 3'),

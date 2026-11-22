@@ -197,9 +197,19 @@ class Deps(unittest.TestCase):
         deps = {'v': gate_deps.DEPS_V, 'code': gate_deps.code('fusion_inserts'), 'fusion': None, 'own': None, 'job': {}, 'params': {},
                 'tables': {'inserts': gate_common.digest(full['inserts'])}, 'reads': [], 'bodies': {}}
         stored = {'facts': {'pockets': []}, 'done': True, 'deps': deps}
-        why = gate_deps.why_stale(stored, {}, {'params': {}, 'tables': view}, {}, 'fusion_inserts')       # a pre-release 0.3.0 record: no "tv"
+        why = gate_deps.why_stale(stored, {}, {'params': {}, 'tables': view}, {}, 'fusion_inserts', whole_tables=full)   # a pre-release 0.3.0 record: no "tv"
         self.assertIn('its record holds the tables as an older copy of the gate digested them (table inserts)', why)
         self.assertTrue(gate_deps.tool_reason(why))
+        # the whole table changed too (a real edit, not only the view): the model's business, also on an old record
+        edited = {'inserts': {'kinds': {'M3x4x5': {'d': 4.1, 'measured_under': [{'layer_height': 0.2}]}}}}
+        why = gate_deps.why_stale(stored, {}, {'params': {}, 'tables': gate_deps.probe_tables(edited)}, {}, 'fusion_inserts', whole_tables=edited)
+        self.assertEqual(why, 'table inserts changed'); self.assertFalse(gate_deps.tool_reason(why))
+        why = gate_deps.why_stale(stored, {}, {'params': {}, 'tables': view}, {}, 'fusion_inserts')       # no whole tables given: never a tool reason
+        self.assertEqual(why, 'table inserts changed')
+        star = dict(stored, deps=dict(deps, tables={'*': gate_common.digest(full)}))
+        self.assertTrue(gate_deps.tool_reason(gate_deps.why_stale(star, {}, {'params': {}, 'tables': view}, {}, 'fusion_inserts', whole_tables=full)))
+        self.assertEqual(gate_deps.why_stale(star, {}, {'params': {}, 'tables': gate_deps.probe_tables(edited)}, {}, 'fusion_inserts', whole_tables=edited),
+                         'the tables changed')
         why = gate_deps.why_stale(dict(stored, deps=dict(deps, tv=gate_deps.TABLES_VIEW)), {}, {'params': {}, 'tables': view}, {}, 'fusion_inserts')
         self.assertEqual(why, 'table inserts changed'); self.assertFalse(gate_deps.tool_reason(why))          # a record of today: the model's business
         same = dict(deps, tv=gate_deps.TABLES_VIEW, tables={'inserts': gate_common.digest(view['inserts'])})
@@ -209,11 +219,14 @@ class Deps(unittest.TestCase):
         self.assertEqual(self.stored(BRACKET, 'fusion_inserts')['deps']['tv'], gate_deps.TABLES_VIEW)
         stamp = fake_fusion.whole_stamp(self.root, BRACKET, self.sigs['Bracket'], facts=gate_stamp.facts_digests(self.root, BRACKET, self.sigs['Bracket']))
         reg = self.demo.registry()
+        reg['tables']['inserts'] = {'kinds': {'M3x4x5': {'d': 4.0, 'measured_under': [{'layer_height': 0.2}]}}}   # a print the owner recorded
+        gate_plan._PROBE_TABLES.clear()
+        self.assertNotEqual(gate_deps.probe_tables(reg['tables'])['inserts'], reg['tables']['inserts'])
         path = gate_common.facts_path(self.root, BRACKET, self.sigs['Bracket'])
         data = gate_common.read_json(path)
         for e in data['probes'].values():
             if isinstance(e.get('deps'), dict):
-                e['deps'].pop('tv', None); e['deps']['tables'] = {'inserts': 'f' * 16}
+                e['deps'].pop('tv', None); e['deps']['tables'] = {'inserts': gate_common.digest(reg['tables']['inserts'])}
         gate_common.write_json(path, data)
         why = gate_plan.stale_units(self.root, reg)[BRACKET]['fusion_inserts']
         self.assertTrue(gate_deps.tool_reason(why), why)

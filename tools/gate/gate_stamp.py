@@ -57,7 +57,9 @@ Export (gate.py export PART): the part's design verdict must be pass or pass_att
 it -> one short Fusion call reads the part's signature as it is NOW (the census is only as new as the last scan: a part
 changed since then is refused, never reported as "already stamped") -> one fusion_export unit writes gate/run/quarantine/<doc>__<slug>.stl -> stl_mesh and stl_walls measure that file ->
 the export-stage judges and export-stage questions -> only then the file moves into the document's STL folder and the
-stamp is written. A part that fails stays in quarantine and the STL folder keeps the previous file. The file in that
+stamp is written. A part that fails stays in quarantine and the STL folder keeps the previous file; the next export
+of the same signature for the same job judges that file again instead of exporting it from Fusion once more (an
+export that stopped at a question costs one Fusion export, not two). The file in that
 folder is the one the census names for the part ("stl": <stl_dir>/<slug>.stl, or the name "stl_names" of
 gate/layout.json gave it at the last scan).
 
@@ -788,6 +790,21 @@ def _checked_against(root, reg, resolved, part, census, target_key):
     return None
 
 
+def _kept_export(root, part, sig, quarantine, job_key):
+    """The stored fusion_export entry of this signature when the STL it wrote is still in quarantine, byte for byte, and
+    was written for the same job (parameters, tables, target, body): an export that stopped at a question or a finding
+    left it there. None otherwise (the export unit runs again)."""
+    if not os.path.isfile(quarantine):
+        return None
+    e = (gate_common.load_facts(root, part, sig).get('probes') or {}).get('fusion_export')
+    q = e.get('quarantine') if isinstance(e, dict) else None
+    if not isinstance(q, dict) or e.get('error') or not e.get('done', True) or not (e.get('facts') or {}).get('written'):
+        return None
+    if q.get('job') != job_key or q.get('sha256') != gate_common.sha256_file(quarantine):
+        return None
+    return e
+
+
 def export_part(root, reg, resolved, part, target_key=None, wall_s=20.0, transport=None, pinger=None, scanned=False):
     """Export one part through quarantine as described at the top. Returns {"part", "exit": 0 | 1 | 2 | 3 | 4,
     "stamp": path or None, "stl": promoted path or None, "quarantine": path or None, "open": [findings],
@@ -870,10 +887,21 @@ def export_part(root, reg, resolved, part, target_key=None, wall_s=20.0, transpo
             out['stamp'] = old
             return _stop(out, EXIT_PASS, 'already stamped, and Fusion confirms the part is unchanged: nothing to do', stl=dest)
     budget = gate_fusion_rpc.budget(layout)
-    if wall_s is not None and wall_s < budget:
-        return _stop(out, EXIT_MORE, 'no time left in this call for the export unit: call again')
     run = gate_common.new_run_id()
     quarantine = gate_common.gate_path(root, 'run', 'quarantine', '%s__%s.stl' % (doc_key, slug))
+    job_key = gate_common.digest({'params': gate_params.values(resolved), 'tables': gate_plan._probe_tables(reg), 'target': target,
+                                  'doc': doc.get('name'), 'component_id': entry.get('component_id'), 'occurrence': entry.get('occurrence'),
+                                  'body': entry.get('body'), 'name': entry.get('name') or slug, 'not_printed': project.get('not_printed'),
+                                  'motion_groups': doc.get('motion_groups')})
+    kept = _kept_export(root, part, sig, quarantine, job_key)
+    if kept is not None:
+        # the STL an earlier call of this export wrote for this very signature and job, still in quarantine (it stopped at
+        # a question): judged again as it is, with no second export from Fusion
+        out['quarantine'], out['reused'] = quarantine, True
+        _measure_stl(root, reg, resolved, part, sig, quarantine)
+        return _finish(root, reg, resolved, out, part, sig, quarantine, dest, target, ('design', 'export'), kept.get('doc_version'), run, target_key, intent)
+    if wall_s is not None and wall_s < budget:
+        return _stop(out, EXIT_MORE, 'no time left in this call for the export unit: call again')
     os.makedirs(os.path.dirname(quarantine), exist_ok=True)
     if os.path.exists(quarantine):
         os.remove(quarantine)
@@ -900,7 +928,8 @@ def export_part(root, reg, resolved, part, target_key=None, wall_s=20.0, transpo
                      % (gate_common.sig12(env['sig']), gate_common.sig12(sig)))
     if not facts.get('written') or not os.path.isfile(quarantine):
         return _stop(out, EXIT_BLOCK, 'no STL was written: %s' % (facts.get('why_not') or 'the mesh failed its checks'))
-    gate_common.save_probe_facts(root, part, sig, dict(env, part=part, sig=sig, probe='fusion_export'))
+    gate_common.save_probe_facts(root, part, sig, dict(env, part=part, sig=sig, probe='fusion_export',
+                                                       quarantine={'job': job_key, 'sha256': gate_common.sha256_file(quarantine)}))
     _measure_stl(root, reg, resolved, part, sig, quarantine)
     return _finish(root, reg, resolved, out, part, sig, quarantine, dest, target, ('design', 'export'), env.get('doc_version'), run, target_key, intent)
 
