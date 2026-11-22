@@ -201,6 +201,9 @@ def _scr_close(picked, boxes, reach=1.0, touch=0.5, names=None):
     for r in picked:
         if id(r) not in have and any(n['path'] == r['path'] and box_gap(r['box'][0], r['box'][1], n['box'][0], n['box'][1]) <= touch for n in near):
             out.append(r)
+    if names is not None:
+        for r in out:                                                   # their circles are read: the cover check of the call
+            _scr_read(r['name'], r['box'], r, asked=True)               # proves the regions above hold each, filters included
     return out
 
 

@@ -49,6 +49,30 @@ class Probe(unittest.TestCase):
         occ.transform2 = types.SimpleNamespace(asArray=lambda: (1, 0, 0, 0.5, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1))      # 5 mm along x
         self.assertNotEqual(self.unit('fusion_pulse', mods)['facts']['pulse'], base['pulse'])
 
+    def test_a_mesh_whose_triangles_change_and_nodes_stay_changes_the_pulse(self):
+        # 0.3.3 proof: the pulse digested the nodes of a mesh only, the scan's "shape" digests nodes and triangles, and
+        # fusion_openings and fusion_inserts read the triangles. Same nodes, other triangles: the pulse must differ
+        import gate_deps
+        flat = [(25, 25, 15), (35, 25, 15), (35, 35, 15), (25, 35, 15)]
+        def scene(tris):
+            s = with_revisions(self.bracket_scene())
+            s[-1] = T.Comp('ref motor', [], [T.MeshBody('shell', flat, tris)])
+            return s
+        a, b = scene([(0, 1, 2), (0, 2, 3)]), scene([(0, 1, 3)])
+        wa, wb = gate_deps.world(self.unit('fusion_scan', a)['facts']), gate_deps.world(self.unit('fusion_scan', b)['facts'])
+        key = [k for k in wa if 'mesh:' in k][0]
+        self.assertNotEqual(wa[key], wb[key])                                               # the census sees it ...
+        oa = gate_deps.facts_view(self.unit('fusion_openings', a, features=T.Probes.FEATURES)['facts'])
+        ob = gate_deps.facts_view(self.unit('fusion_openings', b, features=T.Probes.FEATURES)['facts'])
+        self.assertNotEqual(oa, ob)                                                         # ... and a fresh openings unit too
+        pa, pb = self.pulse(a), self.pulse(b)
+        self.assertEqual((len(pa['pulse']), pa['why']), (16, None))
+        self.assertNotEqual(pa['pulse'], pb['pulse'])                                       # so the pulse must: the scan is not skipped
+        self.assertEqual(self.pulse(scene([(0, 1, 2), (0, 2, 3)]))['pulse'], pa['pulse'])
+        moved = scene([(0, 1, 2), (0, 2, 3)])
+        moved[-1].meshBodies[0].displayMesh.nodeCoordinatesAsDouble[0] += 0.01               # a node moved by 0.1 mm
+        self.assertNotEqual(self.pulse(moved)['pulse'], pa['pulse'])
+
     def test_a_body_with_no_revision_id_gives_no_pulse(self):
         got = self.pulse(self.bracket_scene())
         self.assertIsNone(got['pulse']); self.assertIn('gives no revision id', got['why'])

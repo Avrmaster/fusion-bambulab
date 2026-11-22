@@ -408,7 +408,7 @@ def gate_path_printed(path, comp_name, body_name, job):
     """The printed rule of the scan, by names alone: no name on the occurrence path (copy numbers dropped), nor the
     component name, nor the body name matches a not-printed pattern. Everything inside a bought assembly "ref motor:1"
     is not printed. Names only: no light bulb is read (a hidden body is what it is by its names)."""
-    names = [n.rsplit(':', 1)[0] for n in (path or '').split('+') if n] + [comp_name, body_name]
+    names = path_names(path) + [comp_name, body_name]
     return all(gate_printed(n, job) for n in names)
 
 
@@ -727,8 +727,9 @@ def gate_pulse(design, job, doc=None):
                 n += 1
             for mb in comp.meshBodies:
                 from array import array
-                dm = mb.displayMesh                     # its nodes, as the scan digests them ("shape"): a mesh edited in place is a change
-                h.update(('M|%s|' % mb.name).encode('utf-8', 'replace') + array('f', dm.nodeCoordinatesAsDouble).tobytes() + b'\n')
+                dm = mb.displayMesh                     # its nodes AND triangles, as the scan digests them ("shape"): a mesh
+                nodes, tris = array('f', dm.nodeCoordinatesAsDouble), array('I', dm.nodeIndices)    # edited in place is a change
+                h.update(('M|%s|%d|%d|' % (mb.name, len(nodes), len(tris))).encode('utf-8', 'replace') + nodes.tobytes() + tris.tobytes() + b'\n')
                 n += 1
         try:
             refs = list(doc.documentReferences) if doc is not None else []

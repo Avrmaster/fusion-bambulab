@@ -867,7 +867,8 @@ def _owner_mode(root, args):
 def _owner_deps(root, args):
     """Which record of what a unit read decides whether it is measured again (gate/project.json "deps", gate_deps.py).
     "tight" is refused while the shadow record (gate_deps.shadow_summary over gate/run/*/deps_shadow.jsonl) holds a
-    violation or no unit at all: the switch rests on proof that the tight record missed nothing. "wide" is always
+    violation, no unit at all, or no unit of one of the probes that note tight regions (gate_deps.tight_probes): the
+    switch rests on evidence that the tight record missed nothing, for every probe it decides for. "wide" is always
     taken (it measures more, never less)."""
     import gate_deps
     path = gate_common.gate_path(root, 'project.json')
@@ -885,6 +886,10 @@ def _owner_deps(root, args):
         if not s['units']:
             raise GateError('"deps": "tight" is refused: the shadow record holds no unit yet, nothing proves the tight record. Runs with "wide" '
                             'write it (gate/run/<run>/deps_shadow.jsonl)')
+        untried = [p for p in gate_deps.tight_probes() if not s['by_probe'].get(p)]
+        if untried:
+            raise GateError('"deps": "tight" is refused: %s; no shadow unit of %s gave the same facts yet, nothing proves their tight regions. '
+                            'Runs with "wide" write them (gate/run/<run>/deps_shadow.jsonl)' % (said, ', '.join(untried)))
     old = data.get('deps', 'wide')
     data['deps'] = args.deps
     gate_common.write_json(path, data)

@@ -24,7 +24,7 @@ with "external": true and "linked": the name of that document. The host decides 
 
 
 def _scan_printed(path, comp_name, body_name, job):
-    names = [n.rsplit(':', 1)[0] for n in (path or '').split('+') if n] + [comp_name, body_name]
+    names = path_names(path) + [comp_name, body_name]
     return all(gate_printed(n, job) for n in names)
 
 

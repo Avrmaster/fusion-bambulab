@@ -48,8 +48,11 @@ Two records, one decision. "wide" is the record as 0.3.2 made it (a box round wh
 the one a probe that knows more exactly what it reads adds (regions with "mode": "tight" and filters). Which one makes a
 unit stale is gate/project.json "deps" (the owner's): "wide" (the default) or "tight". In "wide" the plan also asks the tight record
 (shadow): a unit that only the wide record measures again is compared, when it is done, with its facts before
-(gate/run/<run>/deps_shadow.jsonl, shadow_summary): the same facts are the proof that the tight record would have
-missed nothing; any difference is a violation, and the owner switches to "tight" only on a record of none.
+(gate/run/<run>/deps_shadow.jsonl, shadow_summary): the same facts are evidence that the tight record would have
+missed nothing; any difference is a violation, and the owner switches to "tight" only on a record of none that has
+tried every probe with tight regions (tight_probes). It is a sample: a unit whose tight and wide records both go stale
+in one edit is measured and never compared, so a region that misses a body changed together with a held one stays
+unseen there. The equivalence tests on the fake adsk (tests/test_tight_regions.py) are the other half of the evidence.
 
 What this cannot see: a body that changed after the scan and before its neighbour's unit measured it, and changed back
 before the next scan (the facts were measured on a state no scan saw). The same holds for a full check: its units read
@@ -411,22 +414,31 @@ def record_given_up(read, job, entry, world_lines, probe, target_key=None):
             'reads': None, 'bodies': None, 'all': digest(sorted(world_lines.items()))}
 
 
+def _last_occurrence(key):
+    """The last occurrence of a body key's path with its copy number ("lid + screws:2" of "Gearbox:1+lid + screws:2|Body1"):
+    cut only after a copy number, as _geom_rings.path_names cuts (a component name may hold "+")."""
+    from probes import _geom_rings
+    path = str(key).split('|')[0]
+    cuts = _geom_rings._path_cuts(path)
+    return path[cuts[-1][0]:] if cuts else path
+
+
 def _diff_bodies(was, now):
     """One short text for the first difference between two {key: state} maps."""
     for k in sorted(set(was) | set(now)):
         if k not in now:
-            return '%s left what it read (gone, moved away or renamed)' % k.split('|')[0].rsplit('+', 1)[-1]
+            return '%s left what it read (gone, moved away or renamed)' % _last_occurrence(k)
         if k not in was:
-            return '%s came into what it read (new, or moved close)' % k.split('|')[0].rsplit('+', 1)[-1]
+            return '%s came into what it read (new, or moved close)' % _last_occurrence(k)
         if was[k] != now[k]:
-            return '%s changed, moved or was renamed' % k.split('|')[0].rsplit('+', 1)[-1]
+            return '%s changed, moved or was renamed' % _last_occurrence(k)
     return None
 
 
 def deps_mode(project):
     """Which record decides whether a unit is stale: gate/project.json "deps" ("wide" when it is not set). The owner
     sets it (an entry {"kind": "deps", "deps": "tight"} of a bundle he applies), after the shadow record
-    (shadow_summary) holds no violation. GateError for any other value: a typo must not pick a record silently."""
+    (shadow_summary) holds no violation and a unit of every probe of tight_probes(). GateError for any other value: a typo must not pick a record silently."""
     v = (project or {}).get('deps', DEPS_MODES[0])
     if v not in DEPS_MODES:
         raise gate_common.GateError('gate/project.json: "deps" must be one of %s, got %r' % (', '.join(DEPS_MODES), v))
@@ -543,11 +555,29 @@ def shadow_row(part, probe, why_wide, old_facts, new_facts):
     return row
 
 
+def tight_probes():
+    """The probes that note a tight region (gate_read mode "tight"): the ones a shadow record must have tried before
+    "deps": "tight" can decide for them. Read from their code, so a probe that gets tight regions joins the list."""
+    import glob
+    out = []
+    for path in sorted(glob.glob(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'probes', 'fusion_*.py'))):
+        try:
+            with open(path, encoding='utf-8') as f:
+                text = f.read()
+        except OSError:
+            continue
+        if "mode='tight'" in text or 'mode="tight"' in text:
+            out.append(os.path.basename(path)[:-3])
+    return out
+
+
 def shadow_summary(root):
-    """{"units", "same", "violations": [rows], "runs", "parts", "docs"} over every gate/run/*/deps_shadow.jsonl: how far
-    the proof for "deps": "tight" has come. A line that cannot be read counts as a violation (nothing is proven by it)."""
+    """{"units", "same", "violations": [rows], "runs", "parts", "docs", "by_probe": {probe: units that gave the same
+    facts}} over every gate/run/*/deps_shadow.jsonl: how far the proof for "deps": "tight" has come. A line that cannot
+    be read counts as a violation (nothing is proven by it). It is a sample, not a proof: a unit is compared only when
+    the tight record alone would have kept it."""
     import glob, json
-    out = {'units': 0, 'same': 0, 'violations': [], 'runs': 0, 'parts': set(), 'docs': set()}
+    out = {'units': 0, 'same': 0, 'violations': [], 'runs': 0, 'parts': set(), 'docs': set(), 'by_probe': {}}
     for path in sorted(glob.glob(os.path.join(gate_common.gate_path(root, 'run'), '*', SHADOW_FILE))):
         out['runs'] += 1
         try:
@@ -563,6 +593,8 @@ def shadow_summary(root):
                 row = {'violation': True, 'why': 'a line of %s cannot be read' % path}
             if row.get('same') is True:
                 out['same'] += 1
+                if isinstance(row.get('probe'), str):
+                    out['by_probe'][row['probe']] = out['by_probe'].get(row['probe'], 0) + 1
             else:
                 out['violations'].append(row)
             if isinstance(row.get('part'), str):

@@ -34,7 +34,7 @@ def _ins_in(body, p, tag=0):
 
 
 def _ins_printed(path, comp_name, body_name, job):
-    names = [n.rsplit(':', 1)[0] for n in (path or '').split('+') if n] + [comp_name, body_name]
+    names = path_names(path) + [comp_name, body_name]
     return all(gate_printed(n, job) for n in names)
 
 

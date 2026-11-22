@@ -143,15 +143,55 @@ def group_of(path, groups, search):
 REGION_MODES = ('wide', 'tight')         # which record of what a unit read a region belongs to (gate_read "mode"; none: both)
 
 
+def _path_cuts(path):
+    """[(start, end)] of the component names in an occurrence path, outermost first: the path is cut only after a copy
+    number (":<digits>+") and the last copy number is dropped. A component name may hold "+" and ":" itself ("clamp +
+    foot", "shaft: pin 6x50 + sleeves"), so a plain cut at "+" or at the last ":" gives pieces of names."""
+    s, out, start, i, n = str(path or ''), [], 0, 0, len(str(path or ''))
+    while i < n:
+        if s[i] == ':':
+            j = i + 1
+            while j < n and '0' <= s[j] <= '9':
+                j += 1
+            if j > i + 1 and (j == n or s[j] == '+'):
+                out.append((start, i))
+                start = i = j + 1
+                continue
+        i += 1
+    if start < n:
+        out.append((start, n))                                  # a last name without a copy number: kept whole
+    return [c for c in out if c[1] > c[0]]
+
+
+def path_names(path):
+    """The component names along an occurrence path, outermost first: "Gearbox:1+lid + screws:2+Rotor:1" gives
+    ["Gearbox", "lid + screws", "Rotor"]; [] for the root (""). The printed rule of every probe reads these names."""
+    s = str(path or '')
+    return [s[a:b] for a, b in _path_cuts(s)]
+
+
+def comp_names(path):
+    """Every name the component of an occurrence path can have, the likely one first: the last name of path_names(),
+    then each longer tail of the path (a component name that itself holds ":<digits>+" is cut there too). The real
+    name is always one of them, so a filter that tries them all never leaves out a body the probe chose by its
+    component name. [""] for the root."""
+    s = str(path or '')
+    cuts = _path_cuts(s)
+    if not cuts:
+        return ['']
+    end = cuts[-1][1]
+    return [s[a:end] for a, _ in reversed(cuts)]
+
+
 def key_names(key):
     """(occurrence path, component name, body name) of a body key "<path>|<body>" (gate_deps.body_key; a mesh body is
-    "<path>|mesh:<body>"). The component is the last name of the path without its copy number, "" at the root. A key
-    that two bodies share gets "#2", "#3" at its end (gate_deps.world): the body name is then given both ways."""
+    "<path>|mesh:<body>"). The component is the last name of path_names() (comp_names() gives every name it can have),
+    "" at the root. A key that two bodies share gets "#2", "#3" at its end (gate_deps.world): the body name is then
+    given both ways."""
     path, _, body = str(key).partition('|')
     if body.startswith('mesh:'):
         body = body[5:]
-    comp = path.split('+')[-1].rsplit(':', 1)[0] if path else ''
-    return path, comp, body
+    return path, comp_names(path)[0], body
 
 
 def region_admits(region, key, kind, faces, box, groups, search, slack=0.0):
@@ -170,7 +210,8 @@ def region_admits(region, key, kind, faces, box, groups, search, slack=0.0):
       other_group  only bodies of another motion group than this one (fusion_gap); a body at the root of the
                    document (path "") is always held: its group is matched by a component name the key does not carry
       names        only bodies whose body name, component name or "<component> / <body>" matches one of these
-                   patterns (the refs a probe picks by name); a body at the root is always held
+                   patterns (the refs a probe picks by name); a body at the root is always held. The component name
+                   is read from the path as comp_names() gives it: every name it can have is tried
     A region that cannot be read holds nothing: the caller treats that as "cannot prove" (gate_deps)."""
     lo, hi = region['box']
     if not boxes_near(box[0], box[1], lo, hi, float(region.get('margin') or 0.0) + slack):
@@ -183,17 +224,17 @@ def region_admits(region, key, kind, faces, box, groups, search, slack=0.0):
     kinds = region.get('kinds')
     if kinds is not None and kind not in kinds:
         return False
-    path, comp, body = key_names(key)
+    path, _comp, body = key_names(key)
     if 'other_group' in region and path:
         g = group_of(path, groups, search)
         if g is None or g == region['other_group']:
             return False
     names = region.get('names')
     if names is not None and path:
-        tries = [body, comp, '%s / %s' % (comp, body)]
-        if '#' in body:                                             # "Body1#2": the second of two bodies of one name
-            bare = body.rsplit('#', 1)[0]
-            tries += [bare, '%s / %s' % (comp, bare)]
+        bodies = [body] + ([body.rsplit('#', 1)[0]] if '#' in body else [])     # "Body1#2": the second of two bodies of one name
+        tries = list(bodies)
+        for comp in comp_names(path):                               # its real component name is one of these
+            tries += [comp] + ['%s / %s' % (comp, b) for b in bodies]
         if not any(search(p, t) for p in names for t in tries):
             return False
     return True

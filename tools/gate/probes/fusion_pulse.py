@@ -7,7 +7,8 @@ All work happens inside probe(job), which _fusion.run() calls. Read-only: nothin
 
 What goes in (gate_pulse of _fusion.py): every occurrence with its full path, component id and name and its transform
 (to 0.0001 mm); every solid body with its name and _gate_sig_key (revision id, face count, volume, area: the key the
-signature memory of every unit already trusts); every mesh body with its name and node count; the documents this one
+signature memory of every unit already trusts); every mesh body with its name, node coordinates and triangle indices
+(all the scan's "shape" of a mesh digests: fusion_openings and fusion_inserts read the triangles); the documents this one
 links, with the version each uses and whether it is out of date. Not the light bulbs: what the gate measures does not
 depend on them.
 Why not the saved version of the document: an edit that is not saved does not change it.

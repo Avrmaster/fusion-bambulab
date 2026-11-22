@@ -56,7 +56,7 @@ def probe(job):
         if rec['kind'] == 'printed':
             continue
         gap = box_gap(part_box[0], part_box[1], rec['box'][0], rec['box'][1])
-        row = {'name': rec['name'], 'path': '+'.join(n.rsplit(':', 1)[0] for n in (rec['path'] or '').split('+') if n),
+        row = {'name': rec['name'], 'path': '+'.join(path_names(rec['path'])),
                'kind': rec['kind'], 'gap': round(max(0.0, gap), 2)}
         facts['bodies'].append(row)
     facts['bodies'].sort(key=lambda r: (r['gap'], r['name']))

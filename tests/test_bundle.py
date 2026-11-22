@@ -354,9 +354,13 @@ class Deps(Base):
         code, out, err = self.gate('owner', 'bundle', self.proposal(entry), '--quote', 'switch it')
         self.assertEqual(code, 4); self.assertIn('demo/b fusion_screws, screws', err); self.assertNotIn('deps', self.project())
         self.shadow({'part': 'demo/a', 'probe': 'fusion_near', 'same': True}, {'part': 'demo/b', 'probe': 'fusion_screws', 'same': True})
+        code, out, err = self.gate('owner', 'bundle', self.proposal(entry), '--quote', 'switch it')     # every probe with tight regions needs its own evidence
+        self.assertEqual(code, 4); self.assertIn('no shadow unit of fusion_gap gave the same facts yet', err); self.assertNotIn('deps', self.project())
+        self.shadow({'part': 'demo/a', 'probe': 'fusion_near', 'same': True}, {'part': 'demo/b', 'probe': 'fusion_screws', 'same': True},
+                    {'part': 'demo/a', 'probe': 'fusion_gap', 'same': True})
         code, out, err = self.gate('owner', 'bundle', self.proposal(entry), '--quote', 'switch it')
         self.assertEqual(code, 0, err); self.assertEqual(self.project()['deps'], 'tight')
-        self.assertIn('deps: wide -> tight (2 shadow unit(s) over 1 run(s), 2 part(s) in 1 document(s): 2 gave the same facts, 0 differed)', out)
+        self.assertIn('deps: wide -> tight (3 shadow unit(s) over 1 run(s), 2 part(s) in 1 document(s): 3 gave the same facts, 0 differed)', out)
         code, out, err = self.gate('owner', 'bundle', self.proposal([{'kind': 'deps', 'deps': 'wide'}]), '--quote', 'back')
         self.assertEqual((code, self.project()['deps']), (0, 'wide'))
         code, out, err = self.gate('owner', 'bundle', self.proposal([{'kind': 'deps', 'deps': 'narrow'}]), '--dry-run')
