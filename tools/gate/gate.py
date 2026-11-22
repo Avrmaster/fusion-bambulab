@@ -21,6 +21,9 @@
     python3 gate/tools/gate.py owner bundle PROPOSAL [--dry-run] --quote "..."   a prepared proposal of param, target, waiver,
                                                            triage and mode entries, applied in one call or not at all
     python3 gate/tools/gate.py owner baseline PROJECT "OBJECT" [...] --quote "..." [--reason "..."]   support baseline from the last slice
+    python3 gate/tools/gate.py owner outside PROJECT "OBJECT" [...] --reason "..." [--dry-run | --quote "..."]   objects of a
+                                                           .3mf project that no registered document makes: they pass a save
+                                                           only while their mesh is the one in the file at this call
 
 `--for KEY` names the .3mf project (its key in gate/layout.json) whose declared target a part is judged for. A project
 with one declared target needs none; with several, `run` and `export` refuse to guess.
@@ -103,7 +106,8 @@ def parser():
               keep (bool), timeout (seconds)
     report    last (bool)
     triage    md (bool)
-    owner     action ("waive" | "decide" | "adopt" | "param" | "bundle" | "baseline"); waive: finding, reason, quote; decide: item (T-id
+    owner     action ("waive" | "decide" | "adopt" | "param" | "bundle" | "baseline" | "table" | "outside"); outside: project
+              (key), objects (list), reason, quote (None with --dry-run), dry_run (bool); waive: finding, reason, quote; decide: item (T-id
               of a row or G-id of a group), decision, quote, note, part (with a G-id: only the rows of this part); adopt:
               quote; param: name, value (text as typed), tag, source, key, quote; bundle: proposal (path), dry_run (bool),
               quote (None with --dry-run); baseline: project, objects (list), quote, reason"""
@@ -150,6 +154,8 @@ def parser():
     o.add_argument('--under', metavar='KEY', help='with --tag M on a fit parameter: the .3mf project the value was printed from; its declared target is stored as "measured_under"')
     o = osub.add_parser('bundle'); o.add_argument('proposal'); o.add_argument('--quote'); o.add_argument('--dry-run', dest='dry_run', action='store_true')
     o = osub.add_parser('baseline'); o.add_argument('project'); o.add_argument('objects', nargs='+'); o.add_argument('--quote', required=True); o.add_argument('--reason')
+    o = osub.add_parser('outside'); o.add_argument('project'); o.add_argument('objects', nargs='+'); o.add_argument('--reason', required=True)
+    o.add_argument('--quote'); o.add_argument('--dry-run', dest='dry_run', action='store_true')
     o = osub.add_parser('table'); o.add_argument('table', choices=TABLE_ROWS); o.add_argument('row', nargs='?')
     o.add_argument('--value', help='bearings: "d,D,B" in mm; pins, screws, screws_set: the stock lengths "16,20,25"')
     o.add_argument('--under', metavar='KEY', help='inserts, seat_fit: the .3mf project the print was made from (its declared target is recorded)')
@@ -571,6 +577,144 @@ def _owner_table_dry(root, args):
     return EXIT_PASS
 
 
+OUTSIDE_ABOUT = ('OWNER file. Objects of a registered .3mf project that no registered document or generator makes (a part of a '
+                 'document the gate does not cover yet), declared outside the gate by the owner, per project key and object name, '
+                 'each with the geom_hash of its mesh as the saved .3mf held it. The guard lets such an object through a save only '
+                 'while its mesh is that one; any other mesh under the name is judged like any new mesh. Written only by '
+                 '`gate.py owner outside`.')
+
+
+def _gated_objects(root, entry, layout, names):
+    """{object name: why} for the named objects of the project `entry` that ARE parts of the gate: tied to a part of the
+    census or a registered generator by a write of the journal, by their geometry or by the name of its STL
+    (probes.project_consistency.measure, light), or named like a part of the census or a generator. Such an object
+    must be stamped; it is never declared outside the gate."""
+    from probes import project_consistency
+    census = gate_common.load_census(root)
+    declared = (gate_common.load_project(root).get('targets') or {}).get(entry.get('key'))
+    facts = project_consistency.measure(root, entry, layout, census, declared_target=declared, light=True)
+    out = {}
+    how = {'write': 'a write of the journal ties its mesh to %s', 'geometry': 'its mesh is the geometry of %s', 'name': 'its name is that of %s'}
+    for row in facts.get('objects') or []:
+        if row.get('name') in names and row.get('part'):
+            stl = row.get('stl') or (row.get('hint') or {}).get('stl')
+            why = how[row['tie']] % stl if stl and row.get('tie') in how else 'a stamp holds its geometry'
+            out.setdefault(row['name'], 'it is the part %s: %s' % (row['part'], why))
+    keys = {}
+    for pid, e in sorted((census.get('parts') or {}).items()):
+        if isinstance(e, dict) and not e.get('gone'):
+            for text in (e.get('name'), project_consistency._bambu_name(e.get('name') or ''), e.get('stl')):
+                if text:
+                    keys.setdefault(project_consistency._name_key(text), pid)
+    for g in layout.get('generators') or []:
+        if isinstance(g, dict) and isinstance(g.get('part'), str):
+            for text in (g['part'].split('/')[-1], g.get('stl')):
+                if text:
+                    keys.setdefault(project_consistency._name_key(text), g['part'])
+    for name in names:
+        pid = keys.get(project_consistency._name_key(name))
+        if pid and name not in out:
+            out[name] = 'its name is that of the part %s of the gate' % pid
+    return out
+
+
+def _owner_outside(root, args):
+    """gate.py owner outside PROJECT OBJECT... --reason R --quote Q: declare objects of the registered .3mf project PROJECT
+    outside the gate's coverage (gate/owner/outside.json): parts of a document the gate does not register, that can
+    never get a stamp. Each entry holds the geom_hash of the object's mesh as the saved file holds it now (meshid, the
+    stored vertices: the form the guard reads at every save), its triangles and plate, the reason, the quote, the date
+    and the sha256 of the file. The guard lets the object through a save only while its mesh in the archive is that one.
+    Refused (nothing written): a project gate/layout.json does not register, a file that cannot be read, a name the file
+    does not hold or holds twice with different meshes, an object that is a part of the gate (_gated_objects: it must be
+    stamped), and in a bundle a mesh other than the one its dry run showed ("expect"). Declaring a name again replaces
+    its entry (the old hash is kept under "was")."""
+    meshid = gate_common.sibling('meshid')
+    reason = str(getattr(args, 'reason', None) or '').strip()
+    if not reason:
+        raise GateError('--reason must say why these objects lie outside the gate (which document makes them, and why it is not registered); nothing was written')
+    names = list(dict.fromkeys(str(n) for n in getattr(args, 'objects', None) or []))
+    if not names or any(not n.strip() for n in names):
+        raise GateError('name each object as the .3mf shows it; nothing was written')
+    layout = gate_common.load_layout(root)
+    keys = [e.get('key') for e in layout.get('projects') or [] if isinstance(e, dict)]
+    entry = next((e for e in layout.get('projects') or [] if isinstance(e, dict) and e.get('key') == args.project), None)
+    if entry is None or not entry.get('file'):
+        raise GateError('%s is no .3mf project of gate/layout.json (registered: %s); nothing was written' % (args.project, ', '.join(k for k in keys if k) or 'none'))
+    path = entry['file'] if os.path.isabs(entry['file']) else os.path.join(root, *str(entry['file']).split('/'))
+    rel_file = gate_common.rel(root, path)
+    try:
+        meshes = meshid.read_project(path)
+        with open(path, 'rb') as f:
+            sha = hashlib.sha256(f.read()).hexdigest()
+    except Exception as e:
+        raise GateError('the project file %s cannot be read (%s: %s); nothing was written' % (rel_file, type(e).__name__, e))
+    by = {}
+    for m in meshes:
+        by.setdefault(m['object'], []).append(m)
+    found = {}
+    for name in names:
+        ms = by.get(name)
+        if not ms:
+            raise GateError('%s holds no object "%s" (its objects: %s); nothing was written' % (rel_file, name, ', '.join(sorted(by)) or 'none'))
+        hashes = {meshid.geom_hash(m['vertices'], len(m['triangles'])) for m in ms}
+        if len(hashes) > 1:
+            raise GateError('%s holds %d objects named "%s" with different meshes: give them names of their own first; nothing was written' % (rel_file, len(ms), name))
+        found[name] = {'geom_hash': hashes.pop(), 'triangles': len(ms[0]['triangles']), 'plate': ms[0].get('plate'), 'plate_index': ms[0].get('plate_index')}
+    gated = _gated_objects(root, entry, layout, names)
+    if gated:
+        raise GateError('a part of a registered document or generator is never outside the gate: it is exported through the gate (gate.py export) '
+                        'and stamped. Nothing was written:\n  ' + '\n  '.join('"%s": %s' % (n, gated[n]) for n in names if n in gated))
+    expect = getattr(args, 'expect', None)
+    if expect is not None:                               # a bundle entry: the meshes the owner was shown in its dry run
+        moved = [n for n in names if (expect.get(n) if isinstance(expect, dict) else None) != found[n]['geom_hash']]
+        if moved:
+            raise GateError('the mesh of %s in %s is not the one the entry names ("expect": %s, the file: %s); nothing was written. Show the owner '
+                            'the dry run again' % (', '.join('"%s"' % n for n in moved), rel_file,
+                                                   ', '.join(str((expect or {}).get(n))[:12] for n in moved), ', '.join(found[n]['geom_hash'][:12] for n in moved)))
+    target = gate_common.outside_path(root)
+    data = gate_common.load_outside(root)
+    data.setdefault('_about', OUTSIDE_ABOUT)
+    project = data['projects'].setdefault(args.project, {})
+    project['file'] = rel_file
+    objects = project.setdefault('objects', {})
+    ticket = getattr(args, '_ticket', None)
+    today = datetime.date.today().isoformat()
+    for name in names:
+        old = objects.get(name)
+        e = dict(found[name], reason=reason, quote=args.quote, date=today, file_sha256=sha,
+                 was={k: old.get(k) for k in ('geom_hash', 'date', 'reason')} if isinstance(old, dict) else None)
+        if isinstance(ticket, dict) and isinstance(ticket.get('turn'), dict):
+            e['turn'] = ticket['turn']                   # the owner turn the hook found the quote in (uuid, time)
+        objects[name] = e
+        print('declared outside the gate in %s: "%s" (plate %s), mesh %s, %d triangles%s'
+              % (args.project, name, found[name]['plate_index'] if found[name]['plate_index'] is not None else 'none', found[name]['geom_hash'][:12],
+                 found[name]['triangles'], ' (was %s of %s)' % (str(old.get('geom_hash'))[:12], old.get('date')) if isinstance(old, dict) else ''))
+    gate_common.write_json(target, data)
+    print('each passes a save of %s only while its mesh is this one, not checked and without a stamp, and status, verify and the session hooks '
+          'list it; any other mesh under its name is judged like a new mesh (enforce: refused without a stamp)' % rel_file)
+    return EXIT_PASS
+
+
+def _owner_outside_dry(root, args):
+    """`owner outside ... --dry-run`: what the declaration would write, as a diff, and the bundle entry that applies the
+    same (with the meshes as "expect"); nothing is written and no quote is needed. The hook keeps the dry run bound to
+    the file, the objects and the reason (gate_watch.outside_binding): the apply needs the owner's answer to it."""
+    args.quote = '<the owner\'s words: --quote at the apply>'
+    stage = _Stage()
+    with stage:
+        _owner_outside(root, args)
+        data = gate_common.load_outside(root)
+    objects = ((data.get('projects') or {}).get(args.project) or {}).get('objects') or {}
+    names = list(dict.fromkeys(str(n) for n in args.objects))
+    changes = stage.diff(root)
+    for _rel, text in changes:
+        print(text.rstrip('\n'))
+    print('bundle entry: %s' % json.dumps({'kind': 'outside', 'project': args.project, 'objects': names, 'reason': str(args.reason).strip(),
+                                            'expect': {n: objects[n]['geom_hash'] for n in names}}, sort_keys=True))
+    print('DRY RUN: nothing was written. %d file(s) would change: %s' % (len(changes), ', '.join(r for r, _ in changes) or 'none'))
+    return EXIT_PASS
+
+
 def cmd_owner(root, args):
     """gate.py owner waive | decide | param: the only writer of gate/owner/*. Every one needs --quote (the owner's own
     words) and is refused while the project's .claude/settings.json lacks the `ask` rules that put a prompt in front of
@@ -597,11 +741,17 @@ def cmd_owner(root, args):
             from the file. A per-size value (--key) cannot be M while the base value of the parameter is not.
     baseline  gate/owner/support_baseline.json["projects"][args.project][object] = the support the last slice of the
             gate measured for that object (gate_slice.owner_baseline); refused for an object not sliced from the mesh
-            the project holds now."""
+            the project holds now.
+    outside   gate/owner/outside.json["projects"][args.project]["objects"][object] = the mesh hash the saved .3mf holds
+            for each named object now, with reason and quote (_owner_outside): objects no registered document makes,
+            which the guard then lets through only while their mesh is that one. --dry-run shows the change. Refused
+            for an object that is a part of the gate (it is exported and stamped, never declared)."""
     if args.action == 'bundle' and getattr(args, 'dry_run', False):
         return _owner_bundle(root, args)         # writes nothing: no prompt, no quote needed to show what would change
     if args.action == 'table' and getattr(args, 'dry_run', False):
         return _owner_table_dry(root, args)
+    if args.action == 'outside' and getattr(args, 'dry_run', False):
+        return _owner_outside_dry(root, args)
     if _agent_session():
         args._ticket = _take_ticket(root, args)
     missing = gate_common.ask_rules_missing(root)
@@ -612,7 +762,7 @@ def cmd_owner(root, args):
     if not str(getattr(args, 'quote', '') or '').strip():
         raise GateError('an owner command needs --quote: the owner\'s own words for this decision; nothing was written')
     return {'waive': _owner_waive, 'decide': _owner_decide, 'adopt': _owner_adopt, 'param': _owner_param, 'bundle': _owner_bundle, 'baseline': _owner_baseline,
-            'table': _owner_table}[args.action](root, args)
+            'table': _owner_table, 'outside': _owner_outside}[args.action](root, args)
 
 
 AGENT_ENV = ('CLAUDECODE', 'CLAUDE_CODE_ENTRYPOINT', 'CLAUDE_CODE_SESSION_ID')
@@ -651,6 +801,10 @@ def _take_ticket(root, args):
                '(not through python -m, an import or a script file; within %d s of the check). The owner can also run it in his own terminal' % gate_watch.TICKET_S)
     elif gate_watch.normalize(args.quote or '') not in (hit.get('quotes') or []):
         why = 'the --quote of this command is not the one the hook checked'
+    elif args.action == 'outside':                   # bound to what the dry run showed: the file, the objects, the reason
+        if not hit.get('proposal_sha256') or gate_watch.outside_binding(root, args.project, args.objects, args.reason) != hit['proposal_sha256']:
+            why = ('the project file, the objects or the reason changed after the hook checked the quote against the dry run the owner saw: '
+                   'show him the dry run again')
     elif hit.get('proposal_sha256'):
         prop = args.proposal if os.path.isabs(args.proposal) else os.path.join(os.getcwd(), args.proposal)
         try:
@@ -683,6 +837,7 @@ BUNDLE_KINDS = {                                 # kind -> (required fields, opt
     'deps': (('deps',), ()),                                         # which record of what a unit read decides (gate_deps.deps_mode)
     'baseline': (('project', 'objects', 'expect'), ('reason',)),     # expect: {object: {"support_e", "top_z", "pose"}} as the dry run shows them
     'table': (('table', 'source'), ('row', 'value', 'under')),       # a row of gate/owner/tables.json, as `owner table`
+    'outside': (('project', 'objects', 'reason', 'expect'), ()),      # expect: {object: geom_hash} as `owner outside --dry-run` shows them
 }
 BUNDLE_COMMON = ('kind', 'why')                  # "why": the evidence, for the owner to read; never applied
 
@@ -733,6 +888,10 @@ def read_bundle(path):
             raise GateError('entry %d (table): "table" must be one of %s' % (i, ', '.join(TABLE_ROWS)))
         if e['kind'] == 'table' and e.get('row') is not None and not isinstance(e['row'], str):
             raise GateError('entry %d (table): "row" must be a text, as on the command line ("5", "608", "M3"), not %r' % (i, e['row']))
+        if e['kind'] == 'outside' and (not isinstance(e['objects'], list) or not e['objects'] or any(not isinstance(o, str) for o in e['objects'])
+                                       or not isinstance(e['expect'], dict) or any(not gate_common.OUTSIDE_HASH.match(str(e['expect'].get(o) or '')) for o in e['objects'])):
+            raise GateError('entry %d (outside): "objects" must be a list of object names and "expect" give each of them the mesh hash the owner is '
+                            'shown (the "bundle entry" line of `gate.py owner outside ... --dry-run`): the apply refuses when the mesh moved since' % i)
         if e['kind'] == 'decide' and e['decision'] not in DECISIONS:
             raise GateError('entry %d (decide): "decision" must be one of %s' % (i, ', '.join(DECISIONS)))
     return data
@@ -913,7 +1072,7 @@ def _owner_bundle(root, args):
     with open(path, 'rb') as f:
         sha = hashlib.sha256(f.read()).hexdigest()
     funcs = {'param': _owner_param, 'target': _owner_target, 'waive': _owner_waive, 'decide': _owner_decide, 'adopt': _owner_adopt, 'mode': _owner_mode, 'deps': _owner_deps, 'baseline': _owner_baseline,
-             'table': _owner_table}
+             'table': _owner_table, 'outside': _owner_outside}
     print('%s %s: %d entr%s%s' % ('DRY RUN of' if dry else 'bundle', gate_common.rel(root, path), len(data['entries']), 'y' if len(data['entries']) == 1 else 'ies',
                                   (' - ' + data['title']) if data.get('title') else ''))
     stage = _Stage()

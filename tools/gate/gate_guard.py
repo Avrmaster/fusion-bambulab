@@ -41,6 +41,15 @@ event backs:
            to enforce once every part it prints is exported through the gate and swapped in.
 Every other mesh is NEW and is judged.
 
+Objects outside the gate (gate/owner/outside.json, written only by `gate.py owner outside`): the owner may declare, per
+registered project and object name, objects that no registered document or generator makes (a part of a document the
+gate does not cover yet), each with meshid.geom_hash of its mesh as the saved .3mf held it (the stored vertices: the
+form this guard reads). Such an object passes a save in both modes, unstamped and unchecked, ONLY while its mesh in the
+archive about to be written has that very hash; it is listed in "declared_outside" and said in one line at every save
+(declared_outside_line). Any other mesh under that name is judged like any other mesh (enforce: refused without a valid
+stamp), with the reason that it changed since it was declared. A file that is not registered, or lies outside the tree,
+gets nothing from a declaration; a broken owner file makes the save one that could not be judged (enforce refuses it).
+
 In enforce mode the archive about to be written is also held against the declared target of a registered project
 (the judge of project.settings_match: hole compensation, layer height, nozzle, the "print" block, per object too): a
 save whose file would print with another value than a declared one is refused, whatever the file on disk held. What
@@ -564,7 +573,7 @@ def _check(root, path, meshes, files=None, asked=None, via=None):
     outside = _outside_tree(root, path)
     res = {'gated': True, 'mode': mode, 'project': entry.get('key') if entry else None, 'meshes': len(meshes) if meshes is not None else 0,
            'new': [], 'unstamped': [], 'stale': [], 'rows': [], 'stamps': {}, 'line': '', 'unchecked': [], 'mark': None,
-           'outside_tree': outside, 'root': root}
+           'outside_tree': outside, 'root': root, 'declared_outside': []}
     prel = path if outside else gate_common.rel(root, path)
     got = _guard_settings(root, path, files, asked, mode, entry.get('key') if entry else None, prel)
     res['settings'] = {k: v for k, v in got.items() if k not in ('disk', 'after')}
@@ -771,6 +780,10 @@ def _check_meshes(root, path, meshes, project, layout, entry, res, prel, via=Non
     on_disk = {m['pose'] for m in disk}
     welded = {(m['object'], m['vset']) for m in disk}
     ctx = {'target': (project.get('targets') or {}).get(entry.get('key'))}
+    # the owner's list of objects outside the gate (gate/owner/outside.json), for a registered project only: a file that
+    # is not registered, or lies outside the tree, has none. A broken file raises: the save could not be judged
+    declared = gate_common.declared_outside(root, entry.get('key')) if entry.get('key') and not outside else {}
+    moved = {}
     plates = set()
     for m in meshes:
         name = m.get('object')
@@ -786,6 +799,12 @@ def _check_meshes(root, path, meshes, project, layout, entry, res, prel, via=Non
             if stamp:
                 res['stamps'][name] = stamp
             continue
+        dec = declared.get(name)
+        if dec is not None:
+            if dec.get('geom_hash') == pose:                # the very mesh the owner declared outside the gate: passes, said at every save
+                res['declared_outside'].append(name)
+                continue
+            moved[name] = dec                               # another mesh under that name: judged like any other mesh
         from_disk = pose in on_disk or (name, vset) in welded   # the second: the same vertices with other triangles (a weld, a repair)
         if from_disk and mode != 'enforce':
             # the owner's hand work, or older than the gate: passes in observe. A valid stamp of its geometry backs it as it
@@ -797,6 +816,8 @@ def _check_meshes(root, path, meshes, project, layout, entry, res, prel, via=Non
             if state == 'valid':
                 res['stamps'][name] = stamp
                 continue
+            if name in moved:
+                log(root, '%s %s: %s' % (mode, prel, outside_changed(entry.get('key'), name, moved[name], pose)))
             res['unchecked'].append(name)
             plates.add(m.get('plate_index'))
             continue
@@ -806,7 +827,9 @@ def _check_meshes(root, path, meshes, project, layout, entry, res, prel, via=Non
             raise
         except Exception as e:                              # what could not be judged has not passed
             state, why, part, stamp = 'none', 'could not be judged: %s: %s' % (type(e).__name__, e), None, None
-        if from_disk and state != 'valid':
+        if name in moved and state != 'valid':
+            why = '%s; %s' % (outside_changed(entry.get('key'), name, moved[name], pose), why)
+        elif from_disk and state != 'valid':
             why = ('it lies in the file on disk and nothing on record backs it (no stamp of its geometry that still verifies): enforce lets nothing '
                    'through because it was there before. %s; %s' % ('A coupon' if str(why).startswith('no coupon stamp') else
                                                                       'Export the part through the gate (gate.py export PART) and swap it in', why))
@@ -824,6 +847,8 @@ def _check_meshes(root, path, meshes, project, layout, entry, res, prel, via=Non
         line += ', %d with a stale stamp (%s)' % (len(res['stale']), _names(res['stale']))
     if bound:
         line += ', %d found in the file on disk and put on record' % bound
+    if res['declared_outside']:
+        line += ', %d declared outside the gate by the owner (%s)' % (len(res['declared_outside']), _names(res['declared_outside']))
     res['line'] = line
     for r in bad:
         log(root, '%s %s: %s %s: %s' % (mode, prel, r['object'], r['state'], r['why']))
@@ -843,9 +868,67 @@ def _check_meshes(root, path, meshes, project, layout, entry, res, prel, via=Non
     res['unchecked'] = unchecked
     if unchecked:
         _say(root, unchecked_line(prel, unchecked))
+    if res['declared_outside']:                             # let through without a stamp on the owner's word: never in silence
+        _say(root, declared_outside_line(prel, list(dict.fromkeys(res['declared_outside']))))
     if mode == 'enforce' or project.get('mark_unchecked') is True:
         res['mark'] = sorted(p for p in plates if isinstance(p, int))
     return res
+
+
+def outside_changed(key, name, entry, pose):
+    """Why a mesh under a name the owner declared outside the gate is judged like any other: it is not the declared one."""
+    return ('"%s" changed since it was declared outside the gate (%s: mesh %s, now %s): export it through the gate or declare it again '
+            '(gate.py owner outside %s "%s" ... --dry-run first)' % (name, entry.get('date') or 'no date', str(entry.get('geom_hash'))[:12],
+                                                                   str(pose)[:12], key, name))
+
+
+def declared_outside_line(prel, names, changed=(), missing=()):
+    """The one line said at every save, and by status, verify and the session hooks, while the owner declares objects of
+    a project outside the gate (gate/owner/outside.json)."""
+    line = ('gate: %d object(s) in %s are declared outside the gate by the owner (gate/owner/outside.json), not checked, no stamp: %s. '
+            'Each passes a save only while its mesh is the one declared' % (len(names), prel, _names(names, 12)))
+    if changed:
+        line += '; CHANGED since, refused at the next save in enforce mode: %s' % _names(changed, 12)
+    if missing:
+        line += '; no longer in the file: %s' % _names(missing, 12)
+    return line
+
+
+def outside_summary(root, layout=None):
+    """[{"project": key, "file": path as gate/layout.json gives it, "objects": [names declared outside], "changed":
+    [those whose mesh in the file on disk is not the declared one], "missing": [those the file does not hold], "line":
+    declared_outside_line(), "error": text or None}] for every registered project with declared objects. Reads the
+    meshes of those files only. Never raises: a file that cannot be read is said in "error" (and in the line)."""
+    out = []
+    try:
+        data = gate_common.load_outside(root)
+        layout = layout if layout is not None else gate_common.load_layout(root)
+    except Exception as e:
+        return [{'project': None, 'file': 'gate/owner/outside.json', 'objects': [], 'changed': [], 'missing': [], 'error': '%s: %s' % (type(e).__name__, e),
+                 'line': 'gate: gate/owner/outside.json cannot be read (%s: %s): no object is let through as declared outside the gate' % (type(e).__name__, e)}]
+    files = {e.get('key'): e.get('file') for e in layout.get('projects') or [] if isinstance(e, dict)}
+    for key in sorted(data.get('projects') or {}):
+        decl = gate_common.declared_outside(root, key, data)
+        names = sorted(decl)
+        if not names:
+            continue
+        f = files.get(key)
+        row = {'project': key, 'file': f, 'objects': names, 'changed': [], 'missing': [], 'error': None}
+        if not f:
+            row['error'] = 'gate/layout.json registers no .3mf project %s: these declarations let nothing through' % key
+        else:
+            path = f if os.path.isabs(f) else os.path.join(root, *str(f).split('/'))
+            disk = _disk_meshes(path)
+            if not disk and os.path.isfile(path):
+                row['error'] = 'the meshes of %s cannot be read' % f
+            have = {}
+            for m in disk:
+                have.setdefault(m['object'], set()).add(m['pose'])
+            row['missing'] = [n for n in names if n not in have and not row['error']]
+            row['changed'] = [n for n in names if n in have and have[n] != {decl[n]['geom_hash']}]
+        row['line'] = declared_outside_line(f or key, names, row['changed'], row['missing']) + (' (%s)' % row['error'] if row['error'] else '')
+        out.append(row)
+    return out
 
 
 def unchecked_line(prel, names):
@@ -878,7 +961,8 @@ def saved(root, path, result=None):
                               'and the objects without a stamp. A file that differs was changed outside the tools since.', 'projects': {}}
         r = result if isinstance(result, dict) else {}
         data['projects'][gate_common.rel(root, path)] = {'time': gate_common.now(), 'ts': time.time(), 'mode': r.get('mode'), 'size': st.st_size,
-                                                          'mtime_ns': st.st_mtime_ns, 'unchecked': list(r.get('unchecked') or [])[:400]}
+                                                          'mtime_ns': st.st_mtime_ns, 'unchecked': list(r.get('unchecked') or [])[:400],
+                                                          'declared_outside': list(r.get('declared_outside') or [])[:400]}
         gate_common.write_json(p, data)
     except Exception as e:
         log(root, 'could not keep the state of %s after the save: %s: %s' % (path, type(e).__name__, e))
@@ -916,7 +1000,8 @@ def check(path, meshes, root=None, files=None, asked=None, via=None):
     with rows: an unregistered file judged in enforce mode),
     "stamps": {object name: "<part id>@<sig12>" or None} for every mesh that has a valid stamp (carried ones too),
     "line": summary text, "unchecked": [object names let through without a stamp: from the file on disk, or written
-    in observe mode], "mark": [plate indices whose name gets the "[unchecked] " prefix] or None (leave the names alone),
+    in observe mode], "declared_outside": [object names let through because the owner declared them outside the gate
+    with this very mesh], "mark": [plate indices whose name gets the "[unchecked] " prefix] or None (leave the names alone),
     "outside_tree": bool, "root": the gated root}.
     observe: logs, prints the line when anything is unstamped or stale, never raises (an internal error returns
     {"gated": True, "error": text, ...} after logging it). enforce: raises GuardRefusal when "unstamped" or "stale" is
@@ -942,7 +1027,8 @@ def check(path, meshes, root=None, files=None, asked=None, via=None):
         except Exception:
             pass
         return {'gated': True, 'mode': 'observe', 'project': None, 'meshes': len(meshes) if isinstance(meshes, (list, tuple)) else 0,
-                'new': [], 'unstamped': [], 'stale': [], 'rows': [], 'stamps': {}, 'line': text, 'error': '%s: %s' % (type(e).__name__, e)}
+                'new': [], 'unstamped': [], 'stale': [], 'rows': [], 'stamps': {}, 'line': text, 'error': '%s: %s' % (type(e).__name__, e),
+                'declared_outside': []}
 
 
 # ---- gate.py verify --------------------------------------------------------------------------------------------------
@@ -996,6 +1082,9 @@ def cmd_verify(root, args):
         print('NOT REGISTERED  %s: a .3mf of this project that gate/layout.json does not name: nothing in it is verified' % f)
     for d in loose['stl_dirs']:
         print('NOT REGISTERED  %s/: a folder with STL files that is no "stl_dir" of gate/layout.json: its files are not compared with any stamp' % d)
+    for row in outside_summary(root, layout):               # the owner's objects outside the gate: one line per project
+        if not args.project or row.get('project') in [e.get('key') for e in entries] or row.get('project') is None:
+            print('OUTSIDE  ' + row['line'])
     if not entries:
         print('gate verify: no .3mf project is registered in gate/layout.json: NOTHING was verified')
         return EXIT_INFRA

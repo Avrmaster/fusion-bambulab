@@ -756,7 +756,7 @@ def _build_table_settings(root, rel_path, saved, keys):
     return out
 
 
-def measure(root, project_entry, layout, census, declared_target=None, reg=None, fit_settings=None):
+def measure(root, project_entry, layout, census, declared_target=None, reg=None, fit_settings=None, light=False):
     """Facts of one .3mf project.
 
     root             project root (the folder with gate/project.json)
@@ -796,6 +796,9 @@ def measure(root, project_entry, layout, census, declared_target=None, reg=None,
       an STL row also has "triangles" and "named" (objects whose name fits the file, whatever their geometry); an STL
       that cannot be read has "geom_hash" None and stamp "none" with the reason in "why".
       "target_file" is None when the file has no project settings; its "line_width" is the process setting of that name.
+      an object row also has "outside": None, or {"same": bool, "geom_hash", "date", "reason"} when the owner declared an
+      object of that name outside the gate in this project (gate/owner/outside.json; "same": its mesh is the declared one).
+      light True: "overhangs", "placed_walls" and "slice" are None (what ties objects to parts, without the geometry checks).
       a "differs" row also names its "object" (or "plate_index"); "table" and "project" are short texts or None.
       "build_table" has "why" when the table was not compared, and "plates" (how many the literal holds).
       "stl_dir", "writes" (how many `write` events of the journal name this project file) and "unread_projects" (keys of
@@ -1002,7 +1005,11 @@ def measure(root, project_entry, layout, census, declared_target=None, reg=None,
     table = None
     if project_entry.get('build_table'):
         table = _build_table(root, str(project_entry['build_table']).replace(os.sep, '/'), objects, exists)
-    public = ('name', 'id', 'plate', 'plate_index', 'printable', 'pose', 'triangles', 'part', 'stl', 'model', 'tie', 'hint', 'stamp')
+    declared = gate_common.declared_outside(root, key)      # the owner's objects outside the gate; a broken file: GateError
+    for r in objects:
+        d = declared.get(r['name'])
+        r['outside'] = None if d is None else {'same': d['geom_hash'] == r['pose'], 'geom_hash': d['geom_hash'], 'date': d.get('date'), 'reason': d.get('reason')}
+    public = ('name', 'id', 'plate', 'plate_index', 'printable', 'pose', 'triangles', 'part', 'stl', 'model', 'tie', 'hint', 'stamp', 'outside')
     settings = None
     if exists:
         settings = read_fit_settings(path, fit_settings)
@@ -1024,9 +1031,9 @@ def measure(root, project_entry, layout, census, declared_target=None, reg=None,
             'target_file': _target_of_settings(mine['settings']) if exists else None,
             'objects': rows, 'stls': stls, 'build_table': table,
             'stl_dir': project_entry.get('stl_dir'), 'writes': len(writes.get(rel_file, {})), 'unread_projects': unread,
-            'overhangs': overhang_facts(root, path, rows, registry, declared_target) if exists else None,
-            'placed_walls': placed_wall_facts(root, path, rows, registry, declared_target) if exists else None,
-            'slice': _slice_facts(root, key, rows, path) if exists else None}
+            'overhangs': overhang_facts(root, path, rows, registry, declared_target) if exists and not light else None,
+            'placed_walls': placed_wall_facts(root, path, rows, registry, declared_target) if exists and not light else None,
+            'slice': _slice_facts(root, key, rows, path) if exists and not light else None}
 
 
 SUPPORT_KEYS = ('enable_support', 'support_type', 'support_on_build_plate_only', 'support_remove_small_overhang')

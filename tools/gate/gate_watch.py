@@ -55,7 +55,8 @@ words. An owner turn is a transcript line with "type": "user", "origin": {"kind"
 "turnOrigin" of "human" (or none), not a sidechain, not meta, no tool result, with the text the host injects taken out;
 or the answer the owner clicked in an AskUserQuestion card. Text typed by an agent, a workflow's computed task, a peer
 session or a task notification never counts. `owner bundle` (not --dry-run) also needs a dry run of the same proposal,
-unchanged since, and a quoted turn newer than that dry run. When the quote holds, the hook leaves a one-time ticket
+unchanged since, and a quoted turn newer than that dry run. `owner outside` (not --dry-run) the same: a dry run of the
+same project, objects and reason with the .3mf file unchanged since (outside_binding), and a quoted turn newer than it. When the quote holds, the hook leaves a one-time ticket
 (gate/run/owner_tickets.json: the exact arguments, the quote, the proposal's sha256); gate.py refuses an owner command
 from an agent session without a matching ticket, so `python3 -m gate`, an import of gate.py or a script file that calls
 it gets nowhere either.
@@ -100,7 +101,7 @@ WRAPPERS = {'sudo': 'ugCDhpr', 'doas': 'u', 'env': 'uSC', 'command': '', 'builti
 SLICERS = re.compile(r'(?i)bambu.?studio|orca.?slicer|prusa.?slicer|superslicer')
 ASSIGN = re.compile(r'^([A-Za-z_][A-Za-z0-9_]*)=(.*)$', re.S)
 OWN_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-GATE_FILES = ('project.json', 'waivers.json', 'params.json', 'triage.json', 'bundles.json', 'events.jsonl', 'owner_tickets.json',
+GATE_FILES = ('project.json', 'waivers.json', 'params.json', 'triage.json', 'bundles.json', 'outside.json', 'events.jsonl', 'owner_tickets.json',
               'fit_settings.json', 'hook_state.json', 'dirty.jsonl', 'checks.jsonl', 'saves.json', 'census.json', 'LOCK.json')
 
 
@@ -820,7 +821,7 @@ def owner_calls(cmds, code):
             continue
         tail = rest[j:]
         call = {'tail': tail, 'quotes': [], 'dry': False, 'proposal': None, 'help': False, 'root_opt': root_opt, 'here': here, 'bad': None,
-                'action': tail[1] if len(tail) > 1 else None}
+                'action': tail[1] if len(tail) > 1 else None, 'project': None, 'objects': [], 'reason': None}
         k, positional, ended = 1, [], False
         while k < len(tail):
             a = tail[k]
@@ -841,7 +842,13 @@ def owner_calls(cmds, code):
                 call['dry'] = True
             elif a.startswith('--q') or a.startswith('--d') and a != '--dry-run' and '--dry-run'.startswith(a):
                 call['bad'] = 'write %s in full (an abbreviated option is not read the way the gate reads it)' % a
-            elif a in ('--reason', '--note', '--part', '--tag', '--source', '--key', '--under', '--value') and k + 1 < len(tail):
+            elif a == '--reason' and k + 1 < len(tail):
+                call['reason'] = tail[k + 1]
+                k += 2
+                continue
+            elif a.startswith('--reason='):
+                call['reason'] = a[len('--reason='):]
+            elif a in ('--note', '--part', '--tag', '--source', '--key', '--under', '--value') and k + 1 < len(tail):
                 k += 2
                 continue
             elif not a.startswith('-'):
@@ -851,6 +858,9 @@ def owner_calls(cmds, code):
             call['proposal'] = positional[1] if len(positional) > 1 else None
             if call['proposal'] is not None and os.path.basename(call['proposal']).startswith('-'):
                 call['bad'] = 'a proposal path may not start with "-"'
+        if call['action'] == 'outside':
+            call['project'] = positional[1] if len(positional) > 1 else None
+            call['objects'] = positional[2:]
         calls.append(call)
     hidden = any(OWNER_IN_CODE.search(c) or (re.search(r'\bgate\b', c) and re.search(r'[\'"]owner[\'"]', c)) for c, _, _ in code)
     return calls, hidden
@@ -1416,6 +1426,33 @@ def note_session(root, data):
 
 # ---- what changed outside the tools; what has no stamp (SessionStart, SubagentStart) ----------------------------------------
 
+OUTSIDE_HASH = re.compile(r'^[0-9a-f]{40}$')
+
+
+def outside_lines(root, layout=None, limit=12):
+    """One line per .3mf project with objects the owner declared outside the gate (gate/owner/outside.json): how many
+    and which. The meshes are not read here (`gate.py status` and `verify` compare them with the file); an entry without
+    a mesh hash lets nothing through and is not listed. A file that cannot be read is one line too."""
+    path = _path(root, 'owner', 'outside.json')
+    if not os.path.exists(path):
+        return []
+    data = _read_json(path, None)
+    projects = data.get('projects') if isinstance(data, dict) else None
+    if not isinstance(projects, dict):
+        return ['gate: gate/owner/outside.json cannot be read: no object is let through as declared outside the gate']
+    layout = layout if isinstance(layout, dict) else _read_json(_path(root, 'layout.json'), {})
+    files = {e.get('key'): e.get('file') for e in (layout.get('projects') or []) if isinstance(e, dict)} if isinstance(layout, dict) else {}
+    out = []
+    for key in sorted(projects):
+        objects = projects[key].get('objects') if isinstance(projects[key], dict) else None
+        names = sorted(n for n, e in (objects or {}).items() if isinstance(e, dict) and OUTSIDE_HASH.match(str(e.get('geom_hash') or ''))) if isinstance(objects, dict) else []
+        if names:
+            out.append('gate: %d object(s) in %s are declared outside the gate by the owner (gate/owner/outside.json), not checked, no stamp: %s%s. '
+                       'Each passes a save only while its mesh is the one declared' % (len(names), files.get(key) or key, ', '.join(names[:limit]),
+                                                                                         ', ... (%d more)' % (len(names) - limit) if len(names) > limit else ''))
+    return out
+
+
 def project_lines(root, limit=12):
     """Lines about the registered .3mf files: a file whose size or modification time differs from what the last guarded
     save left (gate/run/saves.json: Bambu Studio saved it, or a file was copied over it), and the objects the guard let
@@ -1443,6 +1480,7 @@ def project_lines(root, limit=12):
         names = [n for n in s.get('unchecked') or [] if isinstance(n, str)]
         if names:
             out.append('gate: %d object(s) in %s have no stamp: %s%s' % (len(names), f, ', '.join(names[:limit]), ', ... (%d more)' % (len(names) - limit) if len(names) > limit else ''))
+    out += outside_lines(root, layout, limit)
     if never:
         out.append('gate: no guarded save of %s is on record yet (gate 0.3.0 keeps one at every save): what they hold is checked only by '
                    'python3 gate/tools/gate.py verify' % ', '.join(never))
@@ -1486,21 +1524,39 @@ def _give_ticket(root, call, data, turn, proposal_sha):
                                  'takes one up; an agent never writes this file.', 'tickets': keep[-32:]})
 
 
+def outside_binding(root, project_key, objects, reason):
+    """What an `owner outside` call is bound to: sha256 over the sha256 of the .3mf file that gate/layout.json registers
+    under `project_key`, the object names (sorted, once each) and the reason. The dry run the owner sees and the apply
+    must give the same value (the hook at the apply, gate.py with the ticket): a file saved in between, another object
+    or another reason needs a new dry run. None when the project is not registered or its file cannot be read."""
+    layout = _read_json(_path(root, 'layout.json'), {})
+    projects = layout.get('projects') if isinstance(layout, dict) and isinstance(layout.get('projects'), list) else []
+    f = next((e.get('file') for e in projects if isinstance(e, dict) and e.get('key') == project_key), None)
+    if not isinstance(f, str) or not f:
+        return None
+    sha = _sha_file(f if os.path.isabs(f) else os.path.join(root, *f.split('/')))
+    if not sha:
+        return None
+    return hashlib.sha256(json.dumps([sha, sorted(set(str(o) for o in objects or [])), str(reason or '')]).encode('utf-8')).hexdigest()
+
+
 def _dry_runs(root):
     st = _read_json(_path(root, *STATE), {})
     d = st.get('dry_runs') if isinstance(st, dict) else None
     return d if isinstance(d, dict) else {}
 
 
-def _note_dry_run(root, proposal):
-    sha = _sha_file(proposal)
+def _note_dry_run(root, proposal, key=None, sha=None):
+    """Keep the dry run of a bundle (by the proposal's real path and its sha256), or with `key` and `sha` any other
+    binding (an `owner outside` dry run: "outside:<project key>" and outside_binding())."""
+    sha = sha if key else _sha_file(proposal)
     if not sha:
         return
     path = _path(root, *STATE)
     st = _read_json(path, {})
     st = st if isinstance(st, dict) else {}
     d = st.setdefault('dry_runs', {})
-    d[os.path.realpath(proposal)] = {'sha256': sha, 'ts': time.time()}
+    d[key or os.path.realpath(proposal)] = {'sha256': sha, 'ts': time.time()}
     for k in sorted(d, key=lambda k: d[k].get('ts') or 0)[:-64]:
         d.pop(k, None)
     try:
@@ -1527,9 +1583,26 @@ def _owner_checks(calls, hidden, ok, cmd, data):
             continue                                        # a dry run writes nothing: it shows the owner what his yes would change
         if c['action'] == 'table' and c['dry']:
             continue                                        # the same for one table row: gate.py stages it and prints the diff
+        bind = None
+        if c['action'] == 'outside':                        # bound to the file, the objects and the reason the dry run showed
+            bind = outside_binding(root, c['project'], c['objects'], c['reason']) if root and c['project'] else None
+            if c['dry']:
+                if bind:
+                    _note_dry_run(root, None, key='outside:%s' % c['project'], sha=bind)
+                continue
         if not c['quotes']:
             return '`gate.py owner` needs --quote with the owner\'s own words from this session'
         after, sha = None, None
+        if c['action'] == 'outside':
+            if not bind:
+                return ('the .3mf project %r of this declaration cannot be read (no project of gate/layout.json has that key, or its file is missing): '
+                        'nothing can be declared outside the gate from it' % (c['project'],))
+            dry = _dry_runs(root).get('outside:%s' % c['project'])
+            if not isinstance(dry, dict) or dry.get('sha256') != bind:
+                return ('show the owner what this declaration writes first: the same `python3 gate/tools/gate.py owner outside %s ... --reason "..."` '
+                        'with --dry-run (%s), then quote his answer to it word for word'
+                        % (c['project'], 'the file, the objects or the reason changed since its last dry run' if isinstance(dry, dict) else 'it had no dry run'))
+            after, sha = dry.get('ts'), bind
         if c['action'] == 'bundle':
             prop = os.path.join(c['here'], os.path.expanduser(c['proposal'] or ''))
             sha = _sha_file(prop) if c['proposal'] else None
