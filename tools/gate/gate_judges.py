@@ -6612,10 +6612,24 @@ def project_object_not_printable(facts, params, ctx):
 def project_mesh_unstamped(facts, params, ctx):
     """Rule project.mesh_unstamped. Reads project_consistency facts: "objects"[].stamp ({"state": "valid" | "stale" |
     "none", "why", "sig12"}). state "none": FAIL. No stamp object or another state, or a project file that does not
-    exist: NOT_RUN."""
+    exist: NOT_RUN. An object the owner declared outside the gate ("outside": {"same": true, ...}, gate/owner/outside.json)
+    with state "none": INFO that says so; one whose mesh is no longer the declared one ("same": false): FAIL that says it
+    changed since."""
     objects, out = _objects(facts, ctx)
     for o in objects:
         part, state = _project_part(facts, o, o.get('name')), _stamp_state(o)
+        dec = o.get('outside') if isinstance(o.get('outside'), dict) else None
+        if state == 'none' and dec and dec.get('same') is True:
+            out.append(finding(ctx['rule'], part, 'INFO', 'object %s in %s is declared outside the gate by the owner (%s%s): its mesh is the one declared; '
+                                                          'it has no stamp and nothing of it is checked' % (o.get('name'), facts.get('file'), dec.get('date') or 'no date',
+                                                                                                          ', "%s"' % dec['reason'] if dec.get('reason') else ''),
+                               context={'object': o.get('name'), 'stamp': 'none', 'pose': o.get('pose'), 'outside': True}))
+            continue
+        if state == 'none' and dec:
+            out.append(finding(ctx['rule'], part, 'FAIL', 'the mesh of object %s in %s changed since the owner declared it outside the gate (%s): it is the geometry '
+                                                          'of no stamp; export it through the gate or declare it again' % (o.get('name'), facts.get('file'), dec.get('date') or 'no date'),
+                               context={'object': o.get('name'), 'stamp': 'none', 'pose': o.get('pose')}))
+            continue
         if state == 'none':
             why = o['stamp'].get('why')
             out.append(finding(ctx['rule'], part, 'FAIL', 'the mesh of object %s in %s is the geometry of no stamp%s' % (o.get('name'), facts.get('file'), ' (%s)' % why if why else ''),

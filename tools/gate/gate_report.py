@@ -1052,6 +1052,7 @@ def status(root, reg=None, hash_budget_s=None):
     "unstamped_stls": [paths in STL folders with no valid stamp], "triage_open": n, "last_run": run id or None,
     "last_scan": time or None}. Runs nothing in Fusion, judges nothing.
 
+    "declared_outside": gate_guard.outside_summary() (the objects the owner declared outside the gate, per project).
     "measure_again": {"units", "work_s", "unknown"}: the units stale_units() names and their Fusion work by their last
     measurement ("unknown": units with no cost stored). Also: "unchecked" (parts changed since they were last CHECKED: their present geometry was never judged, or a unit
     of theirs must run again because its own record no longer holds, gate_plan.stale_units: also a stamped part whose
@@ -1128,7 +1129,8 @@ def status(root, reg=None, hash_budget_s=None):
             unfinished = {'run': plan['run'], 'done': n, 'total': m}
     over = gate_plan.scan_over_budget(root) + (gate_plan.over_budget(plan) if plan and plan.get('command') == 'run' else [])
     latest = load_latest(root) or {}
-    return {'slice_owed': _slice_owed(root, layout), 'mode': project['mode'], 'parts': len(live), 'changed': changed, 'open': open_, 'questions': questions,
+    import gate_guard
+    return {'declared_outside': gate_guard.outside_summary(root, layout), 'slice_owed': _slice_owed(root, layout), 'mode': project['mode'], 'parts': len(live), 'changed': changed, 'open': open_, 'questions': questions,
             'unstamped_stls': sorted(p for p, s in states.items() if s in ('none', 'stale')), 'triage_open': sum(1 for i in triage_of(root) if not i.get('decision')),
             'last_run': latest.get('run'), 'last_scan': census.get('scanned'), 'unchecked': unchecked, 'inherited': inherited, 'stale': stale,
             'stl_states': states, 'unfinished': unfinished, 'unreachable': sorted(k for k, d in census['docs'].items() if d.get('open') is False),
@@ -1161,6 +1163,8 @@ def _status_lines(st, rows=None):
     if st['triage_open'] or st['inherited']:
         head.append('triage: %d not decided' % st['triage_open'])
     out = [' | '.join(head)]
+    for row in st.get('declared_outside') or []:    # let through without a stamp on the owner's word: one line per project, never left out
+        out.append('  ' + row['line'])
     if st['last_scan'] is None:
         out.append('  nothing scanned yet: `gate.py run --changed` scans the open documents first')
     if st['unfinished']:

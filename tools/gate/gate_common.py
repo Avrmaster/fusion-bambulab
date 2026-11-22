@@ -485,6 +485,40 @@ def events_path(root):
     return os.path.join(root, 'bambulab', 'ledger', 'events.jsonl')
 
 
+OUTSIDE_HASH = re.compile(r'^[0-9a-f]{40}$')
+
+
+def outside_path(root):
+    """gate/owner/outside.json (OWNER): the objects of a .3mf project that the owner declared outside the gate's coverage."""
+    return gate_path(root, 'owner', 'outside.json')
+
+
+def load_outside(root):
+    """gate/owner/outside.json as {"projects": {<.3mf project key>: {"file", "objects": {<object name>: {"geom_hash",
+    "triangles", "plate", "reason", "quote", "date", ...}}}}}; a missing file is {"projects": {}}. Written only by
+    `gate.py owner outside`. GateError when the file is not JSON or not of that shape: a broken owner file never lets
+    anything through (the guard refuses in enforce mode)."""
+    data = read_json(outside_path(root), {})
+    if not isinstance(data, dict) or not isinstance(data.get('projects', {}), dict):
+        raise GateError('gate/owner/outside.json must be an object with "projects": {<project key>: {"file", "objects": {...}}}')
+    for key, p in (data.get('projects') or {}).items():
+        if not isinstance(p, dict) or not isinstance(p.get('objects', {}), dict):
+            raise GateError('gate/owner/outside.json: project %r must be an object with "objects": {<object name>: {...}}' % key)
+    data.setdefault('projects', {})
+    return data
+
+
+def declared_outside(root, key, data=None):
+    """{object name: entry} of the objects the owner declared outside the gate in the .3mf project `key` (a key of
+    gate/layout.json "projects"); {} for no key. Only an entry with a geom_hash of 40 hex characters counts: an entry
+    without one lets nothing through. GateError as load_outside()."""
+    if not key:
+        return {}
+    data = data if data is not None else load_outside(root)
+    objects = ((data.get('projects') or {}).get(key) or {}).get('objects') or {}
+    return {n: e for n, e in objects.items() if isinstance(n, str) and isinstance(e, dict) and OUTSIDE_HASH.match(str(e.get('geom_hash') or ''))}
+
+
 def load_census(root):
     """gate/census.json, or the empty census {"docs": {}, "parts": {}} when nothing was scanned yet."""
     data = read_json(census_path(root), {})

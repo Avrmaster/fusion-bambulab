@@ -25,5 +25,6 @@ This project has a print gate in `gate/` (fusion-bambulab plugin). Use the `gate
 - When the session's turn is held at its end ("parts changed in Fusion and are not checked"), run the command it names until it no longer exits 3, then report every open row.
 - `gate/owner/` and `gate/project.json` belong to the owner. Only the owner waives a finding, loosens a number or switches the mode. Put a proposal in `gate/proposals/` and ask.
 - A coupon print, a stock list or a measured bearing goes into `gate/owner/tables.json` only through `python3 gate/tools/gate.py owner table ... --quote "<his words>"` (`--dry-run` first shows the change).
+- An object of a `.3mf` that no registered document makes (a part of a document the gate does not cover yet) can never get a stamp. Only the owner declares it outside the gate: `python3 gate/tools/gate.py owner outside <project key> "<object>" ... --reason "..." --dry-run`, show him the output, then the same with `--quote "<his words>"` instead of `--dry-run`. It then passes a save only while its mesh is the one declared; a part of a registered document is never declared, it is exported. `status`, `verify` and the session start list what is declared.
 - `gate/tools/` and `gate/rules/` are vendored from the plugin: change them there, then `setup_project.py <dir> --update-tools`.
 <!-- fusion-bambulab:gate:end -->
