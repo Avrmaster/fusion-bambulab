@@ -630,12 +630,12 @@ def _motor_hits(get, params, tables=None):
     named += [(str(x.get('name') or ''), x.get('name')) for x in _coaxial(_rows(c, 'holes') + _rows(c, 'bores'), ('bought', 'hardware', 'mesh'))]
     rows = [x for x in _rows(near, 'bodies')] + [x for x in _coaxial(_rows(c, 'holes') + _rows(c, 'bores'), ('bought', 'hardware', 'mesh'))]
     return [name for (text, name), x in zip(named, rows) if name not in skip and not _standard_body(x, params, tables)
-            and (_matches(pattern, text) or _CONNECTOR.search(re.sub(r'\([^)]*\)', ' ', _leaf(name))))], near, pattern
+            and (_matches(pattern, text) or _CONNECTOR.search(re.sub(r'\([^)]*\)', ' ', text if x.get('kind') != 'hardware' else _leaf(name))))], near, pattern
 
 
 def _motor_text(hits, pattern):
     """The text of the hits of _motor_hits(): the ones the pattern found, then the connectors by their own name."""
-    plug = [h for h in hits if not _matches(pattern, str(h or '')) and _CONNECTOR.search(re.sub(r'\([^)]*\)', ' ', _leaf(h)))]
+    plug = [h for h in hits if not _matches(pattern, str(h or '')) and _CONNECTOR.search(re.sub(r'\([^)]*\)', ' ', str(h or '')))]
     named = [h for h in hits if h not in plug]
     out = []
     if named or not plug:
@@ -645,8 +645,10 @@ def _motor_text(hits, pattern):
     return '; '.join(out)
 
 
-# a connector by its own name, whatever motors.ref_pattern says: "JST XH 4 pin", "Pin header 1x4", "Dupont 2.54"
-_CONNECTOR = re.compile(r'(?i)connector|\bjst\b|dupont|\bheaders?\b|terminal|molex|\bplugs?\b|\b(?:xh|ph|zh|sh|gh)\s*\d|\bgx\s*\d|\bdc\s*jack|\busb\b')
+# a connector by its own name, whatever motors.ref_pattern says: "JST XH 4 pin", "Pin header 1x4", "Dupont 2.54", the
+# power plugs "XT60 male", "Wago 221-413", "DC barrel 5.5x2.1", "DC jack"
+_CONNECTOR = re.compile(r'(?i)connector|\bjst|dupont|\bheaders?\b|terminal|molex|\bplugs?\b|\b(?:xh|ph|zh|sh|gh)\s*\d|\bgx\s*\d|\bdc[\s-]*(?:jack|socket|barrel)|'
+                        r'\busb\b|\bxt\s*-?\s*(?:30|60|90)|\bwago\b|\bbarrel[\s-]*(?:jack|plug|socket|connector|\d)|\b(?:audio|power|barrel)[\s-]*jack')
 
 
 def _no_motor_near(get, params, tables):
@@ -674,12 +676,25 @@ def _no_motor_near(get, params, tables):
 
 
 def _motor_shown(get, params, tables):
-    """What the facts SHOW of a motor or connector at this part, or None: bodies near or on an axis whose name or
-    component matches motors.ref_pattern, or whose own name is that of a connector (_CONNECTOR)."""
+    """What the facts SHOW against "no motor and no connector", or None: bodies near or on an axis whose name or
+    component matches motors.ref_pattern, or whose own name is that of a connector (_CONNECTOR); and, as for the
+    standard-parts label of hardware.bought_from_step, every body of the near unit whose box touches the part's box
+    (gap up to TOUCH_GAP) that is no standard part and no bearing by its designation and no row of the screw unit: a
+    servo, a stepper or a plug under a name no pattern knows sits right at the part. A body farther off within the
+    margin keeps the question asked (_no_motor_near) and is no proof against the label."""
     got = _motor_hits(get, params, tables)
-    if not got or not got[0]:
+    if got is None:
         return None
-    return _motor_text(got[0], got[2])
+    hits, near, pattern = got
+    out = [_motor_text(hits, pattern)] if hits else []
+    skip = _screw_unit_names(get) | {str(h) for h in hits}
+    touch = [x.get('name') for x in _rows(near, 'bodies') if str(x.get('name')) not in skip
+             and not _standard_body(x, params, tables) and not _bearing_body(x, params, tables)
+             and not (isinstance(x.get('gap'), (int, float)) and not isinstance(x.get('gap'), bool) and x['gap'] > TOUCH_GAP)]
+    if touch:
+        out.append('%d body(ies) whose box touches this part that are no standard part and no bearing by their name (%s): not proven that none is a motor or a connector'
+                   % (len(touch), _some(_leaf(n) for n in touch)))
+    return '; '.join(out) or None
 
 
 PRINT_FRAME = 'print_frame'     # no probe: gate_plan.print_frame() of the part, for the fact tests that need its bed face
@@ -1054,11 +1069,11 @@ def label_contradicted(root, reg, question, label, sig=None):
         names = [str(n) for n in question.get('by') or []]
         if names:
             return 'the label says there is none, the finding names %d: %s%s' % (len(names), ', '.join(names[:3]), ' and %d more' % (len(names) - 3) if len(names) > 3 else '')
-        return None
+        return _touching_unseen(root, question, sig) if claim.get('untouched') is True else None
     if isinstance(claim.get('text'), dict):          # a question of a finding: the label fits only a finding of this kind
         return _text_refuses(claim['text'], question.get('finding_text'))
     if isinstance(claim.get('coaxial_room'), str):
-        return _fitted_on_axis(root, reg, question, claim['coaxial_room'], sig)
+        return _fitted_on_axis(root, reg, question, claim['coaxial_room'], sig) or (_touching_unseen(root, question, sig) if claim.get('untouched') is True else None)
     if claim.get('screw_seat') is True:
         return _no_head_seat(root, reg, question, sig)
     for path in claim.get('none') or []:
@@ -1113,10 +1128,12 @@ _FIT = re.compile(r'(?<![A-Za-z0-9.])[DdØ]?\s*(\d+(?:\.\d+)?)\s*(js|JS|[a-hj-np
 FIT_NAME_TOL = 0.5      # mm: a fit diameter in a name this close to the hole's diameter is the fit of that hole
 
 
-def _named_fits(name):
-    """[diameter] of the fit classes a body's own name carries (_FIT), without what stands in parentheses."""
-    bare = re.sub(r'\([^)]*\)', ' ', _leaf(name))
-    return [float(m.group(1)) for m in _FIT.finditer(bare)]
+def _named_fits(name, path=None):
+    """[diameter] of the fit classes a body's name carries (_FIT): the whole name with its components ("gearbox G20 pilot
+    D25h7 / Body1") and what stands in parentheses ("gearbox (pilot D25h7)"), and the occurrence path when the row has
+    one. A fit is often named on the component or in a note; only its diameter decides which hole it is for."""
+    text = ' '.join(str(t) for t in (path, name) if t)
+    return [float(m.group(1)) for m in _FIT.finditer(text.replace('(', ' ').replace(')', ' '))]
 
 
 def _fitted_on_axis(root, reg, question, room_param, sig):
@@ -1127,7 +1144,8 @@ def _fitted_on_axis(root, reg, question, room_param, sig):
       - such a body has no measured radii (census "coaxial"[]."r": [[radius, from, to]], measured since 0.3.2): stored
         facts of an older census cannot show that it passes with room, so a re-measure (gate.py run) or another label;
       - such a body has a cylinder whose radius is within the parameter `room_param` of the hole wall where they
-        overlap."""
+        overlap, or wider than the hole there (pressed in, or colliding with the wall: either way it does not pass).
+    A held claim with "untouched": true is refused besides by _touching_unseen (label_contradicted)."""
     hole, _ = _question_hole(root, question, sig)
     if not isinstance(hole, dict):
         return 'the hole of this question is not in the census of the part: nothing shows that the body on its axis passes with room'
@@ -1139,10 +1157,10 @@ def _fitted_on_axis(root, reg, question, room_param, sig):
     for x in _coaxial([hole]):
         if not enters(x.get('span'), depth):
             continue
-        named = [d for d in _named_fits(x.get('name')) if any(abs(d - D) <= FIT_NAME_TOL + 1e-9 for D in diameters)]
+        named = [d for d in _named_fits(x.get('name'), x.get('path')) if any(abs(d - D) <= FIT_NAME_TOL + 1e-9 for D in diameters)]
         if named:
             return ('%s carries the fit class of D%g in its name and the hole is D%s: a named fit is fitted in this hole. Name the fit parameter its size comes from'
-                    % (_leaf(x.get('name')), named[0], ', D'.join('%g' % d for d in diameters)))
+                    % (x.get('name'), named[0], ', D'.join('%g' % d for d in diameters)))
         rows = [row for row in (x.get('r') or []) if isinstance(row, (list, tuple)) and len(row) == 3
                 and all(isinstance(v, (int, float)) and not isinstance(v, bool) for v in row)]
         if not rows:
@@ -1153,10 +1171,39 @@ def _fitted_on_axis(root, reg, question, room_param, sig):
         for row in rows:
             r, lo, hi = row[0], min(row[1], row[2]), max(row[1], row[2])
             for R, a, b in segs:
-                if min(hi, b) - max(lo, a) > ENTER_MIN and abs(r - R) <= room + 1e-9:
+                if min(hi, b) - max(lo, a) > ENTER_MIN and r >= R - room - 1e-9:
+                    if r > R + room + 1e-9:
+                        return ('%s has a cylinder of D%g on the axis of this hole where the hole is only D%g: it is wider than the hole, so it is pressed '
+                                'in or collides with the wall; it does not pass with room. Name the fit parameter its size comes from, or correct the model'
+                                % (_leaf(x.get('name')), round(2 * r, 3), round(2 * R, 3)))
                     return ('%s has a cylinder of D%g on the axis of this hole where the hole is D%g: within %s = %g of its wall, so it is fitted in it. '
                             'Name the fit parameter its size comes from' % (_leaf(x.get('name')), round(2 * r, 3), round(2 * R, 3), room_param, room))
     return None
+
+
+def _touching_unseen(root, question, sig, hole=None):
+    """Why a mesh or bought body that touches the part could be what goes in the hole of this question, or None.
+    The census reads the cylinders of solid bodies only: a bought part imported as a mesh, or a bought solid with no
+    cylinder on the hole's axis (a square nut, a board, a magnet block), has no "coaxial" row, so the census cannot
+    show that it stays out of the hole. Refused while fusion_near lists a body of kind "mesh" or "bought" whose box
+    touches the part's box (gap up to TOUCH_GAP, or no gap given) and that is no "coaxial" row of this hole (those are
+    judged on their span and radii). The near unit measures the box of the whole part, not of the hole: a body that
+    touches the part elsewhere is refused too (fail closed), and the answer is then a fit parameter, a waiver of the
+    owner, or a measure again (gate.py run) after the body was moved off. Facts of the near unit that were never
+    measured refuse nothing."""
+    near = _facts_of(root, question['part'], 'fusion_near', sig)
+    if not isinstance(near, dict):
+        return None
+    if hole is None:
+        hole, _ = _question_hole(root, question, sig)
+    on_axis = {str(x.get('name')) for x in (_coaxial([hole], ('bought', 'hardware', 'mesh')) if isinstance(hole, dict) else [])}
+    touch = [x.get('name') for x in _rows(near, 'bodies') if x.get('kind') in ('mesh', 'bought') and str(x.get('name')) not in on_axis
+             and not (isinstance(x.get('gap'), (int, float)) and not isinstance(x.get('gap'), bool) and x['gap'] > TOUCH_GAP)]
+    if not touch:
+        return None
+    return ('%d mesh or bought body(ies) whose box touches this part and that the census does not see on the axis of this hole (%s): a mesh, or a '
+            'bought solid with no cylinder on the axis, can sit in this hole and nothing shows that it does not. Name the fit parameter the hole '
+            'comes from, ask the owner for a waiver, or move the body off and measure again (gate.py run)' % (len(touch), _some(_leaf(n) for n in touch)))
 
 
 def _no_head_seat(root, reg, question, sig):

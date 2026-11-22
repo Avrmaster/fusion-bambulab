@@ -70,7 +70,10 @@ FACT_TESTS = ('no_screw_feature', 'no_bearing_here', 'no_bought_near', 'no_motor
 #   {"text": {"has": regex, "not": regex, ...}}     refused unless the finding's text matches "has" and not "not"
 #   {"coaxial_room": "<parameter>"}                 refused while a body on the hole's axis is fitted in it
 #   {"screw_seat": true}                            refused unless a screw on the hole's axis has its head seat there
+#   "untouched": true beside "by" or "coaxial_room"   refused besides while a mesh or bought body touches the part
+#                                                   and is no coaxial row of the hole (gate_attest._touching_unseen)
 HELD_FINDING = ('by', 'text', 'coaxial_room', 'screw_seat')
+HELD_WITH = {'untouched': ('by', 'coaxial_room')}
 
 
 class RegistryError(GateError):
@@ -210,9 +213,14 @@ def _check_attest(a, where, errors):
         for label, claim in sorted(held.items()):
             if not isinstance(labels, list) or label not in labels:
                 errors.append('%s: attest.held names %r, which is not one of its labels' % (where, label))
-            if isinstance(claim, dict) and claim and set(claim) <= set(HELD_FINDING):
+            extra = {k: claim[k] for k in HELD_WITH if k in claim} if isinstance(claim, dict) else {}
+            if isinstance(claim, dict) and claim and set(claim) - set(extra) and set(claim) - set(extra) <= set(HELD_FINDING):
                 if a.get('per') != 'finding':
                     errors.append('%s: attest.held[%r] = %s holds a label against its finding: only for a rule asked per finding' % (where, label, sorted(claim)))
+                bad = [k for k, v in extra.items() if v is not True or not set(claim) & set(HELD_WITH[k])]
+                if bad:
+                    errors.append('%s: attest.held[%r]: "%s" is true and stands only beside %s' % (where, label, bad[0], ' or '.join('"%s"' % x for x in HELD_WITH[bad[0]])))
+                claim = {k: v for k, v in claim.items() if k not in extra}
                 ok = len(claim) == 1 and (claim.get('by') == 'none' if 'by' in claim else
                                           claim.get('screw_seat') is True if 'screw_seat' in claim else
                                           isinstance(claim.get('coaxial_room'), str) and NAME_RE.match(claim['coaxial_room']) if 'coaxial_room' in claim else

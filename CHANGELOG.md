@@ -16,6 +16,18 @@ A check of the first version of 0.3.2 on a real project found answers that let r
 - **fits.pocket_content.** "The bought part on its axis is not fitted in this hole" is refused when the census of the part stores no radii for a body that reaches into the hole (facts measured before 0.3.2: measure the part again, or give the label or fit parameter that is true), when the body carries a fit class on the hole's diameter in its own name (`pilot D25h7 x 2` on a D25 step, `4m6x32` in a D4.02 hole: a named fit is fitted), and when the hole is not in the census. "A screw head seat" takes only a screw by its designation.
 - Fixtures: the servo's plug `XH 3p` is now a connector by its name; the texts of two `no_motor_near` fixtures follow the new wording.
 
+A second check found four more answers that let a defect pass. Closed too, each with its fail-open case and the honest ordinary case in `tests/test_attest_fail_closed.py`:
+
+- **fits.pocket_content, one-sided room.** "Not fitted ... passes with room" is refused for a cylinder within `fits.pass_room_min` of the hole wall AND for one wider than the hole where they overlap (a D8 shaft in a D7.6 hole, a D25.6 spigot in a D25 step): a body wider than its hole is pressed in or collides, it never passes. A body around a printed boss that the census cannot tell from one in the hole takes a waiver.
+- **fits.pocket_content, bodies the census cannot see.** The census reads the cylinders of solid bodies only, so a bought part drawn as a mesh, or a bought solid with no cylinder on the axis, had no row and both "no bought part goes in" and "not fitted" were taken. Both are refused now while `fusion_near` lists a mesh or bought body whose box touches the part (gap up to 0.05 mm) that is no coaxial row of the hole (new held claim `"untouched": true`, beside `by` or `coaxial_room`). The near unit gives the box of the whole part, not of the hole, so this fails closed: a fit parameter, a waiver, or a measure again after the body is moved off.
+- **fits.pocket_content, named fits on the whole path.** A fit class (h7, H7, m6, k6, g6, js ...) is read on the whole name of the body, its components and what stands in parentheses (`gearbox G20 pilot D25h7 / Body1`, `gearbox (pilot D25h7)`), within 0.5 mm of the hole's diameter.
+- **motors.lead_path, touching bodies.** As for the standard-parts label of `hardware.bought_from_step`, the agent's "no motor and no connector in or beside this part" is refused while a body whose box touches the part is no standard part and no bearing by its designation (and no row of the screw unit). The default `motors.ref_pattern` also knows `42BYG...`, `28BYJ-48`, `MG9..` and `SG90`; connectors by their name also include XT30/60/90, Wago, DC jack, socket or barrel, and a connector in the component of a bought body (`XT60 male / Body1`). A project with its own value of `motors.ref_pattern` keeps it: add the designations there.
+
+### Known gaps
+
+- regression.intended: "moved on purpose together with its mating part" has no held claim, so it is taken for a finding that says the mating part did not follow.
+- Standard parts: a sensor whose name holds a screw word and a table thread (`NTC 100K screw M3`, `thermocouple bolt M6x1`) counts as a standard screw.
+
 ### hardware.bought_from_step
 
 - Standard parts are outside the rule: screws, wood screws, washers, nuts, heat-set inserts, pins and dowels are drawn to their table sizes and have no STEP file to come from. New label "it touches only standard parts drawn to their tables (...)", answered by the gate itself with the new fact test `only_table_parts_near`: every body near or on an axis is a fastener by its own name, and no unit lists a bearing, a body it refused or an unrecognised body on a screw axis.

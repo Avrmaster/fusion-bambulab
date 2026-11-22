@@ -110,8 +110,10 @@ class LeadPathClosed(unittest.TestCase):
                 self.assertIs(state, False); self.assertIn('are a connector by their own name', shown)
 
     def test_a_magnet_in_a_screw_component_is_no_proof_of_no_motor(self):
-        (state, text), shown = self.judge([body('ref screws and magnets / Rod magnet D4x10'), SCREW])
+        (state, text), shown = self.judge([body('ref screws and magnets / Rod magnet D4x10', gap=6.0), SCREW])
         self.assertIs(state, False); self.assertIn('no standard part and no bearing by their name', text); self.assertIsNone(shown)
+        (state, text), shown = self.judge([body('ref screws and magnets / Rod magnet D4x10'), SCREW])     # touching: the label is refused (0.3.2, N5)
+        self.assertIs(state, False); self.assertIn('whose box touches this part', shown)
 
     def test_screws_dowels_inserts_and_bearings_by_their_designation_still_say_no_motor(self):
         near = [SCREW, WASHER, body('ref axle / dowel 8x60'), body('ref hardware / insert M3x4x5 (2)'), body('ref 608 / 608 (1)'),
@@ -153,6 +155,124 @@ class PocketContentClosed(h.Project):
         q = self.question(hole([(28.0, 5.0)], []), ['ref drive / shaft D8'])
         q['anchor'] = h.gate_features.anchor('hole', (1, 0, 0), (50, 50, 50))
         self.assertIn('not in the census', gate_attest.label_contradicted(self.root, self.reg, q, self.PASS))
+
+
+
+class PocketQuestion(h.Project):
+    RULES = ('fits.pocket_content',)
+    NOBOUGHT, PASS, SEAT = h.labels('fits.pocket_content')
+
+    def question(self, hl, by):
+        return h.PocketContent.question(self, hl, by)
+
+
+class PocketContentOneSided(PocketQuestion):
+    """N1: a body wider than the hole is pressed in or collides: it never "passes with room"."""
+
+    def test_a_body_wider_than_the_hole_is_never_passing(self):
+        shaft = {'name': 'ref drive / shaft D8', 'kind': 'bought', 'span': [5.0, -6.0], 'r': [[4.0, 5.0, -6.0]]}
+        q = self.question(hole([(7.6, 6.0)], [shaft], through=False), [shaft['name']])             # D8 in a D7.6 blind hole
+        self.assertIn('wider than the hole', gate_attest.label_contradicted(self.root, self.reg, q, self.PASS))
+        spigot = {'name': 'ref gearbox / pilot spigot', 'kind': 'bought', 'span': [2.0, -2.0], 'r': [[12.8, 2.0, -2.0]]}
+        q = self.question(hole([(25.0, 2.0), (12.0, 6.0)], [spigot], through=False), [spigot['name']])   # D25.6 in a D25 step
+        self.assertIn('wider than the hole', gate_attest.label_contradicted(self.root, self.reg, q, self.PASS))
+
+    def test_a_body_with_room_and_a_narrower_body_in_a_wide_step_still_pass(self):
+        shaft = {'name': 'ref drive / shaft D8', 'kind': 'bought', 'span': [5.0, -6.0], 'r': [[4.0, 5.0, -6.0]]}
+        q = self.question(hole([(8.6, 6.0)], [shaft], through=False), [shaft['name']])             # 0.3 mm on the radius
+        self.assertIsNone(gate_attest.label_contradicted(self.root, self.reg, q, self.PASS))
+        stepped = {'name': 'ref drive / stepped shaft', 'kind': 'bought', 'span': [3.0, -8.0], 'r': [[3.0, -2.0, -8.0], [8.0, 3.0, -2.0]]}
+        q = self.question(hole([(20.0, 2.0), (6.6, 6.0)], [stepped], through=False), [stepped['name']])  # each cylinder in its own step, with room
+        self.assertIsNone(gate_attest.label_contradicted(self.root, self.reg, q, self.PASS))
+
+
+class PocketContentUnseenBodies(h.Project):
+    """N2: a bought part the census cannot see (a mesh, a solid with no cylinder on the axis) touching the part refuses
+    both "nothing goes in" labels; one farther off, or a body on the hole's axis judged by its radii, does not."""
+    RULES = ('fits.pocket_content',)
+    NOBOUGHT, PASS, SEAT = h.labels('fits.pocket_content')
+
+    def setup_facts(self, near, coaxial=()):
+        hl = hole([(22.0, 2.0)], list(coaxial), through=False)
+        self.units(near=near, holes=[hl])
+        return h.PocketContent.question(self, hl, [])
+
+    def test_a_mesh_or_bought_body_touching_the_part_refuses_both_labels(self):
+        for near in (body('gearbox housing.stl', 'mesh', path='gearbox housing.stl'), body('ref electronics / encoder board 23x23', 'bought')):
+            with self.subTest(body=near['name']):
+                q = self.setup_facts([SCREW, near])
+                for label in (self.NOBOUGHT, self.PASS):
+                    self.assertIn('whose box touches this part and that the census does not see', gate_attest.label_contradicted(self.root, self.reg, q, label))
+
+    def test_screws_a_far_bought_body_and_a_coaxial_body_with_room_keep_the_labels(self):
+        q = self.setup_facts([SCREW, WASHER, body('ref drive / 17HS4401S', 'bought', gap=2.0), body('far.stl', 'mesh', gap=0.5)])
+        self.assertIsNone(gate_attest.label_contradicted(self.root, self.reg, q, self.NOBOUGHT))
+        shaft = {'name': 'ref drive / shaft D8', 'kind': 'bought', 'span': [5.0, -2.0], 'r': [[4.0, 5.0, -2.0]]}
+        q = self.setup_facts([SCREW, body('ref drive / shaft D8', 'bought')], [shaft])            # the shaft passes the D22 step with room
+        self.assertIsNone(gate_attest.label_contradicted(self.root, self.reg, dict(q, by=[shaft['name']]), self.PASS))
+
+    def test_the_registry_checks_the_untouched_claim(self):
+        check = lambda held: (lambda errors: (h.gate_registry._check_attest(dict(base, held=held), 'rule demo.x', errors), errors)[1])([])
+        base = {'question': 'What?', 'evidence': ['label'], 'per': 'finding', 'labels': ['a', 'b']}
+        self.assertEqual(check({'a': {'by': 'none', 'untouched': True}, 'b': {'coaxial_room': 'fits.pass_room_min', 'untouched': True}}), [])
+        for bad in ({'a': {'untouched': True}}, {'a': {'by': 'none', 'untouched': 1}}, {'a': {'screw_seat': True, 'untouched': True}}):
+            self.assertTrue(check(bad), bad)
+
+
+class NamedFitOnThePath(PocketQuestion):
+    """N3: a fit class is read on the whole name: its components and what stands in parentheses."""
+
+    def test_a_fit_in_the_component_or_in_parentheses_is_a_named_fit(self):
+        for name in ('gearbox G20 pilot D25h7 / Body1', 'ref gearbox / gearbox (pilot D25h7)', 'ref gearbox / pilot (D25 H7)'):
+            with self.subTest(name=name):
+                pilot = {'name': name, 'kind': 'bought', 'span': [2.0, -2.0], 'r': [[12.3, 2.0, -2.0]]}
+                q = self.question(hole([(25.0, 2.0), (12.0, 6.0)], [pilot], through=False), [name])
+                self.assertIn('carries the fit class of D25', gate_attest.label_contradicted(self.root, self.reg, q, self.PASS))
+        self.assertEqual(gate_attest._named_fits('Body1', 'ref gearbox+pilot D25h7'), [25.0])
+
+    def test_copy_numbers_threads_and_fits_of_other_diameters_are_no_fit_of_this_hole(self):
+        self.assertEqual(gate_attest._named_fits('ref hw / M3x12 DIN 912 (1)'), [])
+        self.assertEqual(gate_attest._named_fits('17HS4401S / Shaft (2)'), [])
+        for name in ('ref drive / shaft D8 (2)', 'ref drive (D5h7 pin) / shaft D8'):
+            with self.subTest(name=name):
+                shaft = {'name': name, 'kind': 'bought', 'span': [5.0, -10.0], 'r': [[4.0, 5.0, -10.0]]}
+                q = self.question(hole([(28.0, 5.0)], [shaft]), [name])
+                self.assertIsNone(gate_attest.label_contradicted(self.root, self.reg, q, self.PASS))
+
+
+class LeadPathTouching(h.Project):
+    """N5: motors.lead_path takes the agent's "no motor and no connector" only when no body that touches the part is
+    an unknown bought body; steppers, servos and power plugs are known by their common designations."""
+    RULES = ('motors.lead_path',)
+    NONE, CHANNEL, AWAY = h.labels('motors.lead_path')
+
+    def ask(self):
+        return gate_attest._question(self.reg['rules']['motors.lead_path'], BRACKET, h.gate_features.part_anchor(), self.sig[:12], 'lead path?')
+
+    def answer(self, near):
+        self.units(near=[SCREW] + list(near), screws=SCREW_ROW)
+        return gate_attest.validate_answer(self.root, self.reg, self.resolved, self.ask(), 'label', self.NONE)
+
+    def test_designated_motors_and_connectors_are_motors_and_connectors(self):
+        get = lambda b: facts([SCREW, b])
+        for name, path, what in (('42BYGHW609', 'ref drive', 'motors.ref_pattern'), ('28BYJ-48 / Body1', '28BYJ-48', 'motors.ref_pattern'),
+                                 ('MG996R', 'ref wrist', 'motors.ref_pattern'), ('SG90 / Horn', 'SG90', 'motors.ref_pattern'),
+                                 ('XT60 male / Body1', 'XT60 male', 'connector'), ('Wago 221-413', 'ref power', 'connector'),
+                                 ('DC barrel 5.5x2.1', 'ref power', 'connector'), ('Molex Micro-Fit 2p', 'ref power', 'connector')):
+            with self.subTest(name=name):
+                b = body(name, 'bought', path=path, gap=3.0)                 # farther off: known by the name alone
+                self.assertIs(gate_attest.FACT_TESTS['no_motor_near'](get(b), PARAMS, TABLES)[0], False)
+                self.assertIn(what, gate_attest.FACT_SHOWN['no_motor_near'](get(b), PARAMS, TABLES))
+                self.assertIn('show what this answer denies', self.answer([b]))
+
+    def test_an_unknown_bought_body_touching_the_part_refuses_the_label(self):
+        why = self.answer([body('ref hotend / heater block', 'bought')])
+        self.assertIn('whose box touches this part that are no standard part and no bearing', why)
+
+    def test_standard_parts_bearings_and_a_bought_body_farther_off_keep_the_label(self):
+        self.assertIsNone(self.answer([WASHER, body('ref 608 / 608 (1)'), body('ref hardware / insert M3x4x5 (2)')]))
+        self.assertIsNone(self.answer([body('ref frame / aluminium plate 3 mm', 'bought', gap=4.0)]))     # asked, the agent's word
+        self.assertIsNone(self.answer([body('ref hardware / barrel nut M4 (1)')]))
 
 
 if __name__ == '__main__':
