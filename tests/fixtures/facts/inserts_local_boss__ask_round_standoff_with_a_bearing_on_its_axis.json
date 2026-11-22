@@ -1,0 +1,226 @@
+{
+ "judge": "inserts_local_boss",
+ "case": "ask round standoff with a bearing on its axis",
+ "facts": {
+  "pockets": [
+   {
+    "hole": "h2",
+    "anchor": {
+     "kind": "insert_pocket",
+     "axis": [
+      0,
+      0,
+      1
+     ],
+     "point": [
+      0,
+      0,
+      10
+     ]
+    },
+    "kind": "M3x4x5",
+    "segments": [
+     {
+      "d": 5.9,
+      "len": 0.545
+     },
+     {
+      "d": 4.4,
+      "len": 5.955
+     }
+    ],
+    "relief": {
+     "d": 5.9,
+     "depth": 0.545
+    },
+    "walls": {
+     "lead_in": {
+      "min": 3.1,
+      "dir": [
+       0,
+       1,
+       0
+      ],
+      "free_arc_deg": 0,
+      "blocked_by": [],
+      "min_beyond": null,
+      "w": [
+       8.0,
+       8.0,
+       8.0,
+       8.0,
+       8.0,
+       8.0,
+       3.1,
+       3.3,
+       3.5,
+       3.7,
+       3.9,
+       4.1,
+       8.0,
+       8.0,
+       8.0,
+       8.0,
+       8.0,
+       8.0,
+       3.1,
+       3.3,
+       3.5,
+       3.7,
+       3.9,
+       4.1,
+       8.0,
+       8.0,
+       8.0,
+       8.0,
+       8.0,
+       8.0,
+       3.1,
+       3.3,
+       3.5,
+       3.7,
+       3.9,
+       4.1,
+       8.0,
+       8.0,
+       8.0,
+       8.0,
+       8.0,
+       8.0,
+       3.1,
+       3.3,
+       3.5,
+       3.7,
+       3.9,
+       4.1
+      ],
+      "from_d": 4.4
+     },
+     "insert": {
+      "min": 5.8,
+      "dir": [
+       0,
+       1,
+       0
+      ],
+      "free_arc_deg": 0,
+      "blocked_by": [],
+      "min_beyond": null,
+      "w": [
+       5.8,
+       5.8,
+       5.8,
+       5.8,
+       5.8,
+       5.8,
+       5.8,
+       5.8,
+       5.8,
+       5.8,
+       5.8,
+       5.8,
+       5.8,
+       5.8,
+       5.8,
+       5.8,
+       5.8,
+       5.8,
+       5.8,
+       5.8,
+       5.8,
+       5.8,
+       5.8,
+       5.8,
+       5.8,
+       5.8,
+       5.8,
+       5.8,
+       5.8,
+       5.8,
+       5.8,
+       5.8,
+       5.8,
+       5.8,
+       5.8,
+       5.8,
+       5.8,
+       5.8,
+       5.8,
+       5.8,
+       5.8,
+       5.8,
+       5.8,
+       5.8,
+       5.8,
+       5.8,
+       5.8,
+       5.8
+      ],
+      "from_d": 4.4
+     }
+    },
+    "floor": 1.5,
+    "through": false,
+    "ray": {
+     "n": 48,
+     "step": 0.1,
+     "max": 8.0
+    }
+   }
+  ]
+ },
+ "params": {
+  "inserts.wall_target": 4.0
+ },
+ "expect": [
+  {
+   "verdict": "INFO",
+   "measure": 5.8,
+   "by": [
+    "ref tensioner: 2 x 625 bearing"
+   ]
+  }
+ ],
+ "ctx": {
+  "census": {
+   "holes": [
+    {
+     "id": "h2",
+     "anchor": {
+      "kind": "hole",
+      "axis": [
+       0,
+       0,
+       1
+      ],
+      "point": [
+       0,
+       0,
+       10
+      ]
+     },
+     "segments": [
+      {
+       "d": 4.4,
+       "len": 6.5
+      }
+     ],
+     "depth": 6.5,
+     "through": false,
+     "class": null,
+     "coaxial": [
+      {
+       "name": "ref tensioner: 2 x 625 bearing",
+       "kind": "bought"
+      },
+      {
+       "name": "ref screw M3x16 (tensioner)",
+       "kind": "hardware"
+      }
+     ]
+    }
+   ],
+   "openings": []
+  }
+ }
+}

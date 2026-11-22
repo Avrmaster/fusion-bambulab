@@ -93,7 +93,7 @@ class Deps(unittest.TestCase):
         self.assertEqual(len(sent), 12, out + err)
         deps = self.stored(BRACKET, 'fusion_openings')['deps']
         self.assertEqual(sorted(deps['bodies']), ['Cover:1|Body1', 'ref screw M3x8:1|Body1'])      # the neighbour and the screw, not the far ones
-        self.assertEqual((deps['v'], deps['code'], deps['params'], deps['tables']), (1, gate_deps.code('fusion_openings'), {}, {}))
+        self.assertEqual((deps['v'], deps['code'], deps['params'], deps['tables']), (2, gate_deps.code('fusion_openings'), {}, {}))
         self.assertEqual(sorted(deps['job']), ['body', 'component_id', 'doc', 'features', 'occurrence'])
         self.assertIsNotNone(deps['own'])                                                     # it read the world: its own place counts
         thin = self.stored(BRACKET, 'fusion_thin')['deps']
@@ -310,7 +310,7 @@ class Deps(unittest.TestCase):
         self.poses['Cover'] = moved(41.0); self.answer(); gate_plan.scan(self.root, wall_s=600)
         st = gate_report.status(self.root)
         self.assertEqual((st['unchecked'], st['checked_ids'], st['stamped_ids']), ([BRACKET, COVER], [], [FAR]))
-        self.assertEqual(st['unchecked_why'][BRACKET], 'fusion_openings: Cover:1 changed, moved, or was shown or hidden')
+        self.assertEqual(st['unchecked_why'][BRACKET], 'fusion_openings: Cover:1 changed, moved or was renamed')
         code, out, err = self.demo.gate('status')
         self.assertIn('3 parts | 2 changed, not checked | 0 checked, no stamp | 1 stamped', out)
 
@@ -368,7 +368,7 @@ class Review(Deps):
         self.move_cover_in_fusion(40.0)
         code, out, err = self.demo.gate('export', BRACKET)                                      # it scans, and the record says the cover moved
         self.assertEqual(code, 1, out + err); self.assertNotIn('already stamped', out)
-        self.assertIn('fusion_openings: Cover:1 changed, moved, or was shown or hidden', out)
+        self.assertIn('fusion_openings: Cover:1 changed, moved or was renamed', out)
         state, why = gate_stamp.verify(self.root, self.demo.registry(), stamp)
         self.assertEqual(state, 'stale'); self.assertIn('Cover:1', why)
 
@@ -431,7 +431,8 @@ class Review(Deps):
     def test_facts_of_a_look_cut_short_by_time_are_measured_again(self):
         self.gate_run()
         self.fusion.answers[('fusion_openings', COVER)][0]['facts'] = {'openings': [], 'closed': [], 'screws_cut': True}
-        self.assertEqual(self.gate_run('--part', COVER, '--fresh')[3], [(COVER, p) for p in fake_fusion.DEMO_PROBES])
+        # the short units of the cover share one call (0.3.3): a look cut short there is measured again at once, alone, with its whole budget
+        self.assertEqual(self.gate_run('--part', COVER, '--fresh')[3], [(COVER, p) for p in fake_fusion.DEMO_PROBES] + [(COVER, 'fusion_openings')])
         self.assertEqual(gate_plan.stale_units(self.root, self.demo.registry())[COVER]['fusion_openings'],
                          'measured with a look cut short by time (screws_cut)')
         self.fusion.answers[('fusion_openings', COVER)][0]['facts'] = {'openings': [], 'closed': [], 'screws_cut': False}
@@ -543,7 +544,7 @@ class World(unittest.TestCase):
         self.assertEqual(sorted(lines), ['Plate:1|Body1', 'Shim:1|Body1', 'Shim:2|Body1', 'mesh cover:1|mesh:Body1', 'mesh unread:1|mesh:Body1', 'ref nut:1|Body1'])
         st, kind, faces, box = gate_deps.parse(lines['Shim:2|Body1'])
         self.assertEqual((kind, faces, box), ('copy', 8, ((100.0, 0.0, 0.0), (140.0, 30.0, 10.0))))
-        self.assertEqual(st, gate_deps.state('t' * 64, 'p', False))                         # a copy has the signature of its part
+        self.assertEqual(st, gate_deps.state('t' * 64, 'p', name='Shim'))                  # a copy has the signature of its part; never its visibility
         self.assertEqual(gate_deps.parse(lines['mesh unread:1|mesh:Body1'])[3], None)
         w = gate_deps.World(lines)
         everything = [{'box': [[-1000, -1000, -1000], [1000, 1000, 1000]], 'margin': 0.0}]

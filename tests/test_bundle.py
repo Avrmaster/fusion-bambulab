@@ -334,5 +334,34 @@ class OwnerTable(Base):
         code, out, err = self.gate('owner', 'bundle', self.proposal(bad, name='bad.json'), '--dry-run')
         self.assertEqual(code, 4); self.assertIn('"table" must be one of', err)
 
+
+class Deps(Base):
+    """The owner switches which record of what a unit read decides (0.3.3): "tight" only on a shadow record of no violation."""
+    def shadow(self, *rows):
+        path = gate_common.gate_path(self.d, 'run', '20310101T000000Z-aaaa', 'deps_shadow.jsonl')
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, 'w', encoding='utf-8') as f:
+            f.write(''.join(json.dumps(r) + '\n' for r in rows))
+
+    def project(self):
+        return gate_common.read_json(gate_common.gate_path(self.d, 'project.json'), {})
+
+    def test_tight_needs_a_shadow_record_without_a_violation(self):
+        entry = [{'kind': 'deps', 'deps': 'tight'}]
+        code, out, err = self.gate('owner', 'bundle', self.proposal(entry), '--quote', 'switch it')
+        self.assertEqual(code, 4); self.assertIn('the shadow record holds no unit yet', err); self.assertNotIn('deps', self.project())
+        self.shadow({'part': 'demo/a', 'probe': 'fusion_near', 'same': True}, {'part': 'demo/b', 'probe': 'fusion_screws', 'same': False, 'violation': True, 'keys': ['screws']})
+        code, out, err = self.gate('owner', 'bundle', self.proposal(entry), '--quote', 'switch it')
+        self.assertEqual(code, 4); self.assertIn('demo/b fusion_screws, screws', err); self.assertNotIn('deps', self.project())
+        self.shadow({'part': 'demo/a', 'probe': 'fusion_near', 'same': True}, {'part': 'demo/b', 'probe': 'fusion_screws', 'same': True})
+        code, out, err = self.gate('owner', 'bundle', self.proposal(entry), '--quote', 'switch it')
+        self.assertEqual(code, 0, err); self.assertEqual(self.project()['deps'], 'tight')
+        self.assertIn('deps: wide -> tight (2 shadow unit(s) over 1 run(s), 2 part(s) in 1 document(s): 2 gave the same facts, 0 differed)', out)
+        code, out, err = self.gate('owner', 'bundle', self.proposal([{'kind': 'deps', 'deps': 'wide'}]), '--quote', 'back')
+        self.assertEqual((code, self.project()['deps']), (0, 'wide'))
+        code, out, err = self.gate('owner', 'bundle', self.proposal([{'kind': 'deps', 'deps': 'narrow'}]), '--dry-run')
+        self.assertEqual(code, 4); self.assertIn('"deps" must be "wide" or "tight"', err)
+
+
 if __name__ == '__main__':
     unittest.main()

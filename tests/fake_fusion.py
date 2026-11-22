@@ -58,6 +58,7 @@ class FakeFusion:
         self.stacked = 0             # calls that were sent while a unit was still working
         self.default_inputs = None   # what a unit says it read of the job when set_facts() names nothing: None = all of it
         self.version = None          # the Fusion version every envelope gives ("fusion_version"); None: not said
+        self.scripts = []            # per Fusion call: the ids of the units it carried (more than one: a batched call)
 
     # ---- what a test sets up ----
     def set_facts(self, probe, part, facts, done=True, cursor=None, sig=None, elapsed_s=0.1, reads=(), inputs_read=None):
@@ -128,7 +129,15 @@ class FakeFusion:
     def transport(self, url, script, timeout_s):
         if self.down:
             return dict(OK, ok=False, error='connection refused', down=True)
-        job = gate_fusion_rpc.job_of(script)
+        jobs = gate_fusion_rpc.jobs_of(script)
+        self.scripts.append([j['id'] for j in jobs])
+        for job in jobs:                             # a batched call answers its units one after the other, as Fusion runs them
+            res = self._one(job, script, timeout_s)
+            if not res.get('ok') or res.get('timeout'):
+                return res
+        return dict(OK)
+
+    def _one(self, job, script, timeout_s):
         self.calls.append(job)
         self.read_only.append(gate_fusion_rpc.read_only_for(script))
         key = (job['probe'], job['part'])

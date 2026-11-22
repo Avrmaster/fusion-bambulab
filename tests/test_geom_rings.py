@@ -55,7 +55,7 @@ class Names(unittest.TestCase):
 
     def test_kind_and_motion_group(self):
         self.assertEqual(R.body_kind(True, False, own=True), 'self')
-        self.assertEqual(R.body_kind(True, False, visible=False), 'hidden')
+        self.assertEqual(R.body_kind(True, False), 'printed')                      # visibility is no kind (0.3.3)
         self.assertEqual(R.body_kind(False, True), 'hardware')
         self.assertEqual(R.body_kind(False, False), 'bought')
         self.assertEqual(R.body_kind(False, False, mesh=True), 'mesh')
@@ -745,11 +745,13 @@ class Probes(unittest.TestCase):
         self.assertTrue(self.face(b, 'outer', '+')[0]['touches_other_ring'])
         self.assertTrue(self.face(b, 'inner', '+')[0]['touches_other_ring'])
 
-    def test_bearings_a_hidden_lid_holds_nothing_and_is_named(self):
+    def test_bearings_a_hidden_lid_holds_like_a_shown_one(self):
+        shown, = self.unit('fusion_bearings', self.bearing_scene(), part='Housing')['facts']['bearings']
         scene = self.bearing_scene()
-        scene[1].bRepBodies[0].isLightBulbOn = False
+        scene[1].bRepBodies[0].isLightBulbOn = False                                        # visibility is never read (0.3.3)
         b, = self.unit('fusion_bearings', scene, part='Housing')['facts']['bearings']
-        self.assertEqual(self.face(b, 'outer', '+'), []); self.assertEqual(b['hidden_near'], ['Lid']); self.assertEqual(b['clamps'], [])
+        self.assertEqual([c['name'] for c in self.face(b, 'outer', '+')], ['Lid']); self.assertNotIn('hidden_near', b)
+        self.assertEqual(b, shown)
 
     def test_bearings_seat_without_a_bearing_and_a_name_without_geometry(self):
         seat = {'id': 'h9', 'anchor': {'kind': 'hole', 'axis': [0, 0, 1], 'point': [0, 0, 12]}, 'segments': [{'d': 47.0, 'len': 12.0}], 'depth': 12.0,
@@ -1019,7 +1021,7 @@ class Probes(unittest.TestCase):
         blind = self.opening(facts, 'h2')['paths']['own']
         kinds = {h['name']: (h['kind'], h['approx'], round(h['at'], 1)) for h in blind['hits']}
         self.assertEqual(kinds['ref motor'], ('mesh', True, 5.0))                              # two big triangles, no vertex in the path
-        self.assertEqual(kinds['Old cover'][:2], ('hidden', False)); self.assertAlmostEqual(kinds['Old cover'][2], 20.0, delta=0.2)
+        self.assertEqual(kinds['Old cover'][:2], ('printed', False)); self.assertAlmostEqual(kinds['Old cover'][2], 20.0, delta=0.2)     # hidden: what it is all the same
         self.assertEqual(blind['free'], 5.0)
         slot = self.opening(facts, 'o1')
         self.assertEqual((slot['of'], slot['section'], slot['paths']['own']['r']), ('slot', 'inscribed circle', 1.5))
@@ -1980,13 +1982,16 @@ class Probes(unittest.TestCase):
         self.assertEqual((b['ref'], b['designation']), ('Bearing 6005', '6005')); self.assertEqual(env['facts']['not_bearings'], [])
 
     def test_a_printed_part_is_named_as_the_scan_names_it(self):
-        tool = Body('Tool', Blk((100, 100, 100), (101, 101, 101)), bulb=False)                         # a switched-off tool body in the lid's component
         lid = Add(Rod(0, 0, 12.0, 13.0, 23.4, 21.0), Rod(0, 0, 13.0, 16.0, 35.0, 16.0))
-        scene = self.bearing_scene()
-        scene[1] = Comp('Lid', [Body('Body1', lid), tool])
-        b, = self.unit('fusion_bearings', scene, part='Housing')['facts']['bearings']
-        lip, = self.face(b, 'outer', '+')
-        self.assertEqual((lip['name'], lip['part']), ('Lid', 'demo/lid'))                              # not "Lid / Body1": one PRINTED body
+        for tool_name, want in (('ref tool', ('Lid', 'demo/lid')), ('Tool', ('Lid / Body1', 'demo/lid_body1'))):
+            tool = Body(tool_name, Blk((100, 100, 100), (101, 101, 101)), bulb=False)                 # a switched-off tool body in the lid's component
+            scene = self.bearing_scene()
+            scene[1] = Comp('Lid', [Body('Body1', lid), tool])
+            b, = self.unit('fusion_bearings', scene, part='Housing')['facts']['bearings']
+            lip, = self.face(b, 'outer', '+')
+            # by names alone (0.3.3): a tool body that not_printed names is no printed body ("Lid", one PRINTED body);
+            # its light bulb makes nothing a ref, so an unnamed one is a second printed body of the component
+            self.assertEqual((lip['name'], lip['part']), want, tool_name)
 
     def test_an_elliptical_edge_or_face_does_not_end_a_unit(self):
         scene = self.bracket_scene()

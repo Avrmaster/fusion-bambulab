@@ -8,11 +8,11 @@ job["legacy"] maps "insert_pockets", "fusion_parts" and "screw_access" to the ab
 tools/fusion (None when it is not there): a probe that wraps one loads it inside probe() with
 g = {"__file__": path}; exec(open(path, encoding="utf-8").read(), g).
 
-What is a printed part: a solid body whose own light bulb is on and whose names do not match job["not_printed"]. The
-names tested are the body name, the component name and the name of every occurrence on the path from the root (so
-everything inside a bought assembly "ref motor:1" is not printed). A hidden OCCURRENCE does not make a part a ref: it
-stays a part with "visible": false, because hiding a component must not take it out of the gate. A solid body switched
-off by its own light bulb is a ref with "visible": false (a leftover tool body is not a part).
+What is a printed part: a solid body whose names do not match job["not_printed"]. The names tested are the body name,
+the component name and the name of every occurrence on the path from the root (so everything inside a bought assembly
+"ref motor:1" is not printed). By names alone: hiding a component or a body changes nothing the gate measures, and a
+hidden body is a neighbour like a shown one. A leftover tool body that is no part needs a name not_printed matches.
+"visible" and "shown" are read for information only: no unit and no record of what a unit read depends on them.
 Faces are looped over for the signature of a printed body (gate_sign_step of _fusion.py) and for the "shape" of a ref
 (gate_ref_shape: area and centroid of each face, remembered for the Fusion session); a ref's "sig" itself comes from
 volume, area, counts and bounding box only.
@@ -156,7 +156,8 @@ def probe(job):
     "copies" counts the occurrences whose path is not under a not-printed name (the same component inside a bought
     assembly is a ref there and is listed as one). A mesh ref without a display mesh has "sig" and "bbox_doc" None.
     facts "occurrences" is the number of occurrences + 1 (the root component). The first call also gives "references"
-    (_scan_references: the documents this one links, the version it uses, the newest, and whether it is out of date).
+    (_scan_references: the documents this one links, the version it uses, the newest, and whether it is out of date)
+    and "pulse" (gate_pulse of _fusion.py, read before the occurrences are walked).
 
     The cursor. A whole number i: go on with occurrence i (0 is the root component, i the occurrence i - 1 of
     rootComponent.allOccurrences). An object {"i", "b", "sign"}: occurrence i was begun; its solid bodies before index
@@ -165,9 +166,13 @@ def probe(job):
     limit = args.get('limit')
     if limit is not None and int(limit) <= 0:
         return {'facts': {'parts': [], 'refs': []}, 'done': True, 'cursor': None, 'sig': None}
-    root = gate_design(job).rootComponent
+    design = gate_design(job)
+    root = design.rootComponent
     own_name = _gate_doc_name(gate_document(job))
     references = _scan_references(gate_document(job)) if job.get('cursor') is None else None
+    # the pulse of the document (gate_pulse of _fusion.py), read in the first call before anything else: when the whole
+    # scan is this one call, the host keeps it and the next run's pulse call tells whether a scan is needed at all
+    pulse = gate_pulse(design, job, gate_document(job))[0] if job.get('cursor') is None else None
     occs = list(root.allOccurrences)
     first, paths = {}, {}
     for i, o in enumerate(occs):                        # cheap: the first occurrence of a component that can hold parts, and its copies
@@ -197,7 +202,7 @@ def probe(job):
         shown = _scan_shown(occ, memo)
         solids = [b for b in comp.bRepBodies if b.isSolid]
         meshes = list(comp.meshBodies)
-        printed = [bool(b.isLightBulbOn) and _scan_printed(path, comp.name, b.name, job) for b in solids]
+        printed = [_scan_printed(path, comp.name, b.name, job) for b in solids]          # by names alone (0.3.3)
         n_bodies = len(solids) + len(meshes)
         for j, (b, is_part) in enumerate(zip(solids, printed)):
             if j < skip:
@@ -249,5 +254,7 @@ def probe(job):
     facts = {'parts': parts, 'refs': refs, 'copy_bodies': copies, 'occurrences': len(occs) + 1}
     if references is not None:
         facts['references'] = references
+    if pulse is not None:
+        facts['pulse'] = pulse
     return {'facts': facts, 'done': done,
             'cursor': None if done else (stop if stop is not None else i), 'sig': None}

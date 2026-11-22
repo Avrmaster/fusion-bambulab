@@ -51,6 +51,49 @@ _SCR_FACE = 0.025               # mm of air along a screw that is read as face t
 
 
 _SCR_TAPE = None                # the GateTape of this call (_fusion.py): probe() sets it, every point test goes through it
+_SCR_HULL = {}                  # the tight record: {ref in progress: [lo, hi]} round every point asked of any body (_scr_inside)
+_SCR_HULL_KEY = ['pre']         # which ref the points asked now belong to (probe() sets it)
+_SCR_WALK = {}                  # the box and margin of the walk of this call (probe() sets them)
+_SCR_SOLID = ('part', 'copy', 'ref')            # the census kinds a point test can ask: every solid body
+
+
+def _scr_read(*args, **kw):
+    """gate_read (asked=True: gate_asked) of _fusion.py. The helpers of this file also run without _fusion.py (the tests
+    paste them alone): there nothing is noted. In a unit _fusion.py is always pasted before this file."""
+    f = globals().get('gate_asked' if kw.pop('asked', False) else 'gate_read')
+    if f is not None:
+        f(*args, **kw)
+
+
+def _scr_hull_add(p):
+    """Note one point a body was asked about (also when its box alone answers): the facts of the unit depend on the
+    answer of every body there, and only there (_scr_hull_read)."""
+    k = _SCR_HULL_KEY[0]
+    h = _SCR_HULL.get(k)
+    if h is None:
+        _SCR_HULL[k] = [list(p), list(p)]
+        return
+    for i in range(3):
+        if p[i] < h[0][i]:
+            h[0][i] = p[i]
+        if p[i] > h[1][i]:
+            h[1][i] = p[i]
+
+
+def _scr_hull_read():
+    """The hull of each ref as a region of the tight record (gate_read of _fusion.py, mode "tight").
+
+    Why the hull holds every body a screw or washer row depends on through its point tests: a row is a deterministic
+    function of the answers its point tests get (the tape replays it so). A body that answers no question differently
+    leaves every answer, and so every next question, the same. A body can answer a question differently only when its
+    box holds the point asked: so only bodies whose box meets the hull of the points can change a row through a point
+    test. Where a list of bodies is chosen by their boxes and each one is then asked at points made from its OWN box
+    (the bought bodies in an air gap, _scr_gaps), the box test itself is noted as a region there; the candidates by
+    name, a washer's neighbours by distance and the bodies on the axes of the census holes are noted where they are
+    chosen. Points asked before a call stopped are in that call's envelope: the host joins the calls of a unit."""
+    for k in sorted(_SCR_HULL):
+        lo, hi = _SCR_HULL[k]
+        _scr_read((tuple(lo), tuple(hi)), 0.05, mode='tight', kinds=_SCR_SOLID)
 
 
 class _ScrLate(Exception):
@@ -66,6 +109,7 @@ def _scr_inside(rec, tag=0):
     IN = adsk.fusion.PointContainment.PointInsidePointContainment
 
     def inside(p):
+        _scr_hull_add(p)
         if p[0] < lo[0] or p[0] > hi[0] or p[1] < lo[1] or p[1] > hi[1] or p[2] < lo[2] or p[2] > hi[2]:
             return False
         if _SCR_TAPE is not None:
@@ -140,13 +184,19 @@ def _scr_pick(world, pats, kinds, taken=(), bought_only=False):
     return out
 
 
-def _scr_close(picked, boxes, reach=1.0, touch=0.5):
+def _scr_close(picked, boxes, reach=1.0, touch=0.5, names=None):
     """The picked bodies that can matter for this part, by their boxes alone: a body within `reach` mm of one of
     `boxes`, and a body of the same occurrence that touches such a body (the head body of a shank that reaches the
     part). The circles of a body are read only after this filter: a part has dozens of screw refs within 45 mm, and
     reading every one of them on every call of the unit was the cost before the first screw was measured."""
     near = [r for r in picked if any(box_gap(r['box'][0], r['box'][1], b[0], b[1]) <= reach for b in boxes)]
     have = set(id(r) for r in near)
+    if names is not None:                                               # the tight record: where the candidates are chosen
+        for b in boxes:
+            _scr_read(b, reach, mode='tight', kinds=_SCR_SOLID, names=names)
+        if touch >= 0:
+            for n in near:                                              # a body of the same occurrence touching a chosen one
+                _scr_read(n['box'], touch, mode='tight', kinds=_SCR_SOLID, names=names)
     out = list(near)
     for r in picked:
         if id(r) not in have and any(n['path'] == r['path'] and box_gap(r['box'][0], r['box'][1], n['box'][0], n['box'][1]) <= touch for n in near):
@@ -449,6 +499,7 @@ def _scr_gaps(gaps, solid, land, A, job, may_stop=False):
     for gap, i0, i1, s0 in gaps:
         sides = (solid[i0], solid[i1])
         lo, hi = path_box(v_add(land, v_scale(down, s0 - _SCR_STACK_LOOK)), down, R, gap + 2.0 * _SCR_STACK_LOOK)
+        _scr_read((lo, hi), 0.0, mode='tight', kinds=('ref',))          # each bought solid here is asked at points made from its own box
         found, passed = [], []
         for r in solid:
             if r is sides[0] or r is sides[1] or r['own'] or r['printed'] or r.get('_fast') or r.get('hw') in ('screw', 'washer', 'insert', 'nut'):
@@ -703,6 +754,7 @@ def _scr_washer(w, job, world, own, inv, screws, threads, touch):
     on_it = [s for s in screws if s['shape'] and coaxial(sp['centre'], sp['axis'], s['shape']['seat'], s['shape']['axis'], 0.3)
              and -0.1 <= along(s['shape']['seat'], sp['centre'], s['shape']['axis']) <= sp['t'] + 3.0]
     solid = [r for r in world if id(r) not in mine and not r['mesh'] and box_gap(r['box'][0], r['box'][1], w['box'][0], w['box'][1]) <= _SCR_NEAR + 0.5]
+    _scr_read(w['box'], _SCR_NEAR + 0.5, mode='tight', kinds=_SCR_SOLID)
     skip = mine | set(id(r) for s in on_it for r in s['recs'])
     bodies = [r for r in solid if id(r) not in skip]
     ring = (sp['od'] - sp['id']) / 2.0
@@ -799,6 +851,7 @@ def _scr_washer(w, job, world, own, inv, screws, threads, touch):
     r_env = max([sp['od'] / 2.0] + [s['shape']['head_r'] for s in on_it])
     env = TB.createCylinderOrCone(gate_point(v_add(face, v_scale(A, 0.02))), r_env / 10.0, gate_point(v_add(face, v_scale(A, height))), r_env / 10.0)
     env_box = gate_bbox(env)
+    _scr_read(env_box, _SCR_NEAR, mode='tight')                          # the nearest neighbour of the stack: every kind, meshes too
     lying = set(id(c['_rec']) for c in covers if c['gap'] <= touch)
     lying |= set(id(r) for t in threads for r in t['recs'] if t['profile'] and coaxial(centre, A, t['profile']['origin'], t['profile']['axis'], 0.3))
     # the other washers of the same screw stack (two washers under one head) are the stack, not its neighbours
@@ -818,6 +871,7 @@ def _scr_washer(w, job, world, own, inv, screws, threads, touch):
         if r['mesh']:                                                   # a mesh is known by its box only: a lower bound that would
             mesh_near.append({'name': r['name'], 'box_gap': round(gap, 2)})     # beat every measured gap and hide the real neighbour
             continue
+        _scr_read(r['name'], r['box'], r, asked=True)
         try:                                                            # whether the measure manager takes a temporary body is not sure:
             gap, approx = mm.measureMinimumDistance(env, r['body']).value * 10.0, False     # when it does not, the boxes stand
         except Exception:
@@ -846,6 +900,10 @@ def _scr_holes(job, world, m, screws, known, pats):
         by_name.setdefault(r['name'], []).append(r)
     brg = (job.get('tables') or {}).get('bearings')
     out = []
+    named = sorted({str(c.get('name')) for h in ((job.get('features') or {}).get('holes') or []) for c in (h.get('coaxial') or [])
+                    if isinstance(c, dict) and c.get('kind') in ('bought', 'hardware') and c.get('name')})
+    if named and _SCR_WALK:                                              # the tight record: the bodies of these names, wherever they are in the walk
+        _scr_read(_SCR_WALK['box'], _SCR_WALK['margin'], mode='tight', kinds=_SCR_SOLID, names=['^%s$' % re.escape(n) for n in named])
     for h in ((job.get('features') or {}).get('holes') or []):
         cls, a = h.get('class') or {}, h.get('anchor') or {}
         if cls.get('role') not in ('clearance', 'counterbore', 'countersink', 'insert_pocket') or not a.get('point'):
@@ -969,7 +1027,11 @@ def probe(job):
     part_box = gate_bbox(pbody)
     params, tables = job.get('params') or {}, job.get('tables') or {}
     touch = float(params.get('washers.landing_gap_max', 0.05))
-    world = gate_world(design, job, part_box, 45.0, '' if occ is None else occ.fullPathName, body.name)
+    _SCR_HULL.clear()
+    _SCR_HULL_KEY[0] = 'pre'
+    _SCR_WALK.update(box=part_box, margin=45.0)
+    _scr_read(part_box, 45.0, mode='wide')                               # the wide record: every body of the walk
+    world = gate_world(design, job, part_box, 45.0, '' if occ is None else occ.fullPathName, body.name, read=False)
     for k, r in enumerate(world):
         if not r['mesh']:
             r['_inside'] = _scr_inside(r, k)
@@ -982,7 +1044,8 @@ def probe(job):
         r['hw'] = None if r['mesh'] else _scr_own_kind(r['body_name'], pats)
     near = lambda g: box_gap(g['box'][0], g['box'][1], part_box[0], part_box[1]) <= 1.0
     screws, not_screws, rejected = [], [], []
-    for g in _scr_refs(_scr_close(_scr_pick(world, pats, ('screw',)), [part_box]), 0.2):
+    cand = [pats[k] for k in ('screw', 'washer', 'insert', 'nut')]      # a body _scr_pick takes matches one of these by its own or its component name
+    for g in _scr_refs(_scr_close(_scr_pick(world, pats, ('screw',)), [part_box], names=cand), 0.2):
         if not near(g):
             continue
         shape = screw_shape(g['profile'])
@@ -1001,7 +1064,7 @@ def probe(job):
         screws.append(g)
     taken = set(id(r) for g in screws for r in g['recs'])
     washers, unreadable = [], []
-    for g in _scr_refs(_scr_close(_scr_pick(world, pats, ('washer',), taken), [part_box], touch=-1.0), None):
+    for g in _scr_refs(_scr_close(_scr_pick(world, pats, ('washer',), taken), [part_box], touch=-1.0, names=cand), None):
         if not near(g):
             continue
         shape, own_name, printed = washer_shape(g['profile']), g['recs'][0]['hw'] == 'washer', all(r['printed'] for r in g['recs'])
@@ -1020,7 +1083,7 @@ def probe(job):
     taken |= set(id(r) for g in washers for r in g['recs'])
     # an insert or a nut matters where a screw of this part can reach it: at the part, or at one of its screws
     reach = [part_box] + [g['box'] for g in screws]
-    threads = [t for t in _scr_refs(_scr_close(_scr_pick(world, pats, ('insert', 'nut'), taken, bought_only=True), reach, touch=-1.0), None)
+    threads = [t for t in _scr_refs(_scr_close(_scr_pick(world, pats, ('insert', 'nut'), taken, bought_only=True), reach, touch=-1.0, names=cand), None)
                if t['recs'][0]['hw'] in ('insert', 'nut') or bearing_size(t['profile']) is not None]     # by its component only: it must be a ring
     for g in screws + washers + threads:
         for r in g['recs']:
@@ -1060,9 +1123,11 @@ def probe(job):
     i = start
     while i < len(items):
         if i > start and (gate_time_up(job, 3.0) or tape.out_of_time()):
+            _scr_hull_read()
             return {'facts': facts, 'done': False, 'cursor': i, 'sig': sig, 'timing': timing()}
         kind, g = items[i]
         tape.set_stage(kind)
+        _SCR_HULL_KEY[0] = '%s %d' % (kind, i)
 
         def one():
             if kind == 'screw':
@@ -1089,10 +1154,12 @@ def probe(job):
             state = {'i': i, 'tape': tape.saved(), 'world': here, 'asked': gate_states(world, set(tape.tags) | set(mine))}
             if i == start and again:
                 state['again'] = again
+            _scr_hull_read()
             return {'facts': facts, 'done': False, 'cursor': state, 'sig': sig, 'timing': timing(tape.stage)}
         if kind == 'screw':
             facts['passing' if row.get('passing') else 'screws'].append({k: v for k, v in row.items() if k != 'passing'})
         elif row:
             facts['washers'].append(row)
         i += 1
+    _scr_hull_read()
     return {'facts': facts, 'done': True, 'cursor': None, 'sig': sig, 'timing': timing()}

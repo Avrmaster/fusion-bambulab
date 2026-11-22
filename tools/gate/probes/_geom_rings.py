@@ -11,10 +11,10 @@ bounding-box test; in the tests it is a box or a tube written in three lines."""
 import math
 
 try:                                    # on the host; inside a Fusion script these names are already globals
-    from probes._geom import v_add, v_sub, v_scale, v_dot, v_cross, v_len, v_unit, axis_frame, along, off_axis
+    from probes._geom import v_add, v_sub, v_scale, v_dot, v_cross, v_len, v_unit, axis_frame, along, off_axis, boxes_near
 except ImportError:
     try:
-        from _geom import v_add, v_sub, v_scale, v_dot, v_cross, v_len, v_unit, axis_frame, along, off_axis
+        from _geom import v_add, v_sub, v_scale, v_dot, v_cross, v_len, v_unit, axis_frame, along, off_axis, boxes_near
     except ImportError:
         pass
 
@@ -117,16 +117,15 @@ def designation_in_name(name, sizes):
     return None
 
 
-def body_kind(printed, hardware, visible=True, mesh=False, own=False):
+def body_kind(printed, hardware, mesh=False, own=False):
     """One word for what a body is to a check: "self" (the part of the unit), "mesh" (no B-rep: seen by its bounding box
-    and vertices only), "hidden" (light bulb off), "printed", "hardware" (screw, washer, insert, nut, bearing) or
-    "bought" (every other body that is not printed)."""
+    and vertices only), "printed", "hardware" (screw, washer, insert, nut, bearing) or "bought" (every other body that
+    is not printed). Visibility is no kind: a hidden body is what it is (facts stored before 0.3.3 may still say
+    "hidden", and the judges keep reading that as unmeasured)."""
     if own:
         return 'self'
     if mesh:
         return 'mesh'
-    if not visible:
-        return 'hidden'
     if printed:
         return 'printed'
     return 'hardware' if hardware else 'bought'
@@ -139,6 +138,65 @@ def group_of(path, groups, search):
         if any(search(p, path) for p in g.get('patterns') or []):
             return g.get('key')
     return None
+
+
+REGION_MODES = ('wide', 'tight')         # which record of what a unit read a region belongs to (gate_read "mode"; none: both)
+
+
+def key_names(key):
+    """(occurrence path, component name, body name) of a body key "<path>|<body>" (gate_deps.body_key; a mesh body is
+    "<path>|mesh:<body>"). The component is the last name of the path without its copy number, "" at the root. A key
+    that two bodies share gets "#2", "#3" at its end (gate_deps.world): the body name is then given both ways."""
+    path, _, body = str(key).partition('|')
+    if body.startswith('mesh:'):
+        body = body[5:]
+    comp = path.split('+')[-1].rsplit(':', 1)[0] if path else ''
+    return path, comp, body
+
+
+def region_admits(region, key, kind, faces, box, groups, search, slack=0.0):
+    """Does one region a unit noted (gate_read of _fusion.py) hold this body? THE one test, the same in Fusion (the
+    cover check of a call) and on the host (gate_deps.World.bodies_in), so the two can never drift apart.
+
+    region  {"box": [lo, hi], "margin", "solid_only"?, "printed_faces_max"?, "kinds"?, "other_group"?, "names"?}
+    key     the body key "<path>|<body>"          kind  "part" | "copy" | "ref" | "mesh" (the census kinds)
+    faces   its face count or None                box   (lo, hi) of the body, document frame
+    groups  the motion groups of the document ([{"key", "patterns"}])
+    search  re.search that never raises (gate_search in Fusion)
+    slack   mm added to the margin (the host: census boxes and walk boxes may differ by rounding)
+
+    The filters only ever leave out what the probe itself never looks at:
+      kinds        only bodies of these census kinds (fusion_near: "ref" and "mesh", it lists no printed body)
+      other_group  only bodies of another motion group than this one (fusion_gap); a body at the root of the
+                   document (path "") is always held: its group is matched by a component name the key does not carry
+      names        only bodies whose body name, component name or "<component> / <body>" matches one of these
+                   patterns (the refs a probe picks by name); a body at the root is always held
+    A region that cannot be read holds nothing: the caller treats that as "cannot prove" (gate_deps)."""
+    lo, hi = region['box']
+    if not boxes_near(box[0], box[1], lo, hi, float(region.get('margin') or 0.0) + slack):
+        return False
+    if region.get('solid_only') and kind == 'mesh':
+        return False
+    most = region.get('printed_faces_max')
+    if most is not None and kind in ('part', 'copy') and isinstance(faces, int) and faces > int(most):
+        return False
+    kinds = region.get('kinds')
+    if kinds is not None and kind not in kinds:
+        return False
+    path, comp, body = key_names(key)
+    if 'other_group' in region and path:
+        g = group_of(path, groups, search)
+        if g is None or g == region['other_group']:
+            return False
+    names = region.get('names')
+    if names is not None and path:
+        tries = [body, comp, '%s / %s' % (comp, body)]
+        if '#' in body:                                             # "Body1#2": the second of two bodies of one name
+            bare = body.rsplit('#', 1)[0]
+            tries += [bare, '%s / %s' % (comp, bare)]
+        if not any(search(p, t) for p in names for t in tries):
+            return False
+    return True
 
 
 # ---- bodies of revolution, read from their circular edges -----------------------------------------------------------------------

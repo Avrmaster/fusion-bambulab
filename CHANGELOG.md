@@ -2,6 +2,51 @@
 
 What each version of the plugin changes. Skills update with the plugin; the tools copied into a project do not. Read the section of a version before you refresh a project with `python3 <plugin>/tools/setup_project.py <dir> --update-tools`, and review `git diff` afterwards.
 
+## 0.3.3
+
+Speed without a weaker check, and visibility out of the gate. Three complaints from a real project: one changed part re-measured all the probes of eight neighbours (about 10 min); a session that hid most parts for a screenshot made every unit stale (about 25 min), and facts measured with neighbours hidden could miss collisions; and a heat-set pocket that only reaches its wall on a local boss passed as a wall. Every speed change below is either exact by construction or proven against a full measurement before it decides anything.
+
+### Visibility is out of every check
+
+- No probe reads a light bulb any more (only fusion_scan notes `visible` and `shown`, for information). The printed rule is by names alone (`not_printed`) in the scan, in the walk every probe shares (`gate_world`), in the census and in the inserts probe.
+- A hidden body is a neighbour like a shown one: it holds a bearing ring, stands in front of an opening, blocks an insert wall and closes a gap. fusion_bearings no longer writes `hidden_near`, fusion_openings no longer gives the kind `hidden`, fusion_inserts, fusion_gap and fusion_near no longer write `hidden`. The judges still read `hidden` in facts stored before (as unmeasured, fail closed); new facts never hold it.
+- The record of what a unit read holds no visibility (records are version 2): hiding or showing measures nothing again and kills no stamp. It holds the name a body gets instead, so a part renamed because a body was added to its component is a change.
+- For another project: a leftover tool body that was a ref only because its own light bulb was off is now a printed part with a part id of its own. Give it a name `not_printed` matches.
+- Tests: `tests/test_visibility_free.py` (no probe reads a bulb; every neighbour hidden changes no fact and no record; a hidden colliding body is still found; the scan keeps a hidden body a part).
+
+### A tight record beside the wide one, and the shadow that proves it
+
+- A region a unit notes (`gate_read`) can carry a `mode` (`wide`, `tight`; none: both) and filters: `kinds` (census kinds), `other_group` (another motion group), `names` (name patterns). One function, `region_admits` in `probes/_geom_rings.py`, decides what a region holds, in Fusion (the cover check of every call) and on the host (`gate_deps.World.bodies_in`).
+- fusion_near notes as tight only the bodies that are no printed part (it lists no printed body). fusion_gap notes only bodies of another motion group. fusion_screws notes the candidates by name within 1 mm of the part and of its screws, the box of every point any body was asked about per screw or washer (a row is a function of those answers alone), the slab of every air gap for bought bodies, the 3.5 mm round a washer, the 3 mm round its stack for the nearest neighbour, and the bodies named on the census hole axes. The wide record of each stays as in 0.3.2.
+- `gate/project.json` `"deps"` (the owner's) chooses the record that decides: `wide` by default. Under `wide` every unit the tight record would have kept is measured anyway and its new facts are compared with its old ones: `gate/run/<run>/deps_shadow.jsonl`, and a line at the end of the run. A difference is a violation. A bundle entry `{"kind": "deps", "deps": "tight"}` switches; it is refused while the shadow record holds a violation or no unit.
+- Equivalence tests: `tests/test_tight_regions.py` runs near, gap and screws on the fake adsk with bodies placed at random round the part (named as screws, washers, inserts, nuts, bearings, plates, ribs): every body the tight record does not hold leaves the facts exactly as they were, and every body it holds the wide one holds too. `tests/test_deps_tight.py` changes one part again and again and compares an incremental run with a full fresh run row by row, under both records; a wrong tight region shows as a violation.
+- Not tight yet: fusion_openings (paths and the cap slab), fusion_inserts (the pocket boxes), fusion_census (its neighbour walk chooses bodies by a face budget over the whole box), fusion_bearings (already narrow). Their units decide by the wide record under both settings.
+
+### Fewer and cheaper Fusion calls
+
+- Pulse: a new unit fusion_pulse reads one digest of what a scan reads (occurrence paths and transforms, each body's revision id, face count, volume and area, mesh nodes, linked documents), without reading any face. A run compares it with the pulse the last scan read in its own first call (kept only when the whole scan was that one call) and skips the scan when they match, under the same scan code, `not_printed`, layout entry and Fusion version. The saved version of the document is never used for this: an unsaved edit does not change it. A body with no revision id, a failed call or a scan of several calls means a full scan. `gate.py scan` and `run --fresh` always scan in full.
+- Batched units: the short units of one part (up to 3 s each by their last measurement, never the census) go into one Fusion call, each in its own namespace with its own JOB and result file, sharing one walk over the document. Each answer is processed as if its own call had brought it; a unit that runs out of time inside a batch is measured again alone with its whole budget. A unit that hangs in a batch costs only itself; when Fusion stops answering inside a batch, the next call reads each result file back. `gate/layout.json` `"fusion": {"batch": false}` turns it off.
+- The confirming scan at the end of a plan measured over several calls is made in the same call when it fits (a pulse, or a scan whose last time fits), instead of one more call.
+- Tests: `tests/test_batch.py`, `tests/test_pulse.py`.
+
+### inserts.local_boss
+
+- New attest rule, judged from the rays inserts.wall already stores (no Fusion work, no unit measured again for it): a pocket whose wall stands, over at least 30 degrees of consecutive rays, on a circle round its own axis (walls within 0.06, fitted centre and radius within 0.3) sits on a local boss and is asked why the whole wall was not made wider, the opening smaller, or the pocket moved. A post whose whole outline is that ring, with nothing in its census off the axis, is not asked. Facts without rays are NOT_RUN.
+- Labels: the outline cannot move because of a neighbour, seat or bearing named in the row (refused while the row names none: new held claim `{"by": "some"}`); because of a swept path recorded in the design decisions; the boss is the function, a seat for the bought part on its axis (refused unless the row names one). There is no label for "a wider wall is possible": that question stays open (fix it, or the owner waives it).
+- It is an attest rule: stamps stay valid, the questions come with the next change or export of a part. In a project under enforce they block those exports until answered. Fixtures: `tests/fixtures/facts/inserts_local_boss__*.json`.
+
+### The first run after this update
+
+- It measures every unit of every part once: `_fusion.py` and `_geom_rings.py` are pasted into every unit, so the code of every probe changed, and every stored record is of version 1. Both are reasons of the tool, not of the model: no stamp is lost by them, and the facts measured again decide. The first scan is a full one (no pulse is stored yet). On a project of about 400 units that is about half an hour of Fusion work, needed anyway where units were measured with parts hidden.
+- Probe code changed: `_fusion.py` (the walk without light bulbs and shared within a call, regions with modes and filters, the cover check per record, the pulse), `_geom_rings.py` (`body_kind` without visibility, `region_admits`), fusion_scan (printed by names, the pulse in its first call), fusion_census and fusion_inserts (printed by names, no hidden flag), fusion_bearings, fusion_openings, fusion_gap, fusion_near (no visibility; near and gap tight regions), fusion_screws (tight regions). New: fusion_pulse.
+- Hidden bodies now count as material: rows can appear where a hidden part stands, and NOT_RUN rows about hidden bodies become results.
+
+### Not done in this version
+
+- Per-feature re-measure (only the openings, screws or pockets a change touches): a unit still measures all its features.
+- Tight regions for openings, inserts and the census (see above).
+- Nothing here was run in Fusion: the pulse, the batched script and the tight regions are tested on the fake adsk and the fake transport only.
+
 ## 0.3.2
 
 Attest questions every ordinary part can answer honestly. In the first project under enforce, six questions had no true answer for almost every part, so nothing could be exported: only an owner waiver was left. Each fix below gives the ordinary case an honest label or an answer by facts, and keeps the case the rule is for without a passing answer. Each has tests in `tests/test_attest_honest.py` and fact fixtures in `tests/fixtures/questions`. One change is in a probe and takes effect when the part is measured again in Fusion: it is marked **re-measure**.

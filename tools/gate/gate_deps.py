@@ -6,28 +6,32 @@ paths past other bodies, a bearing is covered and clamped by other parts. So "th
 for its facts to hold. When a unit is done the host stores beside its facts (gate/facts/<doc>/<part>/<sig12>.json,
 probes[<probe>]["deps"]):
 
-    {"v": 1,
+    {"v": 2,
      "code":   16 hex over the code of the unit (_geom.py, _geom_rings.py, _fusion.py and the probe file) with its
                comments and docstrings left out (normalised: a text-only edit measures nothing again),
      "fusion": the version of Fusion that measured it (the envelope's "fusion_version"), or None,
      "for":    the key of the .3mf project the unit was run for (its parameters), or None,
-     "own":    16 hex over the part's signature, pose and visibility, or None when the unit read nothing but its body,
+     "own":    16 hex over the part's signature, pose and name, or None when the unit read nothing but its body,
      "job":    {key: 16 hex} of the keys of the job the probe read (features, motion_groups, not_printed, args, ...),
      "params": {name: value} of the parameters it read ({"*": 16 hex} when it read all of them),
      "tables": {name: 16 hex} of the tables it read ({"*": 16 hex} for all),
-     "reads":  [{"box", "margin", "solid_only"?, "printed_faces_max"?}] the regions of the document it read (the
-               envelope's "reads", joined over the calls of the unit),
-     "bodies": {"<occurrence path>|<body name>": 16 hex} every body of the document in one of those regions (the
-               part itself left out), with its signature, pose and visibility as the scan saw them (a mesh body is
-               "<occurrence path>|mesh:<body name>"; a second body under one key gets "#2", "#3", ...),
+     "reads":  [{"box", "margin", "solid_only"?, "printed_faces_max"?, "mode"?, "kinds"?, "other_group"?, "names"?}]
+               the regions of the document it read (the envelope's "reads", joined over the calls of the unit;
+               region_admits of probes/_geom_rings.py says which bodies a region holds),
+     "bodies": {"<occurrence path>|<body name>": 16 hex} every body of the document in one of the "wide" regions (a
+               region with no "mode" counts for both records; the part itself left out), with its signature, pose,
+               name and shape as the scan saw them (a mesh body is "<occurrence path>|mesh:<body name>"; a second body
+               under one key gets "#2", "#3", ...),
+     "bodies_tight": the same over the "tight" regions, only when the unit noted a region with a "mode" (a probe that
+               knows more exactly what it reads: fusion_near, fusion_gap, fusion_screws),
      "all":    16 hex over every body of the document, instead of "reads" and "bodies", for a unit that was given up
                over its budget: nobody knows what it would have read, so any change of the document tries it again}
 
 The scan keeps every body of a document in the census (census["docs"][key]["world"], one line per body: world()).
 A unit is STALE (why_stale) when its facts at the part's signature are missing, unfinished or an error; when nothing of
 this was recorded (facts measured before this file existed); when the probe text, one of the job keys, parameters or
-tables it read, or the part's pose or visibility differ; or when the bodies in its regions differ from the record: a
-body changed, moved, was shown or hidden, came into a region or left it; when Fusion was updated since (the scan
+tables it read, or the part's pose or name differ; or when the bodies in its regions differ from the record: a body
+changed, moved, was renamed, came into a region or left it; when Fusion was updated since (the scan
 gives its version); or when the facts were measured with a look cut short by time (incomplete(): a full check with
 the time it needs might see more). Anything else is what was measured, and a fresh plan takes those facts as done
 instead of asking Fusion again. A unit given up over its budget (its error begins with GIVEN_UP) holds as given up
@@ -37,6 +41,16 @@ The state of a body that is not a printed part (a ref) includes its "shape" from
 (area and centroid of each, like a part's signature) or over the nodes of its mesh, so a hole that moves inside the
 same outline of a bought plate or washer is a change. The cheap signature alone does not see that.
 
+Visibility is in no state (0.3.3): hiding or showing a part or a ref makes no unit stale, and no probe reads a light bulb
+(what a unit measures with a neighbour hidden is what it measures with it shown).
+
+Two records, one decision. "wide" is the record as 0.3.2 made it (a box round what a probe could look at); "tight" is
+the one a probe that knows more exactly what it reads adds (regions with "mode": "tight" and filters). Which one makes a
+unit stale is gate/project.json "deps" (the owner's): "wide" (the default) or "tight". In "wide" the plan also asks the tight record
+(shadow): a unit that only the wide record measures again is compared, when it is done, with its facts before
+(gate/run/<run>/deps_shadow.jsonl, shadow_summary): the same facts are the proof that the tight record would have
+missed nothing; any difference is a violation, and the owner switches to "tight" only on a record of none.
+
 What this cannot see: a body that changed after the scan and before its neighbour's unit measured it, and changed back
 before the next scan (the facts were measured on a state no scan saw). The same holds for a full check: its units read
 the model as it is while they run."""
@@ -45,7 +59,8 @@ import hashlib, io, os, tokenize
 import gate_common, gate_fusion_rpc
 from gate_common import digest
 
-DEPS_V = 1
+DEPS_V = 2                      # 2 (0.3.3): no visibility in a state, the name in it, regions with a mode and filters
+DEPS_MODES = ('wide', 'tight')  # gate/layout.json "deps": which record decides (the default is the first)
 GIVEN_UP = 'over budget, not run'   # how the error of a unit that was given up begins (gate_plan.OVER_BUDGET)
 INCOMPLETE_KEYS = ('screws_cut', 'late')    # a fact that says the probe's look was cut short by time (openings, screws)
 LATE_REASON = 'measured with a look cut short by time'
@@ -100,14 +115,20 @@ def body_key(occurrence, body, mesh=False):
     return '%s|%s%s' % (occurrence or '', 'mesh:' if mesh else '', body or '')
 
 
-def state(sig, pose, shown, shape=None):
-    """16 hex over what a neighbour is to a unit: its signature, its pose, whether it is shown and, for a ref, the
-    digest of its faces or mesh nodes ("shape" of the scan)."""
-    return digest([sig, pose, bool(shown)] if shape is None else [sig, pose, bool(shown), shape])
+def state(sig, pose, shape=None, name=None):
+    """16 hex over what a neighbour is to a unit: its signature, its pose, for a ref the digest of its faces or mesh
+    nodes ("shape" of the scan), and the name a probe gives it (part_name: a printed body is renamed when another
+    printed body is added to its component, and its facts name it). Never whether it is shown."""
+    return digest([sig, pose, shape, name])
 
 
-def _shown(row):
-    return row.get('shown') if 'shown' in row else row.get('visible', True)
+def search(pattern, text):
+    """re.search that never raises, as gate_search of probes/_fusion.py: a pattern that does not compile matches nothing."""
+    import re
+    try:
+        return bool(pattern) and re.search(pattern, text or '') is not None
+    except re.error:
+        return False
 
 
 def _box(matrix, bbox):
@@ -137,7 +158,7 @@ def parse(line):
 
 def world(facts):
     """{body key: line} of every body a finished fusion_scan saw (its facts "parts", "copy_bodies" and "refs"): the
-    state (signature, pose, visibility), the kind (part, copy, ref, mesh), the face count and the box in the document
+    state (signature, pose, shape, name; never visibility), the kind (part, copy, ref, mesh), the face count and the box in the document
     frame (a part: its bounding box moved by its matrix; a ref: its "bbox_doc"; a mesh without display mesh: no box).
     A copy of a part has the part's signature. Two bodies that would get one key (two bodies of one name in one
     occurrence) are both kept: the second is "<key>#2", the third "<key>#3", in the order of the scan, so a change of
@@ -154,19 +175,19 @@ def world(facts):
         if not isinstance(p, dict):
             continue
         sigs[(p.get('component_id'), p.get('body'))] = p.get('sig')
-        put(body_key(p.get('occurrence'), p.get('body')), _line(state(p.get('sig'), p.get('pose'), _shown(p)), 'part', p.get('faces'),
+        put(body_key(p.get('occurrence'), p.get('body')), _line(state(p.get('sig'), p.get('pose'), name=p.get('name')), 'part', p.get('faces'),
                                                                _box(p.get('matrix'), p.get('bbox'))))
     for c in facts.get('copy_bodies') or []:
         if not isinstance(c, dict):
             continue
-        put(body_key(c.get('occurrence'), c.get('body')), _line(state(sigs.get((c.get('component_id'), c.get('body'))), c.get('pose'), _shown(c)), 'copy',
+        put(body_key(c.get('occurrence'), c.get('body')), _line(state(sigs.get((c.get('component_id'), c.get('body'))), c.get('pose'), name=c.get('name')), 'copy',
                                                                c.get('faces'), _box(c.get('matrix'), c.get('bbox'))))
     for r in facts.get('refs') or []:
         if not isinstance(r, dict):
             continue
         box = r.get('bbox_doc')
         put(body_key(r.get('occurrence'), r.get('body'), bool(r.get('mesh'))),
-            _line(state(r.get('sig'), r.get('pose'), _shown(r), r.get('shape')), 'mesh' if r.get('mesh') else 'ref', r.get('faces'), box if box else None))
+            _line(state(r.get('sig'), r.get('pose'), r.get('shape'), r.get('name')), 'mesh' if r.get('mesh') else 'ref', r.get('faces'), box if box else None))
     return out
 
 
@@ -185,14 +206,25 @@ class World:
             if box is not None:
                 self.rows.append((k, st, kind, faces, box))
 
-    def bodies_in(self, reads, own_key):
-        """{body key: state} of every body (the part itself left out) in at least one region of `reads`."""
-        from probes import _geom
+    def bodies_in(self, reads, own_key, mode='wide', groups=None):
+        """{body key: state} of every body (the part itself left out) that at least one region of `reads` holds
+        (region_admits of probes/_geom_rings.py, the test the probes make), counting the regions of this record:
+        those without a "mode" and those of `mode` ("wide" or "tight"). groups: the motion groups of the document
+        (for "other_group"). None when a region cannot be read: nothing can be proven."""
+        from probes import _geom, _geom_rings
         regions = []
         for r in reads or []:
             try:
-                regions.append((tuple(r['box'][0]), tuple(r['box'][1]), float(r['margin']) + SLACK_MM, bool(r.get('solid_only')), r.get('printed_faces_max')))
-            except (KeyError, TypeError, ValueError, IndexError):
+                if r.get('mode') is not None and r['mode'] not in _geom_rings.REGION_MODES:
+                    raise ValueError(r)
+                if r.get('mode') not in (None, mode):
+                    continue
+                lo, hi = tuple(float(c) for c in r['box'][0]), tuple(float(c) for c in r['box'][1])
+                m = float(r['margin']) + SLACK_MM
+                if len(lo) != 3 or len(hi) != 3:
+                    raise ValueError(r)
+                regions.append((lo, hi, m, r))
+            except (KeyError, TypeError, ValueError, IndexError, AttributeError):
                 return None                                 # a region that cannot be read: nothing can be proven
         if not regions:
             return {}
@@ -202,12 +234,8 @@ class World:
         for k, st, kind, faces, box in self.rows:
             if k == own_key or not _geom.boxes_near(box[0], box[1], ulo, uhi, 0.0):
                 continue
-            for lo, hi, m, solid, most in regions:
-                if solid and kind == 'mesh':
-                    continue
-                if most is not None and kind in ('part', 'copy') and isinstance(faces, int) and faces > int(most):
-                    continue
-                if _geom.boxes_near(box[0], box[1], lo, hi, m):
+            for _lo, _hi, _m, r in regions:
+                if _geom_rings.region_admits(r, k, kind, faces, box, groups or [], search, SLACK_MM):
                     out[k] = st
                     break
         return out
@@ -299,8 +327,8 @@ def _job_value(key, value):
 
 
 def own_state(entry):
-    """The part's own signature, pose and visibility (its census entry)."""
-    return state(entry.get('sig'), entry.get('pose'), _shown(entry))
+    """The part's own signature, pose and name (its census entry). Not whether it is shown."""
+    return state(entry.get('sig'), entry.get('pose'), name=entry.get('name'))
 
 
 def _merge_names(a, b):
@@ -356,12 +384,19 @@ def record(read, job, entry, world_lines, probe, target_key=None):
     if not isinstance(read, dict) or not read.get('complete'):
         return None
     w = World(world_lines)
-    bodies = w.bodies_in(read.get('reads'), body_key(entry.get('occurrence'), entry.get('body')))
+    own_key, groups = body_key(entry.get('occurrence'), entry.get('body')), job.get('motion_groups') or []
+    bodies = w.bodies_in(read.get('reads'), own_key, 'wide', groups)
     if bodies is None or (read.get('reads') and not world_lines):
         return None
-    return {'v': DEPS_V, 'tv': TABLES_VIEW, 'code': code(probe), 'fusion': read.get('fusion'), 'for': target_key, 'own': own_state(entry) if read.get('reads') else None,
-            'job': _job_part(job, read.get('job')), 'params': _params_part(job.get('params') or {}, read.get('params')),
-            'tables': _tables_part(job.get('tables') or {}, read.get('tables')), 'reads': read.get('reads') or [], 'bodies': bodies}
+    out = {'v': DEPS_V, 'tv': TABLES_VIEW, 'code': code(probe), 'fusion': read.get('fusion'), 'for': target_key, 'own': own_state(entry) if read.get('reads') else None,
+           'job': _job_part(job, read.get('job')), 'params': _params_part(job.get('params') or {}, read.get('params')),
+           'tables': _tables_part(job.get('tables') or {}, read.get('tables')), 'reads': read.get('reads') or [], 'bodies': bodies}
+    if any(isinstance(r, dict) and r.get('mode') is not None for r in read.get('reads') or []):
+        tight = w.bodies_in(read.get('reads'), own_key, 'tight', groups)
+        if tight is None:
+            return None
+        out['bodies_tight'] = tight
+    return out
 
 
 def record_given_up(read, job, entry, world_lines, probe, target_key=None):
@@ -384,11 +419,21 @@ def _diff_bodies(was, now):
         if k not in was:
             return '%s came into what it read (new, or moved close)' % k.split('|')[0].rsplit('+', 1)[-1]
         if was[k] != now[k]:
-            return '%s changed, moved, or was shown or hidden' % k.split('|')[0].rsplit('+', 1)[-1]
+            return '%s changed, moved or was renamed' % k.split('|')[0].rsplit('+', 1)[-1]
     return None
 
 
-def why_stale(stored, entry, job, world_lines, probe, worlds=None, fusion=None, whole_tables=None):
+def deps_mode(project):
+    """Which record decides whether a unit is stale: gate/project.json "deps" ("wide" when it is not set). The owner
+    sets it (an entry {"kind": "deps", "deps": "tight"} of a bundle he applies), after the shadow record
+    (shadow_summary) holds no violation. GateError for any other value: a typo must not pick a record silently."""
+    v = (project or {}).get('deps', DEPS_MODES[0])
+    if v not in DEPS_MODES:
+        raise gate_common.GateError('gate/project.json: "deps" must be one of %s, got %r' % (', '.join(DEPS_MODES), v))
+    return v
+
+
+def why_stale(stored, entry, job, world_lines, probe, worlds=None, fusion=None, whole_tables=None, mode='wide'):
     """None when the stored facts of one unit (the probe's entry of the facts file) still hold for the model as the
     census has it and for the job the host would send now; else a short text: why the unit must run again.
 
@@ -398,7 +443,9 @@ def why_stale(stored, entry, job, world_lines, probe, worlds=None, fusion=None, 
     fusion  the version of Fusion the last scan of the document ran in (census docs[key]["fusion"]), or None
     whole_tables  the registry's tables as the judges get them (job["tables"] is the probe view of them). A record
             without "tv" digested a table whole: it is taken as an older copy of the gate only while its digest is
-            the one of today's whole table; any other difference is a real change of the table (None: always)"""
+            the one of today's whole table; any other difference is a real change of the table (None: always)
+    mode    which record of the bodies decides: "wide" ("bodies") or "tight" ("bodies_tight", when the unit noted
+            tight regions; else its wide record decides, it knows no better one)"""
     if not isinstance(stored, dict) or not isinstance(stored.get('facts'), dict):
         return 'not measured at this geometry'
     d = stored.get('deps')
@@ -417,7 +464,7 @@ def why_stale(stored, entry, job, world_lines, probe, worlds=None, fusion=None, 
     if late:
         return late
     if d.get('own') is not None and d['own'] != own_state(entry):
-        return 'the part moved, or was shown or hidden'
+        return 'the part moved or was renamed'
     jp = d.get('job') or {}
     now = _job_part(job, list(jp))
     for k in sorted(jp):
@@ -452,11 +499,74 @@ def why_stale(stored, entry, job, world_lines, probe, worlds=None, fusion=None, 
             w = World(world_lines)
             if worlds is not None:
                 worlds[key] = w
-        bodies = w.bodies_in(d['reads'], body_key(entry.get('occurrence'), entry.get('body')))
+        use = 'tight' if (mode == 'tight' and isinstance(d.get('bodies_tight'), dict)) else 'wide'
+        bodies = w.bodies_in(d['reads'], body_key(entry.get('occurrence'), entry.get('body')), use, job.get('motion_groups') or [])
         if bodies is None:
             return 'a region it read cannot be read back'
-        if bodies != (d.get('bodies') or {}):
-            return _diff_bodies(d.get('bodies') or {}, bodies)
+        was = (d.get('bodies_tight') if use == 'tight' else d.get('bodies')) or {}
+        if bodies != was:
+            return _diff_bodies(was, bodies)
     elif d.get('bodies'):
         return 'its record is not complete'
     return None
+
+
+# ---- the shadow of the tight record: proof before the switch ----------------------------------------------------------------
+
+SHADOW_FILE = 'deps_shadow.jsonl'
+
+
+def facts_view(facts):
+    """The facts of a unit as a shadow compares them: canonical JSON with nothing a call adds beside the measurement
+    ("timing", "elapsed_s", "notes", "late" marks are not in the facts; "timing" is left out should a probe put it in)."""
+    import json
+    def clean(x):
+        if isinstance(x, dict):
+            return {k: clean(v) for k, v in x.items() if k not in ('timing',)}
+        if isinstance(x, list):
+            return [clean(v) for v in x]
+        return x
+    return json.dumps(clean(facts if isinstance(facts, dict) else {}), sort_keys=True)
+
+
+def shadow_row(part, probe, why_wide, old_facts, new_facts):
+    """One line of deps_shadow.jsonl: a unit the tight record would have kept, measured because the wide one said
+    `why_wide`. "same": its new facts are its old facts (the tight record missed nothing). Else "violation": True and
+    the top-level keys whose values differ."""
+    a, b = facts_view(old_facts), facts_view(new_facts)
+    row = {'part': part, 'probe': probe, 'why_wide': why_wide, 'same': a == b, 'time': gate_common.now()}
+    if a != b:
+        import json
+        o, n = json.loads(a), json.loads(b)
+        row['violation'] = True
+        row['keys'] = sorted(k for k in set(o) | set(n) if o.get(k) != n.get(k))
+    return row
+
+
+def shadow_summary(root):
+    """{"units", "same", "violations": [rows], "runs", "parts", "docs"} over every gate/run/*/deps_shadow.jsonl: how far
+    the proof for "deps": "tight" has come. A line that cannot be read counts as a violation (nothing is proven by it)."""
+    import glob, json
+    out = {'units': 0, 'same': 0, 'violations': [], 'runs': 0, 'parts': set(), 'docs': set()}
+    for path in sorted(glob.glob(os.path.join(gate_common.gate_path(root, 'run'), '*', SHADOW_FILE))):
+        out['runs'] += 1
+        try:
+            with open(path, encoding='utf-8') as f:
+                lines = [l for l in f.read().splitlines() if l.strip()]
+        except OSError:
+            lines = ['?']
+        for line in lines:
+            out['units'] += 1
+            try:
+                row = json.loads(line)
+            except ValueError:
+                row = {'violation': True, 'why': 'a line of %s cannot be read' % path}
+            if row.get('same') is True:
+                out['same'] += 1
+            else:
+                out['violations'].append(row)
+            if isinstance(row.get('part'), str):
+                out['parts'].add(row['part'])
+                out['docs'].add(row['part'].split('/')[0])
+    out['parts'], out['docs'] = sorted(out['parts']), sorted(out['docs'])
+    return out

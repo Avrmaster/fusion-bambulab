@@ -738,7 +738,7 @@ def demo(place=placement(100.0, 0.0, 13.0), mesh=False):
     insert1 = Solid(bosses=[{'o': AT['p1'] + (7.46,), 'a': UP, 'r': 2.5, 'h': 4.0}])
     insert2 = Solid(bosses=[{'o': AT['t1'] + (8.0,), 'a': UP, 'r': 2.5, 'h': 4.0}])
     screw = Solid(bosses=[{'o': AT['s1'] + (1.0,), 'a': UP, 'r': 1.5, 'h': 8.0}])
-    comps = [Comp('c-bracket', 'Bracket', [Body('Body1', bracket), Body('old tool body', Solid((0.0, 0.0, 20.0), (5.0, 5.0, 25.0)), on=False)]),
+    comps = [Comp('c-bracket', 'Bracket', [Body('Body1', bracket), Body('ref old tool body', Solid((0.0, 0.0, 20.0), (5.0, 5.0, 25.0)), on=False)]),
              Comp('c-motor', 'ref motor', [Body('Body1', motor)]), Comp('c-cover', 'Cover', [Body('Body1', cover)]),
              Comp('c-hw', 'HW (ref)', [Body('insert M3x4x5 (1)', insert1), Body('insert M3x4x5 (2)', insert2), Body('M3x10 screw (1)', screw)])]
     occs = [Occ(comps[0], 'Bracket:1', place), Occ(comps[1], 'ref motor:1', place), Occ(comps[2], 'Cover:1', place), Occ(comps[3], 'Bracket:1+HW (ref):1', place)]
@@ -810,12 +810,12 @@ class Scan(Units):
         self.assertEqual(len(b['sig']), 64); self.assertEqual(len(b['pose']), 16); self.assertEqual(b['faces'], 6 + 24)
         self.assertEqual((parts['Cover']['copies'], parts['Cover']['copy_paths'], parts['Cover']['occurrence']), (2, ['Cover:2'], 'Cover:1'))
         refs = {(r['name'], r['occurrence']): r for r in facts['refs']}
-        self.assertEqual(sorted(n for n, _ in refs), ['Bracket / old tool body', 'HW (ref) / M3x10 screw (1)', 'HW (ref) / insert M3x4x5 (1)',
+        self.assertEqual(sorted(n for n, _ in refs), ['Bracket / ref old tool body', 'HW (ref) / M3x10 screw (1)', 'HW (ref) / insert M3x4x5 (1)',
                                                     'HW (ref) / insert M3x4x5 (2)', 'ref chain', 'ref motor'])
         motor = refs[('ref motor', 'ref motor:1')]
         self.assertEqual((motor['mesh'], motor['primitive'], motor['visible'], len(motor['sig'])), (False, True, True, 16))
         self.assertEqual(motor['bbox_doc'], [[140.0, 40.3, 13.0], [160.0, 50.0, 25.0]])
-        self.assertFalse(refs[('Bracket / old tool body', 'Bracket:1')]['visible'])                 # a body switched off is not a part
+        self.assertFalse(refs[('Bracket / ref old tool body', 'Bracket:1')]['visible'])             # a ref by its name (not_printed); its light bulb only noted
         chain = refs[('ref chain', 'ref chain:1')]
         self.assertEqual((chain['mesh'], chain['faces'], chain['bbox_doc']), (True, 12, [[97.0, 14.0, 13.0], [99.6, 26.0, 25.0]]))
 
@@ -1048,7 +1048,7 @@ class Inserts(Units):
             self.near(w['min'], 1.6)
             self.assertEqual((w['dir'], w['free_arc_deg'], w['min_beyond'], w['thin_arc_deg']), ([0.0, 1.0, 0.0], 0.0, 'ref motor', 97.5), level)
             (b,) = w['blocked_by']
-            self.assertEqual((b['name'], b['kind'], b['part'], b['hidden']), ('ref motor', 'bought', None, False), level)
+            self.assertEqual((b['name'], b['kind'], b['part'], b.get('hidden')), ('ref motor', 'bought', None, None), level)     # visibility is no fact (0.3.3)
             self.near(b['gap'], 0.3, 0.03)                                         # the air between the wall and the motor
         r = p['walls']['relief']                                                  # 0.05 beside the relief: nearly broken out
         self.near(r['min'], 0.05); self.assertEqual((r['min_beyond'], [b['name'] for b in r['blocked_by']]), ('ref motor', ['ref motor']))
@@ -1092,7 +1092,7 @@ class Inserts(Units):
         w = facts['pockets'][0]['walls']['lead_in']
         self.near(w['min'], 2.5); self.assertEqual(w['min_beyond'], 'ref chain')
         (b,) = w['blocked_by']
-        self.assertEqual((b['name'], b['kind'], b['part'], b['hidden']), ('ref chain', 'mesh', None, False)); self.near(b['gap'], 0.4, 0.03)
+        self.assertEqual((b['name'], b['kind'], b['part'], b.get('hidden')), ('ref chain', 'mesh', None, None)); self.near(b['gap'], 0.4, 0.03)
         self.assertLess(w['free_arc_deg'], w['thin_arc_deg'])                     # the rays that pass the 12 mm wide mesh stay free
         turned = demo(place=placement(-20.0, 55.0, 3.0, turn=90.0), mesh=True)   # the mesh occurrence is turned too
         again = self.whole(turned, 'fusion_inserts', features=self.only('p2'), sig=self.cenv['sig'])[0]
@@ -1189,7 +1189,7 @@ class ScanMore(Units):
 
     def rack(self):
         comps = [Comp('c-rack', 'Rack', [Body('Plate', Solid((0.0, 30.0, 0.0), (10.0, 40.0, 5.0))), Body('Comb', self.comb()),
-                                         Body('old tool body', Solid((0.0, 0.0, 9.0), (2.0, 2.0, 11.0)), on=False)]),
+                                         Body('ref old tool body', Solid((0.0, 0.0, 9.0), (2.0, 2.0, 11.0)), on=False)]),
                  Comp('c-cover', 'Cover', [Body('Body1', Solid((0.0, 0.0, 6.0), (10.0, 10.0, 8.0)))])]
         return application([Occ(comps[0], 'Rack:1'), Occ(comps[1], 'Cover:1')])
 
@@ -1204,7 +1204,7 @@ class ScanMore(Units):
         self.assertEqual([p['name'] for p in second['facts']['parts']], ['Rack / Plate'])
         self.assertIn("the signature of 'Comb' (66 faces) takes more than one call: 50 faces are in", second['notes'])
         third = self.unit(self.rack(), 'fusion_scan', deadline_s=0.001, cursor=cur)      # goes on inside the comb, then lists the body that is switched off
-        self.assertEqual(([p['name'] for p in third['facts']['parts']], [r['name'] for r in third['facts']['refs']], third['cursor']), (['Rack / Comb'], ['Rack / old tool body'], 2))
+        self.assertEqual(([p['name'] for p in third['facts']['parts']], [r['name'] for r in third['facts']['refs']], third['cursor']), (['Rack / Comb'], ['Rack / ref old tool body'], 2))
         steps, calls, _ = self.whole(self.rack(), 'fusion_scan', deadline_s=0.001)
         self.assertEqual(steps, one); self.assertEqual(calls, 4)                         # the same facts, signature included, in four short calls
 

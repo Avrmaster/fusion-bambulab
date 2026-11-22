@@ -67,6 +67,7 @@ ATTEST_OPTIONAL = ('labels', 'held', 'param', 'auto')
 FACT_TESTS = ('no_screw_feature', 'no_bearing_here', 'no_bought_near', 'no_motor_near', 'bed_face_measured', 'only_table_parts_near')
 # attest.held claims a label of a rule asked per finding can make (gate_attest.label_contradicted):
 #   {"by": "none"}                                  refused while the finding names bodies
+#   {"by": "some"}                                  refused while the finding names no body (the label speaks of one it names)
 #   {"text": {"has": regex, "not": regex, ...}}     refused unless the finding's text matches "has" and not "not"
 #   {"coaxial_room": "<parameter>"}                 refused while a body on the hole's axis is fitted in it
 #   {"screw_seat": true}                            refused unless a screw on the hole's axis has its head seat there
@@ -221,13 +222,14 @@ def _check_attest(a, where, errors):
                 if bad:
                     errors.append('%s: attest.held[%r]: "%s" is true and stands only beside %s' % (where, label, bad[0], ' or '.join('"%s"' % x for x in HELD_WITH[bad[0]])))
                 claim = {k: v for k, v in claim.items() if k not in extra}
-                ok = len(claim) == 1 and (claim.get('by') == 'none' if 'by' in claim else
+                ok = len(claim) == 1 and (claim.get('by') in ('none', 'some') and not (claim.get('by') == 'some' and extra) if 'by' in claim else
+
                                           claim.get('screw_seat') is True if 'screw_seat' in claim else
                                           isinstance(claim.get('coaxial_room'), str) and NAME_RE.match(claim['coaxial_room']) if 'coaxial_room' in claim else
                                           isinstance(claim.get('text'), dict) and set(claim['text']) <= {'has', 'not', 'says', 'says_not'}
                                           and any(isinstance(claim['text'].get(k), str) for k in ('has', 'not')) and _compiles(claim['text']))
                 if not ok:
-                    errors.append('%s: attest.held[%r] must be one of {"by": "none"}, {"text": {"has", "not"}}, {"coaxial_room": "<parameter>"}, {"screw_seat": true}' % (where, label))
+                    errors.append('%s: attest.held[%r] must be one of {"by": "none"}, {"by": "some"}, {"text": {"has", "not"}}, {"coaxial_room": "<parameter>"}, {"screw_seat": true}' % (where, label))
                 continue
             paths = [p for k in ('none', 'some') for p in (claim.get(k) or [])] if isinstance(claim, dict) and set(claim) <= {'none', 'some'} else None
             if not paths or any(not isinstance(p, str) or p.split('.')[0] not in PROBES or not 2 <= len(p.split('.')) <= 3 for p in paths):
@@ -641,7 +643,7 @@ def validate(reg, judges=None):
 POCKET_RULES = ('fits.bought_part_pocket', 'print.z_layers')        # the rules that judge the pockets of the pockets table
 # rules that only need to KNOW such a pocket, so that they do not take it for something else (a wrong insert pocket,
 # a tap-drill hole, a hole of no table): they read "d" and "depth"
-POCKET_READERS = ('inserts.pocket_shape', 'inserts.no_tapped_plastic', 'census.unknown_hole', 'inserts.wall', 'inserts.wall_at_relief', 'inserts.floor',
+POCKET_READERS = ('inserts.pocket_shape', 'inserts.no_tapped_plastic', 'census.unknown_hole', 'inserts.wall', 'inserts.wall_at_relief', 'inserts.local_boss', 'inserts.floor',
                   'inserts.relief_missing', 'inserts.mouth_reachable', 'access.hole_covered', 'access.mouth_sealed', 'fits.decided_not_printed',
                   'hardware.refs_present', 'print.fit_axis', 'print.relief_layers')
 # the name patterns every one of these rules lists too: a hole with an insert or a screw on its axis is never taken for

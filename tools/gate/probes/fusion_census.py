@@ -689,9 +689,9 @@ def _cen_probe(job):
                     cname = cmp_.name
                     rows = []
                     for bi, b in solids:
-                        _cen_n(2)
-                        on, bn = b.isLightBulbOn, b.name
-                        rows.append((bi, b, bn, bool(on) and _cen_printed(path, cname, bn, job)))
+                        _cen_n(1)
+                        bn = b.name
+                        rows.append((bi, b, bn, _cen_printed(path, cname, bn, job)))      # by names alone: a hidden body is no ref
                     _cen_n(2)
                     n_bodies = len(solids) + cmp_.meshBodies.count
                     n_printed = sum(1 for r in rows if r[3])

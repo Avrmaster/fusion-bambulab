@@ -1065,6 +1065,10 @@ def label_contradicted(root, reg, question, label, sig=None):
     claim = held.get(label)
     if not isinstance(claim, dict):
         return None
+    if claim.get('by') == 'some':                     # a question of a finding: the label speaks of what the finding names
+        if not [n for n in question.get('by') or [] if str(n).strip()]:
+            return 'the label speaks of a neighbour, seat or bearing this row names, and the row names none'
+        return None
     if claim.get('by') == 'none':                     # a question of a finding: the label says there is nothing, the finding names something
         names = [str(n) for n in question.get('by') or []]
         if names:

@@ -77,10 +77,11 @@ def _ins_down(x, refine):
 
 
 def _ins_env(design, occ, body, job, margin):
-    """What can stand beside this part: {"m": part -> document matrix, "solids": [(name, kind, part, hidden, body in the
-    document frame, lo, hi)], "meshes": [(name, hidden, document -> mesh matrix, mesh_grid)], "mesh_rows": [[name,
-    hidden, number of node coordinates, box]] of the same meshes} of every other body whose box comes within `margin`
-    mm of the part's box."""
+    """What can stand beside this part: {"m": part -> document matrix, "solids": [(name, kind, part, body in the
+    document frame, lo, hi)], "meshes": [(name, document -> mesh matrix, mesh_grid)], "mesh_rows": [[name, number of
+    node coordinates, box]] of the same meshes} of every other body whose box comes within `margin` mm of the part's
+    box. Printed by names alone (gate_path_printed): no light bulb is read, a hidden body stands beside the part like
+    a shown one."""
     root = design.rootComponent
     own = occ.fullPathName if occ is not None else None
     m_own = gate_matrix(occ)
@@ -94,8 +95,7 @@ def _ins_env(design, occ, body, job, margin):
         n_mesh = comp.meshBodies.count
         if not bodies and not n_mesh:
             continue
-        shown = True if o is None else bool(o.isLightBulbOn)
-        printed = [bool(b.isLightBulbOn) and _ins_printed(path, comp.name, b.name, job) for b in bodies]
+        printed = [_ins_printed(path, comp.name, b.name, job) for b in bodies]
         for b, is_part in zip(bodies, printed):
             if path == own and b.name == body.name:
                 continue
@@ -108,7 +108,7 @@ def _ins_env(design, occ, body, job, margin):
             else:
                 name = comp.name if len(bodies) + n_mesh == 1 else '%s / %s' % (comp.name, b.name)
                 kind, pid = _ins_kind(name, job), None
-            solids.append((name, kind, pid, not (shown and bool(b.isLightBulbOn)), b, blo, bhi))
+            solids.append((name, kind, pid, b, blo, bhi))
         if n_mesh:
             m = gate_matrix(o)
             for mb in comp.meshBodies:
@@ -124,26 +124,26 @@ def _ins_env(design, occ, body, job, margin):
                 dlo, dhi = box_transform(m, mlo, mhi)
                 if boxes_near(dlo, dhi, plo, phi, margin):
                     name = comp.name if len(bodies) + n_mesh == 1 else '%s / %s' % (comp.name, mb.name)
-                    meshes.append((name, not (shown and bool(mb.isLightBulbOn)), mat_inverse(m), mesh_grid(c, idx, 5.0, 10.0)))
-                    mesh_rows.append([name, not (shown and bool(mb.isLightBulbOn)), len(c), [round(x, 3) for x in dlo], [round(x, 3) for x in dhi]])
+                    meshes.append((name, mat_inverse(m), mesh_grid(c, idx, 5.0, 10.0)))
+                    mesh_rows.append([name, len(c), [round(x, 3) for x in dlo], [round(x, 3) for x in dhi]])
     return {'m': m_own, 'solids': solids, 'meshes': meshes, 'mesh_rows': mesh_rows}
 
 
 def _ins_env_key(env):
     """16 hex characters for what stands beside the part: every solid of the env with its place in the list, name, kind,
-    hidden or shown, and box to 0.001 mm, and every mesh with its name, size and box."""
-    return state_digest([[[n, s[0], s[1], bool(s[3]), [round(c, 3) for c in s[5]], [round(c, 3) for c in s[6]]] for n, s in enumerate(env['solids'])],
+    and box to 0.001 mm, and every mesh with its name, size and box."""
+    return state_digest([[[n, s[0], s[1], [round(c, 3) for c in s[4]], [round(c, 3) for c in s[5]]] for n, s in enumerate(env['solids'])],
                          env.get('mesh_rows') or []])
 
 
 def _ins_recs(env, body):
     """The bodies behind the tags of _ins_in(), as gate_states() of _fusion.py reads them: the part, then the solids of the env."""
-    return [{'body': body, 'mesh': False}] + [{'body': s[4], 'mesh': False} for s in (env['solids'] if env else [])]
+    return [{'body': body, 'mesh': False}] + [{'body': s[3], 'mesh': False} for s in (env['solids'] if env else [])]
 
 
 def _ins_beyond(env, body, box, centre, d, r_exit, r_need, skip, part):
     """What stands outside a thin wall in one direction at one depth: None (nothing: the outline of the part is free
-    there), or {"name", "kind", "part", "gap", "hidden"}.
+    there), or {"name", "kind", "part", "gap"}.
     Other bodies count between the wall and the radius it should reach: looked at 0.2 mm outside the wall, then every
     0.3 mm, and at that radius itself; "gap" is the air between the wall and the body, refined to 0.02 mm.
     The part's own material counts as far as its bounding box goes (every 0.5 mm past that radius): air and then the
@@ -154,7 +154,7 @@ def _ins_beyond(env, body, box, centre, d, r_exit, r_need, skip, part):
         spots.append(t)
         t += 0.3
     spots.append(max(r_need, r_exit + 0.05))            # always the radius the wall should reach itself: a sliver there counts
-    own = {'name': 'own cavity', 'kind': 'own_cavity', 'part': part, 'gap': 0.0, 'hidden': False}
+    own = {'name': 'own cavity', 'kind': 'own_cavity', 'part': part, 'gap': 0.0}
     before = r_exit
     for t in spots:
         p = v_add(centre, v_scale(d, t))
@@ -162,14 +162,14 @@ def _ins_beyond(env, body, box, centre, d, r_exit, r_need, skip, part):
             return dict(own, width=round(t - r_exit, 2))
         pd = mat_point(env['m'], p)
         hit = None
-        for n, (name, kind, pid, hidden, b, lo, hi) in enumerate(env['solids']):
+        for n, (name, kind, pid, b, lo, hi) in enumerate(env['solids']):
             if name not in skip and box_has(lo, hi, pd) and _ins_in(b, pd, n + 1):
-                hit = ({'name': name, 'kind': kind, 'part': pid, 'hidden': hidden}, lambda q, b=b, n=n: _ins_in(b, q, n + 1))
+                hit = ({'name': name, 'kind': kind, 'part': pid}, lambda q, b=b, n=n: _ins_in(b, q, n + 1))
                 break
         if hit is None:
-            for name, hidden, inv, grid in env['meshes']:
+            for name, inv, grid in env['meshes']:
                 if name not in skip and mesh_contains(grid, mat_point(inv, pd)):
-                    hit = ({'name': name, 'kind': 'mesh', 'part': None, 'hidden': hidden}, lambda q, inv=inv, grid=grid: mesh_contains(grid, mat_point(inv, q)))
+                    hit = ({'name': name, 'kind': 'mesh', 'part': None}, lambda q, inv=inv, grid=grid: mesh_contains(grid, mat_point(inv, q)))
                     break
         if hit is not None:
             lo_t, hi_t = before, t                      # where between the last free point and this one does the body begin
@@ -259,7 +259,7 @@ def _ins_asked(env, tape):
     for t in tape.bodies:
         if isinstance(t, int) and not isinstance(t, bool) and 1 <= t <= len(env['solids']):
             s = env['solids'][t - 1]
-            gate_asked(s[0], (s[5], s[6]))
+            gate_asked(s[0], (s[4], s[5]))
 
 
 def _ins_pocket(get_env, body, box, h, row, tol_d, thin_wall, thin_relief, ray, part):
@@ -327,7 +327,7 @@ def probe(job):
       which rays to look beyond.
       W "free_arc_deg" = arc of THIN rays with nothing within the room the wall would need (the outline is free there:
       the wall can be made wider); "thin_arc_deg" = arc of all thin rays; "blocked_by" = what stands beyond the other thin
-      rays (each also has "hidden": its light bulb is off); "min_beyond" = what stands in the direction of the least
+      rays (a hidden body blocks like a shown one: visibility is never read); "min_beyond" = what stands in the direction of the least
       wall (None: not thin, "free", or a name). Another body blocks when it stands within the room the wall would need.
       The part itself blocks ("own cavity", kind "own_cavity") when its material comes again ANYWHERE further out along
       the ray: the air behind the wall is then a hole, slot or pocket of the part, not its outline; its "gap" is 0 and

@@ -85,7 +85,7 @@ class Near(unittest.TestCase):
         self.assertEqual(sorted(rows), ['ref drive', 'ref hardware / insert M3x4x5 (bracket)', 'ref lamp', 'ref old frame'])
         self.assertEqual(rows['ref hardware / insert M3x4x5 (bracket)'], {'name': 'ref hardware / insert M3x4x5 (bracket)', 'path': 'ref hardware', 'kind': 'hardware', 'gap': 0.0})
         self.assertEqual((rows['ref drive']['kind'], rows['ref drive']['gap'], rows['ref drive']['path']), ('bought', 6.5, 'ref stepper NEMA 17+ref drive'))
-        self.assertEqual((rows['ref lamp']['gap'], rows['ref lamp'].get('hidden')), (4.0, True))           # hidden is listed all the same
+        self.assertEqual((rows['ref lamp']['gap'], rows['ref lamp'].get('hidden')), (4.0, None))           # hidden: listed, and visibility is no fact (0.3.3)
         self.assertEqual((rows['ref old frame']['kind'], rows['ref old frame']['gap']), ('mesh', 3.0))     # a mesh by its box: a candidate, never a proof of touching
         self.assertEqual([r['gap'] for r in facts['bodies']], sorted(r['gap'] for r in facts['bodies']))   # nearest first
         self.assertNotIn('Cover', rows); self.assertNotIn('ref plug', rows)                               # printed neighbours and what is outside the margin

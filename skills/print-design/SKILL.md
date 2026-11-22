@@ -192,6 +192,13 @@ Checked by the gate. A finding stops the stamp of the part.
 
 Asked by the gate. Each is answered with evidence, never with a typed number.
 
+- **A local boss only where the outline cannot move** (`inserts.local_boss`, attest at design, once per finding). A heat-set pocket whose wall of 4.0 mm exists only on a round boss coaxial with it is asked why the whole wall was not made wider, the big opening smaller, or the pocket moved. A boss is at least 30 degrees of consecutive rays whose exits lie on a circle round the pocket axis (walls within 0.06 of each other; fitted centre and radius within 0.3). A post whose whole outline is that ring, with nothing else in the part, is no boss.
+  - Question: "Pocket {feature}: its wall stands only on a local round boss. Why not a wider wall along the whole edge, a smaller opening, or a moved pocket?"
+  - Fix, in this order:
+    1. Where the outline of the part is free on that side, make the whole wall, shoulder or lap wider: one flat face, no islands.
+    2. Move the pocket together with its screw hole in the mating part and its hardware refs.
+    3. A local boss only where the outline cannot move, with the reason named.
+    4. Blocked on every side: report it with the neighbour that stops the wall and ask the owner for a waiver.
 - **No load-bearing thread cut in the print** (`inserts.no_tapped_plastic`, attest at design, once per finding). A screw that is tightened against a load or adjusted again goes into a heat-set insert, a nut or a bought thread, never into a thread cut or formed in the print. A thread-forming pilot is allowed only for a rarely turned, lightly loaded screw, as a named exception.
   - Question: "Hole {feature}: a thread in the print. Which screw goes in, and why not an insert?"
 

@@ -29,7 +29,8 @@ inside that body" through BRepBody.pointContainment, behind a bounding-box test)
             the ring a grid of lines runs on in that direction: the first body met (not the bearing) is where the clamp
             lands. room = ring width + the gaps as drawn - that travel.
   seat      eight directions at nine heights of the ring: where the wall of a neighbour begins (halving search).
-Limits: bodies with the light bulb off and mesh bodies hold nothing (they are named in "hidden_near" / "mesh_near"); a
+Limits: mesh bodies hold nothing (they are named in "mesh_near"); a hidden body holds like a shown one (visibility is
+never read); a
 clamp that lands on a cone or a curved face is not seen (its travel reads as free); the grid on a big flat face is 6 x 6.
 
 Time. One bearing can cost more than a call has: a D100 ring has 210 sample points per ring face, each looked at at 21
@@ -347,9 +348,9 @@ def _brg_travel(clamp_recs, press, g, A, world, look, pick=None, pick_key='', ta
     hits = []
     pick = pick if pick is not None else {}
     for n_rec, rec in enumerate(clamp_recs[:12]):
-        gate_read(rec['box'], look + 0.5, solid_only=True)              # the stops this clamp can land on (shown solids beside it)
+        gate_read(rec['box'], look + 0.5, solid_only=True)              # the stops this clamp can land on (solids beside it, hidden or not)
         in_c = rec['_inside']
-        stops = [r for r in world if id(r) not in own and not r['mesh'] and r['visible']
+        stops = [r for r in world if id(r) not in own and not r['mesh']
                  and box_gap(r['box'][0], r['box'][1], rec['box'][0], rec['box'][1]) <= look + 0.5]
         for r in stops:
             if '_inside' not in r:
@@ -481,11 +482,11 @@ def _brg_step(part, tape, store, key, stage, fn):
 
 def _brg_used(g, world, near, neighbours, look):
     """The indices in `world` of every body the measurement of this bearing can depend on: its own bodies, the bodies
-    beside it (`near`: covers, seats, and the hidden and mesh bodies it names), and every shown solid within the travel
+    beside it (`near`: covers, seats, and the mesh bodies it names), and every solid within the travel
     look of a neighbour (where a clamp could land: the stops of _brg_travel are among them)."""
     used = set(near) | set(k for k, r in enumerate(world) if any(r is x for x in g['recs']))
     for k, r in enumerate(world):
-        if k in used or r['mesh'] or not r['visible']:
+        if k in used or r['mesh']:
             continue
         if any(box_gap(r['box'][0], r['box'][1], world[n]['box'][0], world[n]['box'][1]) <= look + 0.5 for n in neighbours):
             used.add(k)
@@ -511,7 +512,7 @@ def _brg_one(g, job, world, m, inv, table, touch, look, brg_ids, part, tape, aga
     axis_part = canonical_axis(mat_vector(inv, size['axis']))
     A = v_unit(mat_vector(m, axis_part))                                # "+" is along the anchor axis
     near = [k for k, r in enumerate(world) if not any(r is x for x in g['recs']) and box_gap(r['box'][0], r['box'][1], g['box'][0], g['box'][1]) <= _BRG_LOOK + 0.5]
-    neighbours = [k for k in near if not world[k]['mesh'] and world[k]['visible']]
+    neighbours = [k for k in near if not world[k]['mesh']]
     for k in neighbours:
         if '_inside' not in world[k]:
             world[k]['_inside'] = _brg_inside(world[k], tape, k)
@@ -575,7 +576,6 @@ def _brg_one(g, job, world, m, inv, table, touch, look, brg_ids, part, tape, aga
             'anchor': {'kind': 'bearing', 'axis': list(axis_part), 'point': [round(x, 2) for x in mat_point(inv, size['centre'])]},
             'rings': {ring: {'faces': [{'side': side, 'covered': _brg_public(faces[ring][side])} for side in ('+', '-')]} for ring in ('inner', 'outer')},
             'clamps': clamps, 'seat': seat,
-            'hidden_near': sorted(set(world[k]['name'] for k in near if not world[k]['mesh'] and not world[k]['visible'])),
             'mesh_near': sorted(set(world[k]['name'] for k in near if world[k]['mesh']))}
 
 
@@ -661,7 +661,7 @@ def probe(job):
       a clamp also has "travel" (mm the clamp can still move before it lands), "travel_capped" (nothing stops it within
       "travel_look"), "lands_on" (what stops it) and "against" (the stop on the other face of the ring);
       a seat also has "name", "kind", "entry_side", "entry_open", "entry_other" (seat_scan of _geom_rings.py);
-      a bearing also has "hidden_near" and "mesh_near": bodies beside it that were NOT counted as covers;
+      a bearing also has "mesh_near": bodies beside it that were NOT counted as covers;
       a bearing whose name matched but whose body has no ring geometry has "rings": None and "why";
       a cover has "bearing": True when it is itself one of the bearings found, and "twin": True when that bearing has
       the same bore and outer diameter (the other bearing of a pair: its rings lie on these rings);

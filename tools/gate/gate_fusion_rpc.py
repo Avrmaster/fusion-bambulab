@@ -89,6 +89,8 @@ JOB_LINE = '_GATE_JOB = json.loads('
 JOB_KEYS = ('id', 'run', 'probe', 'doc', 'doc_key', 'part', 'component_id', 'occurrence', 'body', 'sig', 'cursor', 'deadline_s',
             'out', 'params', 'tables', 'target', 'features', 'not_printed', 'motion_groups', 'legacy', 'args')
 UNIT_LINE = '_GATE_UNIT = '
+BATCH_LINE = '_GATE_JOBS = json.loads('
+UNITS_LINE = '_GATE_UNITS = '
 PING_SCRIPT = "def run(_context=''):\n    pass\n"          # the liveness probe of the skill: one line, read-only, leaves a run() that does nothing
 WRAPPER = '''
 
@@ -107,8 +109,33 @@ def run(_context=''):
     exec(compile(unit, 'gate_unit_%s' % job.get('id'), 'exec'), private)
     return private['run'](_context)
 '''
+BATCH_WRAPPER = '''
+
+def run(_context=''):
+    g = globals()
+    jobs, units = g.get('_GATE_JOBS'), g.get('_GATE_UNITS')
+
+    def _gate_done(_context=''):
+        return None
+    g['run'] = _gate_done                     # whatever happens below: a later call of run() by any session does nothing
+    g.pop('_GATE_JOBS', None)
+    g.pop('_GATE_UNITS', None)
+    if jobs is None or units is None:
+        return None
+    shared, code = {}, {}
+    for job in jobs:
+        try:
+            if job['probe'] not in code:
+                code[job['probe']] = compile(units[job['probe']], 'gate_unit_%s' % job['probe'], 'exec')
+            private = {'__name__': 'gate_unit', 'JOB': job, '_GATE_SHARED': shared}
+            exec(code[job['probe']], private)
+            private['run'](_context)
+        except Exception:
+            pass                              # a unit that could not even start writes nothing: the host says so for that unit
+    return None
+'''
 FUSION_PROBES = ('fusion_scan', 'fusion_census', 'fusion_inserts', 'fusion_bearings', 'fusion_openings', 'fusion_screws',
-                 'fusion_gap', 'fusion_thin', 'fusion_near', 'fusion_export')
+                 'fusion_gap', 'fusion_thin', 'fusion_near', 'fusion_export', 'fusion_pulse')
 WRITING_PROBES = ('fusion_export',)            # every other unit is sent with readOnly true
 CONNECT_S = 10                                 # the MCP initialize before the one call
 ENVELOPE_KEYS = ('job', 'doc', 'doc_version', 'part', 'sig', 'probe', 'facts', 'done', 'cursor', 'elapsed_s', 'error', 'open_documents')
@@ -183,6 +210,41 @@ def build_script(job):
                       UNIT_LINE + ascii(unit_text(job))]) + WRAPPER
 
 
+def build_batch_script(jobs):
+    """One script for several units of ONE part (gate_plan batches the short ones): every job is run as its own unit,
+    in order, each in a private namespace of its own with its own JOB, so each probe gets exactly what it gets alone.
+    They share one walk over the document (_GATE_SHARED: _gate_walk of _fusion.py), which nothing in Fusion can change
+    inside one script. Each unit writes its own result file, as a single unit does. GateError for an empty list, jobs of
+    several parts, or a job that lacks a key."""
+    if not jobs:
+        raise GateError('a batch needs at least one job')
+    for job in jobs:
+        missing = [k for k in JOB_KEYS if k not in job]
+        if missing:
+            raise GateError('job lacks %s' % ', '.join(missing))
+    if len({(j['doc'], j['part']) for j in jobs}) != 1:
+        raise GateError('the jobs of one batch belong to one part')
+    units = {}
+    for job in jobs:
+        if job['probe'] not in units:
+            units[job['probe']] = unit_text(job)
+    return '\n'.join(['# gate batch %s: %s on %s' % (_ascii(','.join(j['id'] for j in jobs)), _ascii(' '.join(j['probe'] for j in jobs)),
+                                                    _ascii(jobs[0]['part'] or jobs[0]['doc'])),
+                      'import json', BATCH_LINE + repr(json.dumps(jobs, sort_keys=True)) + ')',
+                      UNITS_LINE + ascii(units)]) + BATCH_WRAPPER
+
+
+def jobs_of(script):
+    """The JOB dicts a script carries: the one of build_script(), or every one of build_batch_script()."""
+    for line in script.splitlines():
+        if line.startswith(BATCH_LINE) and line.endswith(')'):
+            try:
+                return json.loads(ast.literal_eval(line[len(BATCH_LINE):-1]))
+            except (ValueError, SyntaxError) as e:
+                raise GateError('cannot read the jobs line: %s' % e)
+    return [job_of(script)]
+
+
 def unit_of(script):
     """The unit text a script of build_script() carries (tests compile and run it). GateError when there is none."""
     for line in script.splitlines():
@@ -238,6 +300,56 @@ def endpoint(layout):
 def budget(layout):
     """Seconds one Fusion call may work: gate/layout.json "fusion"."budget_s" (default 20), capped at MAX_BUDGET_S."""
     return min(float(((layout or {}).get('fusion') or {}).get('budget_s') or 20), MAX_BUDGET_S)
+
+
+def run_batch(jobs, url, transport=None, pinger=None, before_send=None):
+    """Run several units of one part in ONE call (build_batch_script) and return their envelopes in order.
+
+    The caller has settled every job (no earlier call of any of them is waiting) and given them one deadline: they share
+    the time of the call, each probe stops by that deadline like a unit in the rest of a call. gate/run/pending.json
+    names the LAST job: its result file is written last, so a later settle() never takes the batch for over while
+    Fusion still works on it. A job whose file is missing gets the envelope a single unit would get ("timeout" when the
+    call timed out). Raises FusionDown as run_unit() does (then with timed_out True: the units of the batch keep their
+    flights and the next call reads each result file)."""
+    transport = transport or http_transport
+    pinger = pinger or http_ping
+    sent = time.time()
+    for job in jobs:
+        job['sent'] = sent
+        for old in (job['out'], job['out'] + '.tmp'):
+            if os.path.exists(old):
+                os.remove(old)
+        os.makedirs(os.path.dirname(job['out']), exist_ok=True)
+    script = build_batch_script(jobs)
+    last = jobs[-1]
+    _mark_sent(last)
+    if before_send is not None:
+        before_send(jobs)
+    deadline = max(j['deadline_s'] for j in jobs)
+    res = transport(url, script, deadline + HTTP_EXTRA_S)
+    if res.get('down'):
+        _clear_sent(last)
+        raise FusionDown('Fusion does not answer at %s (%s). Is Fusion running, with Preferences > General > API > Fusion MCP Server on?'
+                         % (url, res.get('error') or 'no server'))
+    if res.get('timeout') or (not res.get('ok') and not os.path.isfile(last['out'])):
+        if not pinger(url, PING_S):
+            down = FusionDown('units %s (%s on %s) got no answer within %.0f s and Fusion does not answer a %d s ping: stopped, nothing else was sent. '
+                              'The units may still be working: the next call reads their result files when there are some'
+                              % (', '.join(j['id'] for j in jobs), ' '.join(j['probe'] for j in jobs), last['part'] or last['doc'], deadline + HTTP_EXTRA_S, PING_S))
+            down.timed_out = True
+            raise down
+    _clear_sent(last)
+    out = []
+    for job in jobs:
+        env, why = _read_envelope(job)
+        if env is None:
+            if res.get('timeout'):
+                env = _made_envelope(job, 'timeout')
+                env['timeout'] = True
+            else:
+                env = _made_envelope(job, why or res.get('error') or 'no result file')
+        out.append(env)
+    return out
 
 
 def read_only_for(script):

@@ -59,6 +59,8 @@ WALL_GRACE_S = 0.5              # a unit still starts when this little of its bu
 PACK_FACTOR, PACK_MARGIN_S = 1.5, 1.5   # a unit whose last measurement took t s starts in what is left of a call when 1.5 t + 1.5 s fit
 PACK_MIN_S = 2.0                # ... and never with less than this left: its deadline is what is left, less the margin
 LOCK_MAX_AGE_S = 600
+BATCH_UNIT_S = 3.0              # a unit whose last measurement took at most this long may share one Fusion call with others of its part
+BATCH_MAX = 8                   # units in one batched call at most
 NOT_OPEN = 'document not open'
 
 _clock = time.monotonic         # the tests replace it with the clock of the fake Fusion
@@ -222,7 +224,7 @@ def units_for_part(reg, part, entry):
     return _units(reg, part, entry, gate_common.LAYOUT_DEFAULTS['fusion']['budget_s'])
 
 
-def stale_units(root, reg, resolved=None, census=None, parts=None, target_key=None, layout=None, project=None):
+def stale_units(root, reg, resolved=None, census=None, parts=None, target_key=None, layout=None, project=None, shadow=None):
     """Which units of which parts must be measured again: {part id: {probe: why (text) or None (its stored facts
     hold)}} for every live Fusion part of the census (or of `parts`), one entry per unit units_for_part() gives it.
     A unit is stale when gate_deps.why_stale() says so for the job the host would send now: the facts at the part's
@@ -233,10 +235,15 @@ def stale_units(root, reg, resolved=None, census=None, parts=None, target_key=No
                the target it was measured for (its deps "for"), as `gate.py status` sees it
     A unit that reads the census (its record names the job key "features", or its probe is one of NEEDS_CENSUS) whose
     own record holds is still reported as holding when the census unit of its part is stale: the plan runs the census
-    first and looks again (new_plan: "recheck")."""
+    first and looks again (new_plan: "recheck").
+
+    Which record of the bodies a unit read decides is gate/project.json "deps" (gate_deps.deps_mode: "wide" by default).
+    shadow  a dict to fill, or None: with "wide", {part id: {probe: why}} of every unit the wide record makes stale and
+            the tight record would keep (gate_deps.py: the shadow, compared after the unit was measured again)"""
     census = census if census is not None else load_census(root)
     layout = layout if layout is not None else load_layout(root)
     project = project if project is not None else load_project(root)
+    mode = gate_deps.deps_mode(project)
     by_target = {}
 
     def vals_for(key):
@@ -275,8 +282,13 @@ def stale_units(root, reg, resolved=None, census=None, parts=None, target_key=No
                 res[u['probe']] = str(err)
                 continue
             doc = census['docs'].get(e.get('doc')) or {}
-            res[u['probe']] = gate_deps.why_stale(stored, e, job, doc.get('world'), u['probe'], worlds, fusion=doc.get('fusion'),
-                                                  whole_tables=reg.get('tables') or {})
+            why = gate_deps.why_stale(stored, e, job, doc.get('world'), u['probe'], worlds, fusion=doc.get('fusion'),
+                                      whole_tables=reg.get('tables') or {}, mode=mode)
+            res[u['probe']] = why
+            if why is not None and mode == 'wide' and shadow is not None and isinstance(((stored or {}).get('deps') or {}).get('bodies_tight'), dict):
+                if gate_deps.why_stale(stored, e, job, doc.get('world'), u['probe'], worlds, fusion=doc.get('fusion'),
+                                       whole_tables=reg.get('tables') or {}, mode='tight') is None:
+                    shadow.setdefault(pid, {})[u['probe']] = why
         out[pid] = res
     return out
 
@@ -320,14 +332,16 @@ def _number(root, plan):
     return plan
 
 
-def new_plan(root, reg, parts, command='run', intent=None, audit=False, stale=None):
+def new_plan(root, reg, parts, command='run', intent=None, audit=False, stale=None, shadow=None):
     """Make and save a plan for these parts (units_for_part each), name it in gate/run/current.json and return it.
 
     stale  stale_units() for these parts, or None (every unit is measured). A unit whose stored facts hold (None) is
            "done" with "reused": true and costs no call; a stale one is "todo" with "why". When the census unit of a
            part is stale, its units that read the census and hold otherwise are "todo" with "recheck": true: once the
            census is measured again they are looked at once more and need no call when its holes and openings came out
-           the same (run_units)."""
+           the same (run_units).
+    shadow stale_units(shadow=...): a stale unit that only the wide record measures gets "shadow": the wide reason.
+           When it is done, its new facts are compared with those it had (run_units: gate/run/<run>/deps_shadow.jsonl)"""
     census, budget = load_census(root), gate_fusion_rpc.budget(load_layout(root))
     unknown = [p for p in parts if p not in census['parts']]
     if unknown:
@@ -349,6 +363,8 @@ def new_plan(root, reg, parts, command='run', intent=None, audit=False, stale=No
                 why = mine.get(u['probe'], 'not looked at')
                 if why is not None:
                     u['why'] = why
+                    if (shadow or {}).get(p, {}).get(u['probe']):
+                        u['shadow'] = shadow[p][u['probe']]
                 elif census_again and _reads_census(u['probe'], stored.get(u['probe'])):
                     u['recheck'] = True
                 else:
@@ -490,11 +506,47 @@ def _with_notes(u, env):
     return dict(env, notes=notes + [over_note(o) for o in u.get('over') or [] if isinstance(o, dict)])
 
 
-def _loop(root, plan, wall_s, transport, pinger, job_for, on_done, on_fail, settle=None):
+def _batchable(u):
+    """May this unit share one Fusion call with others of its part: a part unit not begun (todo, no cursor, nothing in
+    flight, no recheck), not the census (the units after it read what it finds), whose last measurement is known and
+    took at most BATCH_UNIT_S."""
+    cost = u.get('expect_s')
+    return (bool(u.get('part')) and u.get('state') == 'todo' and u.get('cursor') is None and not u.get('flight') and not u.get('recheck')
+            and u.get('probe') not in ('fusion_census', 'fusion_scan', 'fusion_export') and isinstance(cost, (int, float))
+            and not isinstance(cost, bool) and 0 <= cost <= BATCH_UNIT_S)
+
+
+def _batch_for(plan, u, deadline, taken):
+    """The units that go into one call with `u`: those that follow it in the plan, of its part, _batchable, as many as
+    fit into `deadline` (PACK_FACTOR over the sum of their last measurements, plus PACK_MARGIN_S), at most BATCH_MAX in
+    all. [] when u goes alone. taken: ids of units an earlier batch already answered."""
+    if not _batchable(u):
+        return []
+    units = plan['units']
+    i = next(k for k, v in enumerate(units) if v is u)
+    out, cost = [], float(u['expect_s'])
+    for v in units[i + 1:]:
+        if v.get('part') != u['part'] or len(out) + 1 >= BATCH_MAX:
+            break
+        if _finished(v) or v['id'] in taken:
+            continue
+        if not _batchable(v) or PACK_FACTOR * (cost + float(v['expect_s'])) + PACK_MARGIN_S > deadline:
+            break                                           # the order of the units is kept: the next one waits for its own call
+        out.append(v)
+        cost += float(v['expect_s'])
+    return out
+
+
+def _loop(root, plan, wall_s, transport, pinger, job_for, on_done, on_fail, settle=None, batch=True):
     """Run the unfinished units of a plan in order. See run_units() for the rules. Returns True when units are left.
-    settle(u): called before a unit that is not finished is sent; True = it needs no call (its stored facts hold)."""
+    settle(u): called before a unit that is not finished is sent; True = it needs no call (its stored facts hold).
+    batch: short units of one part share one call (_batch_for, gate_fusion_rpc.run_batch). Each answer of such a call
+    is processed when the loop reaches its unit, exactly as if its own call had brought it, with the deadline of the
+    call as a unit packed into the rest of a call has it (no stall when it comes back unfinished; a look it cut short
+    is measured again in a call of its own)."""
     url = gate_fusion_rpc.endpoint(load_layout(root))
     t0 = _clock()
+    prefetched = {}                                         # unit id -> (envelope, deadline) of an answer a batched call brought
     acquire_lock(root)
     try:
         for u in plan['units']:
@@ -502,7 +554,8 @@ def _loop(root, plan, wall_s, transport, pinger, job_for, on_done, on_fail, sett
                 u['flight'] = {'sent': job['sent'], 'cursor': gate_fusion_rpc.cursor_key(job['cursor'])}
                 save_plan(root, plan)
             while not _finished(u):
-                if settle is not None and u['state'] == 'todo' and not u.get('flight') and settle(u):
+                got = prefetched.pop(u['id'], None)
+                if got is None and settle is not None and u['state'] == 'todo' and not u.get('flight') and settle(u):
                     save_plan(root, plan)
                     break
                 if u['doc'] in plan.get('unreachable', []):
@@ -510,66 +563,89 @@ def _loop(root, plan, wall_s, transport, pinger, job_for, on_done, on_fail, sett
                     break
                 left = wall_s - (_clock() - t0)
                 packed = None
-                if left + WALL_GRACE_S < u['budget_s']:
-                    packed = _pack_deadline(u, left)
-                    if packed is None:
-                        save_plan(root, plan)
-                        return True                                 # less than its budget is left, and it is not known to be short: do not start it
-                job = job_for(u)
-                if packed is not None:
-                    # a short unit in the rest of the call: it gets what is left as its deadline. A probe stops by its
-                    # deadline and goes on in the next call (cursor) like any unit; a look it cut short is measured again
+                if got is not None:                                 # its answer came with an earlier unit's call
+                    env, packed = got
+                    job = job_for(u)
                     job['deadline_s'] = packed
-                read_late = False                                   # the answer of this turn was read from a result file, nothing was sent
-                try:
-                    # a call that was sent earlier and never answered: its result file is the answer (nothing is sent),
-                    # or Fusion is still busy with it (FusionDown: nothing is sent), or it is over and left nothing
-                    flight = u.get('flight')
-                    state, env, why = gate_fusion_rpc.settle(job, url, pinger, flight)
-                    if state in ('late', 'lost'):
-                        u.pop('flight', None)
-                        counted = not isinstance(flight, dict) or flight.get('counted')
-                        if not counted:                             # the run ended while that call was out: it was never counted
-                            u['attempts'] += 1
-                    if state == 'late':
-                        read_late = True
-                    elif state == 'lost' and why and NEVER_RAN in why:
-                        # the unit waited behind something else in Fusion and started after the host had stopped
-                        # waiting: it measured nothing and says so. That is no call the unit ran over: not counted
-                        if counted:
-                            u['timeouts'] = max(0, u.get('timeouts', 0) - 1)
-                    elif state == 'lost' and env is not None:       # it did answer, late, with an error: that error is its answer
-                        read_late = True
-                    elif state == 'lost':                           # over, and nothing that can be used: said, also when the next call answers
-                        if not counted:
-                            u['timeouts'] = u.get('timeouts', 0) + 1
-                        u['lost'] = why
-                        _note_silent(u, why)
-                    if not read_late:
-                        if u.get('timeouts', 0) >= MAX_TIMEOUTS:    # twice in a row no answer and no result: given up, never silently
-                            u['state'], u['over_budget'] = 'error', 'not run'
-                            u['error'] = ('%s: %d calls in a row got no answer within %g s and %s (budget %g s). A defect of the probe %s: report it'
-                                          % (OVER_BUDGET, u['timeouts'], u['budget_s'] + gate_fusion_rpc.HTTP_EXTRA_S, _left(u.get('lost')), u['budget_s'], u['probe']))
-                            on_fail(u, _with_notes(u, gate_fusion_rpc._made_envelope(job, u['error'])))
+                    u.pop('flight', None)
+                    u['attempts'] += 1
+                else:
+                    if left + WALL_GRACE_S < u['budget_s']:
+                        packed = _pack_deadline(u, left)
+                        if packed is None:
                             save_plan(root, plan)
-                            continue
-                        try:
-                            env = gate_fusion_rpc.run_unit(job, url, transport, pinger, before_send=in_flight, settled=True)
-                        except gate_fusion_rpc.FusionDown as e:
-                            if e.timed_out:                         # this call was sent and got no answer: the unit keeps its note of it
+                            return True                             # less than its budget is left, and it is not known to be short: do not start it
+                    job = job_for(u)
+                    if packed is not None:
+                        # a short unit in the rest of the call: it gets what is left as its deadline. A probe stops by its
+                        # deadline and goes on in the next call (cursor) like any unit; a look it cut short is measured again
+                        job['deadline_s'] = packed
+                    read_late = False                               # the answer of this turn was read from a result file, nothing was sent
+                    try:
+                        # a call that was sent earlier and never answered: its result file is the answer (nothing is sent),
+                        # or Fusion is still busy with it (FusionDown: nothing is sent), or it is over and left nothing
+                        flight = u.get('flight')
+                        state, env, why = gate_fusion_rpc.settle(job, url, pinger, flight)
+                        if state in ('late', 'lost'):
+                            u.pop('flight', None)
+                            counted = not isinstance(flight, dict) or flight.get('counted')
+                            if not counted:                         # the run ended while that call was out: it was never counted
                                 u['attempts'] += 1
+                        if state == 'late':
+                            read_late = True
+                        elif state == 'lost' and why and NEVER_RAN in why:
+                            # the unit waited behind something else in Fusion and started after the host had stopped
+                            # waiting: it measured nothing and says so. That is no call the unit ran over: not counted
+                            if counted:
+                                u['timeouts'] = max(0, u.get('timeouts', 0) - 1)
+                        elif state == 'lost' and env is not None:   # it did answer, late, with an error: that error is its answer
+                            read_late = True
+                        elif state == 'lost':                       # over, and nothing that can be used: said, also when the next call answers
+                            if not counted:
                                 u['timeouts'] = u.get('timeouts', 0) + 1
-                                if isinstance(u.get('flight'), dict):
-                                    u['flight']['counted'] = True
-                            else:
-                                u.pop('flight', None)               # nothing reached Fusion
-                            raise
-                        u.pop('flight', None)
-                        u['attempts'] += 1
-                except gate_fusion_rpc.FusionDown as e:
-                    u['error'] = _first_line(e)
-                    save_plan(root, plan)                           # the plan is saved first; nothing else is sent
-                    raise
+                            u['lost'] = why
+                            _note_silent(u, why)
+                        if not read_late:
+                            if u.get('timeouts', 0) >= MAX_TIMEOUTS:    # twice in a row no answer and no result: given up, never silently
+                                u['state'], u['over_budget'] = 'error', 'not run'
+                                u['error'] = ('%s: %d calls in a row got no answer within %g s and %s (budget %g s). A defect of the probe %s: report it'
+                                              % (OVER_BUDGET, u['timeouts'], u['budget_s'] + gate_fusion_rpc.HTTP_EXTRA_S, _left(u.get('lost')), u['budget_s'], u['probe']))
+                                on_fail(u, _with_notes(u, gate_fusion_rpc._made_envelope(job, u['error'])))
+                                save_plan(root, plan)
+                                continue
+                            mates = _batch_for(plan, u, float(job['deadline_s']), prefetched) if batch else []
+                            try:
+                                if mates:
+                                    jobs = [job] + [job_for(v) for v in mates]
+                                    for j in jobs[1:]:
+                                        j['deadline_s'] = job['deadline_s']
+
+                                    def all_in_flight(sent_jobs, group=[u] + mates):
+                                        for v, j in zip(group, sent_jobs):
+                                            v['flight'] = {'sent': j['sent'], 'cursor': gate_fusion_rpc.cursor_key(j['cursor'])}
+                                        save_plan(root, plan)
+                                    envs = gate_fusion_rpc.run_batch(jobs, url, transport, pinger, before_send=all_in_flight)
+                                    env, packed = envs[0], float(job['deadline_s'])
+                                    for v, e in zip(mates, envs[1:]):
+                                        prefetched[v['id']] = (e, packed)
+                                else:
+                                    env = gate_fusion_rpc.run_unit(job, url, transport, pinger, before_send=in_flight, settled=True)
+                            except gate_fusion_rpc.FusionDown as e:
+                                if e.timed_out:                     # this call was sent and got no answer: the unit keeps its note of it
+                                    u['attempts'] += 1
+                                    u['timeouts'] = u.get('timeouts', 0) + 1
+                                    if isinstance(u.get('flight'), dict):
+                                        u['flight']['counted'] = True
+                                else:
+                                    for v in [u] + mates:
+                                        v.pop('flight', None)       # nothing reached Fusion
+                                raise
+                            u.pop('flight', None)
+                            u['attempts'] += 1
+                    except gate_fusion_rpc.FusionDown as e:
+                        u['error'] = _first_line(e)
+                        save_plan(root, plan)                       # the plan is saved first; nothing else is sent
+                        raise
                 _beat(root)
                 _note_over(u, env)
                 if isinstance(env.get('elapsed_s'), (int, float)) and not isinstance(env.get('elapsed_s'), bool):
@@ -600,6 +676,7 @@ def _loop(root, plan, wall_s, transport, pinger, job_for, on_done, on_fail, sett
                     for other in plan['units']:
                         if other.get('part') == u['part'] and not _finished(other):
                             other['state'], other['error'] = 'skipped', 'the part changed under the run: scan again'
+                            prefetched.pop(other['id'], None)
                     save_plan(root, plan)
                     continue
                 partial = read_json(_partial_path(root, u), None) if u['state'] == 'partial' else None
@@ -751,6 +828,8 @@ def run_units(root, reg, resolved, plan, wall_s=20.0, transport=None, pinger=Non
     def on_done(u, env):
         entry = census['parts'].get(u['part']) or {}
         deps = gate_deps.record(u.get('read'), job_for(u), entry, (census['docs'].get(u['doc']) or {}).get('world'), u['probe'], target_key)
+        if u.get('shadow'):
+            _shadow_note(root, plan, u, env)
         gate_common.save_probe_facts(root, u['part'], u['sig'], dict(env, part=u['part'], sig=u['sig'], probe=u['probe'], deps=deps))
 
     def settle(u):
@@ -762,7 +841,8 @@ def run_units(root, reg, resolved, plan, wall_s=20.0, transport=None, pinger=Non
         data = load_facts(root, u['part'], u['sig'])
         doc = census['docs'].get(u['doc']) or {}
         why = gate_deps.why_stale((data.get('probes') or {}).get(u['probe']), census['parts'].get(u['part']) or {}, job_for(u),
-                                  doc.get('world'), u['probe'], fusion=doc.get('fusion'), whole_tables=reg.get('tables') or {})
+                                  doc.get('world'), u['probe'], fusion=doc.get('fusion'), whole_tables=reg.get('tables') or {},
+                                  mode=gate_deps.deps_mode(project))
         if why is not None:
             u['why'] = why
             return False
@@ -784,12 +864,39 @@ def run_units(root, reg, resolved, plan, wall_s=20.0, transport=None, pinger=Non
                     other['state'], other['error'] = 'skipped', 'no census: fusion_census ended in an error'
                     gate_common.save_probe_facts(root, u['part'], u['sig'], dict(bad, probe=other['probe'], job=other['id'], error=other['error']))
 
-    more = _loop(root, plan, wall_s, transport, pinger, job_for, on_done, on_fail, settle=settle)
+    more = _loop(root, plan, wall_s, transport, pinger, job_for, on_done, on_fail, settle=settle, batch=(layout.get('fusion') or {}).get('batch', True) is not False)
     if plan.get('unreachable'):
         _mark_docs(root, plan['unreachable'], False)
     n, m = progress(plan)
     return {'done': n, 'total': m, 'more': more, 'unreachable': list(plan.get('unreachable') or []),
             'changed_under_run': list(plan.get('changed_under_run') or [])}
+
+
+def _shadow_note(root, plan, u, env):
+    """A unit of the shadow (new_plan "shadow") is done: its new facts against the facts it had at this signature, one
+    line in gate/run/<run>/deps_shadow.jsonl (gate_deps.shadow_row). Its result in the plan unit: "shadow_same"."""
+    old = (load_facts(root, u['part'], u['sig']).get('probes') or {}).get(u['probe'])
+    if not isinstance(old, dict) or not isinstance(old.get('facts'), dict) or old.get('error'):
+        return
+    row = gate_deps.shadow_row(u['part'], u['probe'], u['shadow'], old['facts'], env.get('facts'))
+    row['run'] = plan['run']
+    path = os.path.join(gate_common.run_dir(root, plan['run']), gate_deps.SHADOW_FILE)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, 'a', encoding='utf-8') as f:
+        f.write(json.dumps(row, sort_keys=True) + '\n')
+    u['shadow_same'] = row['same']
+
+
+def shadow_line(plan):
+    """One line for the end of a run about its shadow units, or None when it had none."""
+    rows = [u for u in (plan or {}).get('units') or [] if u.get('shadow') and 'shadow_same' in u]
+    if not rows:
+        return None
+    bad = [u for u in rows if not u['shadow_same']]
+    return ('deps shadow: %d unit(s) that the tight record would have kept were measured (the wide one decides): %d gave the same facts%s '
+            '(gate/run/%s/%s)' % (len(rows), len(rows) - len(bad), '' if not bad else ', %d DIFFERED: %s. The tight record would have missed them: '
+                                  'report it, and keep "deps": "wide"' % (len(bad), ', '.join('%s %s' % (u['part'], u['probe']) for u in bad[:4])),
+                                  plan['run'], gate_deps.SHADOW_FILE))
 
 
 def _mark_docs(root, doc_keys, is_open):
@@ -805,7 +912,7 @@ def _mark_docs(root, doc_keys, is_open):
 
 # ---- scan: discovery -----------------------------------------------------------------------------------------------------
 
-def _scan_plan(root, layout, doc_keys):
+def _scan_plan(root, layout, doc_keys, census=None):
     pointer = gate_path(root, 'run', 'scan.json')
     run = (read_json(pointer, None) or {}).get('run')
     plan = load_plan(root, run) if run else None
@@ -816,6 +923,10 @@ def _scan_plan(root, layout, doc_keys):
             'unreachable': [], 'changed_under_run': [],
             'units': [{'doc': k, 'part': None, 'sig': None, 'probe': 'fusion_scan', 'state': 'todo', 'cursor': None, 'attempts': 0,
                        'budget_s': budget, 'error': None} for k in doc_keys]}
+    for u in plan['units']:                             # what its last scan took: a short scan may start in the rest of a call
+        cost = ((census or {}).get('docs', {}).get(u['doc']) or {}).get('scan_s')
+        if isinstance(cost, (int, float)) and not isinstance(cost, bool) and cost >= 0:
+            u['expect_s'] = float(cost)
     _number(root, plan)
     save_plan(root, plan)
     write_json(pointer, {'run': plan['run']})
@@ -947,7 +1058,37 @@ def _merge_generators(root, census, layout, doc_key, result, only=None):
             result['gone'].append(pid)
 
 
-def scan(root, doc_key=None, wall_s=20.0, transport=None, pinger=None):
+PULSE_MIN_S = 3.0               # seconds a pulse call needs at least of what is left of the wall
+FOLD_MIN_S = PULSE_MIN_S + 2.0  # what must be left of a call for the confirming scan to be made in it (cmd_run)
+
+
+def _pulse_inputs(layout, project, doc):
+    """16 hex over what a census entry is made from besides the model: the code of the scan and of the pulse, the
+    not-printed names, the document's entry of gate/layout.json and the names of every registered document. A pulse
+    taken under other inputs never stands for a scan."""
+    return gate_common.digest([gate_deps.code('fusion_scan'), gate_deps.code('fusion_pulse'), project.get('not_printed') or [], doc,
+                               sorted(d.get('name') or '' for d in layout.get('documents') or [])])
+
+
+def pulse(root, layout, project, doc, wall_s, transport=None, pinger=None):
+    """(16 hex or None, fusion version or None, why None): the pulse of one document now (probes/fusion_pulse.py), one
+    short Fusion call under the run lock. None (scan in full) when the call fails, times out or the probe cannot vouch."""
+    url = gate_fusion_rpc.endpoint(layout)
+    out = gate_path(root, 'run', 'pulse', 'units', '%s.json' % doc['key'])     # where a unit's result lies: gate/run/<run>/units
+    job = gate_fusion_rpc.new_job('u-pulse-%s' % doc['key'], 'pulse', 'fusion_pulse', doc['name'], doc['key'], out,
+                                  deadline_s=max(2.0, min(gate_fusion_rpc.budget(layout), wall_s - 1.0)), not_printed=project['not_printed'])
+    acquire_lock(root)
+    try:
+        env = gate_fusion_rpc.run_unit(job, url, transport, pinger)
+    finally:
+        release_lock(root)
+    if env.get('error') or env.get('timeout'):
+        return None, None, _first_line(env.get('error') or 'timeout', 160)
+    facts = env.get('facts') or {}
+    return facts.get('pulse'), env.get('fusion_version'), facts.get('why')
+
+
+def scan(root, doc_key=None, wall_s=20.0, transport=None, pinger=None, use_pulse=False):
     """Discover parts. Runs fusion_scan on the registered documents (gate/layout.json), merges the result into
     gate/census.json and returns {"census": the census, "done": bool, "next": [doc keys not finished],
     "new": [part ids], "changed": [part ids], "gone": [part ids], "unreachable": [doc keys]}.
@@ -969,7 +1110,13 @@ def scan(root, doc_key=None, wall_s=20.0, transport=None, pinger=None):
     "over_budget" (over_budget() of the scan plan: calls of a scan unit that worked longer than their budget).
     A document is merged into the census only when its scan is complete: half a list would mark the rest as gone.
     A finished scan also returns "notes": the lines of scan_notes() for the documents it read (linked documents, equal
-    bodies that are probably bought, parts in no motion group), each said once per document."""
+    bodies that are probably bought, parts in no motion group), each said once per document.
+
+    use_pulse  first one short call per document (pulse()): when its pulse, the Fusion version and the inputs
+               (_pulse_inputs) are those of the last scan of that document, nothing a scan reads has changed and the
+               document is not scanned again ("unchanged": [doc keys]). A scan stores the pulse its own first call read
+               (fusion_scan), only when the whole scan was that one call: one script, one state of the model.
+               `gate.py scan` and `run --fresh` scan in full."""
     root = os.path.abspath(root)
     layout, project = load_layout(root), load_project(root)
     if doc_key is not None:
@@ -985,8 +1132,24 @@ def scan(root, doc_key=None, wall_s=20.0, transport=None, pinger=None):
     census, by_key = load_census(root), {d['key']: d for d in docs}
     _merge_generators(root, census, layout, doc_key, result)        # parts made by code need no Fusion: they are known before the first call
     write_json(gate_common.census_path(root), census)
+    result['unchanged'], pulses, t0 = [], {}, _clock()
+    if use_pulse:
+        for d in list(docs):
+            left = wall_s - (_clock() - t0)
+            was = (census['docs'].get(d['key']) or {}).get('pulse')
+            if left < PULSE_MIN_S or not isinstance(was, dict):
+                continue
+            got, version, _why = pulse(root, layout, project, d, left, transport, pinger)
+            if got is None:
+                continue
+            pulses[d['key']] = {'digest': got, 'fusion': version, 'inputs': _pulse_inputs(layout, project, d)}
+            here = census['docs'].get(d['key']) or {}
+            if pulses[d['key']] == was and here.get('open') is not False and here.get('world') and version == here.get('fusion', version):
+                result['unchanged'].append(d['key'])
+        docs = [d for d in docs if d['key'] not in result['unchanged']]
+        wall_s -= _clock() - t0
     if docs:
-        plan = _scan_plan(root, layout, [d['key'] for d in docs])
+        plan = _scan_plan(root, layout, [d['key'] for d in docs], census)
 
         def job_for(u):
             doc = by_key[u['doc']]
@@ -997,6 +1160,13 @@ def scan(root, doc_key=None, wall_s=20.0, transport=None, pinger=None):
 
         def on_done(u, env):
             _merge_doc(root, census, by_key[u['doc']], env, result, registered)
+            if isinstance(env.get('work_s'), (int, float)) and not isinstance(env.get('work_s'), bool):
+                census['docs'][u['doc']]['scan_s'] = round(float(env['work_s']), 2)     # what the next scan is expected to take
+            got = (env.get('facts') or {}).get('pulse')
+            if got and int(u.get('attempts') or 0) <= 1:
+                # the scan's own pulse, read in the same call as the whole scan: one script, one state of the model. A
+                # scan of several calls stores none (an edit between two calls would hide behind it): the next run scans
+                census['docs'][u['doc']]['pulse'] = {'digest': got, 'fusion': env.get('fusion_version'), 'inputs': _pulse_inputs(layout, project, by_key[u['doc']])}
             census['scanned'] = gate_common.now()
             write_json(gate_common.census_path(root), census)
 
@@ -1015,6 +1185,8 @@ def scan(root, doc_key=None, wall_s=20.0, transport=None, pinger=None):
         result.update(done=not more, progress=progress(plan), run=plan['run'], over_budget=over_budget(plan))
     else:
         result.update(progress=(0, 0), run=None, over_budget=[])
+        if result['unchanged']:
+            result['done'] = True
     for path, pids in sorted(gate_common.shared_stls(census, layout).items()):      # two parts, one file: whatever the reason
         result['clashes'].append('%s: the parts %s name this one file as their STL, an export of one overwrites the other: give one of them another file '
                                  '("stl_names", "stl_dir" or the generator\'s "stl" in gate/layout.json), then scan again' % (path, ' and '.join(pids)))
@@ -1191,6 +1363,8 @@ def _print_scan(res, hint_faces=None):
     for line in res.get('notes') or []:                 # once per document: linked documents, equal bodies, parts in no motion group
         print(line)
     live = [p for p, e in census['parts'].items() if not e.get('gone')]
+    for key in res.get('unchanged') or []:
+        print('scan: %s is as the last scan read it (its pulse is the same): not scanned again' % key)
     print('scan: %d parts, %d new, %d changed, %d gone, %d document(s) not open' % (len(live), len(res['new']), len(res['changed']), len(res['gone']), len(res['unreachable'])))
 
 
@@ -2062,6 +2236,28 @@ def _finish(root, reg, resolved, run, args, parts, verdicts, plan, intent, unrea
     return code
 
 
+def _fold_fits(root, layout, left):
+    """Does the scan that confirms a run fit into the `left` seconds of this call: a pulse for every document whose last
+    scan stored one, its last scan time (PACK_FACTOR and PACK_MARGIN_S as for a packed unit) for every other one. A
+    document with neither is not known to be short: the confirming scan waits for the next call, as it did before."""
+    if left < FOLD_MIN_S:
+        return False
+    docs = (load_census(root).get('docs') or {})
+    need = 0.0
+    for d in layout.get('documents') or []:
+        e = docs.get(d.get('key')) or {}
+        if e.get('open') is False:
+            continue
+        if isinstance(e.get('pulse'), dict):
+            need += PULSE_MIN_S
+            continue
+        cost = e.get('scan_s')
+        if not isinstance(cost, (int, float)) or isinstance(cost, bool):
+            return False
+        need += PACK_FACTOR * float(cost) + PACK_MARGIN_S
+    return left >= max(FOLD_MIN_S, need)
+
+
 def cmd_run(root, args):
     """gate.py run [--changed | --all | --part ID ...] [--parts ID,ID] [--for KEY] [--wall 20] [--audit] [--offline].
 
@@ -2114,7 +2310,7 @@ def cmd_run(root, args):
                        note='offline: stored facts judged again with today\'s parameters and judges; nothing was asked of Fusion')
 
     budget = gate_fusion_rpc.budget(layout)
-    if wall + WALL_GRACE_S < budget:
+    if wall + WALL_GRACE_S < budget and not getattr(args, 'folded', False):
         raise GateError('--wall %g is shorter than the budget of one unit (%g s, gate/layout.json "fusion"."budget_s"): no unit could start' % (wall, budget))
     t_end = _clock() + wall
     plan = last if (last and last.get('command') == 'run' and last.get('request') == request and progress(last)[0] < progress(last)[1]) else None
@@ -2126,7 +2322,7 @@ def cmd_run(root, args):
     if plan is None:
         unreachable = [k for k, d in load_census(root)['docs'].items() if d.get('open') is False]
         if not getattr(args, 'no_scan', False):
-            res = scan(root, wall_s=wall)
+            res = scan(root, wall_s=wall, use_pulse=not fresh)
             _print_scan(res, _hint_faces(root))
             if res['errors'] or res['clashes']:
                 raise GateError('the scan did not hold: %s' % '; '.join(['%s: %s' % kv for kv in sorted(res['errors'].items())] + res['clashes']))
@@ -2143,10 +2339,11 @@ def cmd_run(root, args):
                                 % ('s' if len(closed) > 1 else '', ', '.join('"%s"' % gate_common.document_entry(layout, k).get('name') for k in closed),
                                    'are' if len(closed) > 1 else 'is', 'them' if len(closed) > 1 else 'it'))
             raise GateError('gate/census.json holds no part: register the document in gate/layout.json and run gate.py scan')
-        stale = stale_units(root, reg, resolved, census, target_key=target_key, layout=layout, project=project)
+        shadow = {}
+        stale = stale_units(root, reg, resolved, census, target_key=target_key, layout=layout, project=project, shadow=shadow)
         parts = _select(root, args, census, args.intent, stale=stale, reg=reg, resolved=resolved)
         intent = args.intent
-        plan = new_plan(root, reg, parts, 'run', intent, args.audit, stale=None if fresh else stale)
+        plan = new_plan(root, reg, parts, 'run', intent, args.audit, stale=None if fresh else stale, shadow=None if fresh else shadow)
         plan['request'], plan['fresh'] = request, bool(fresh)
         for key in unreachable:
             _skip_doc(plan, key)
@@ -2174,8 +2371,20 @@ def cmd_run(root, args):
         plan['judged'] = True
         save_plan(root, plan)
     rescan = (bool(res['changed_under_run']) or confirm is not None) and not res['more']
+    if rescan and not getattr(args, 'folded', False) and _fold_fits(root, layout, t_end - _clock()):
+        # the scan that confirms the run fits into this call: it is made now (a pulse, usually, when nothing changed),
+        # and its plan measures what changed meanwhile. The judgement and the report come from that plan
+        if res['changed_under_run']:
+            print('changed in Fusion while the run was going: %s. Their units were skipped; this call scans again.' % ', '.join(res['changed_under_run']))
+        import argparse
+        inner = argparse.Namespace(**vars(args))
+        inner.wall, inner.folded = t_end - _clock(), True
+        return cmd_run(root, inner)
     note = ('changed in Fusion while the run was going: %s. Their units were skipped; the next call scans again.'
             % ', '.join(res['changed_under_run'])) if res['changed_under_run'] else confirm
+    shadowed = shadow_line(plan) if not res['more'] else None
+    if shadowed:
+        note = shadowed if note is None else '%s\n%s' % (note, shadowed)
     code = _finish(root, reg, resolved, plan['run'], args, parts, verdicts, plan, intent, res['unreachable'], res['more'] or rescan, note)
     if res['more']:
         print('NEXT %d/%d' % (res['done'], res['total']))

@@ -1936,6 +1936,214 @@ def inserts_wall(facts, params, ctx):
     return out
 
 
+# ---- a local boss round a pocket (rule inserts.local_boss): from the rays inserts.wall stores ---------------------------------------
+
+_BOSS_RUN = 4               # rays of 48 in a row: 30 degrees, the shortest arc that reads as a boss
+_BOSS_SPREAD = 0.06         # mm: the walls of a boss's rays differ by no more than this (a flat face: far more)
+_BOSS_FIT = 0.3             # mm: the circle through the exits lies this close to the pocket's axis, at this close a radius
+_BOSS_CUT = 0.3             # mm: a wall this thin or less is a wall broken open, no boss
+_BOSS_FASTENER = r'(?i)insert|screw|bolt|shank|head|washer|(?<![a-z])nut(?![a-z])|DIN ?912|ISO ?7380'
+
+
+def _G():
+    from probes import _geom
+    return _geom
+
+
+def _boss_search(pattern, text):
+    try:
+        return re.search(pattern, text) is not None
+    except re.error:
+        return False
+
+
+def _boss_circle(pts):
+    """(cx, cy, r) of the least-squares circle (Kasa) through 2D points, or None when they lie on a line."""
+    n = float(len(pts))
+    sx = sum(x for x, _ in pts); sy = sum(y for _, y in pts)
+    sxx = sum(x * x for x, _ in pts); syy = sum(y * y for _, y in pts); sxy = sum(x * y for x, y in pts)
+    sxz = sum(x * (x * x + y * y) for x, y in pts); syz = sum(y * (x * x + y * y) for x, y in pts); sz = sum(x * x + y * y for x, y in pts)
+    a = [[sxx, sxy, sx], [sxy, syy, sy], [sx, sy, n]]
+    b = [-sxz, -syz, -sz]
+    det = lambda m: (m[0][0] * (m[1][1] * m[2][2] - m[1][2] * m[2][1]) - m[0][1] * (m[1][0] * m[2][2] - m[1][2] * m[2][0])
+                     + m[0][2] * (m[1][0] * m[2][1] - m[1][1] * m[2][0]))
+    d = det(a)
+    if abs(d) < 1e-12:
+        return None
+    sol = []
+    for i in range(3):
+        m = [row[:] for row in a]
+        for r in range(3):
+            m[r][i] = b[r]
+        sol.append(det(m) / d)
+    cx, cy = -sol[0] / 2.0, -sol[1] / 2.0
+    r2 = cx * cx + cy * cy - sol[2]
+    return (cx, cy, math.sqrt(r2)) if r2 > 0 else None
+
+
+def _boss_arc(w, r0, cap):
+    """The longest run of rays of one level whose exits lie on a circle round the pocket's axis: {"start", "len",
+    "rho" (the radius of that circle, mm from the axis), "w" (the wall there), "e" (how far the fitted centre lies off the
+    axis), "rf" (the fitted radius)}, or None. A ray counts when its wall is more than _BOSS_CUT and less than the cap of
+    the rays (a wall that reached the cap never left the body). A run of at least _BOSS_RUN rays whose walls spread by
+    no more than _BOSS_SPREAD and whose exits fit a circle within _BOSS_FIT of the axis and of their mean radius is an
+    arc of a boss. All the rays alike, all round: a ring (e 0)."""
+    n = len(w)
+    if n < _BOSS_RUN or not all(_num(x) for x in w):
+        return None
+    ok = [_BOSS_CUT < x < cap - 1e-6 for x in w]
+    if all(ok) and max(w) - min(w) <= _BOSS_SPREAD + _EPS:
+        rho = r0 + sum(w) / n
+        return {'start': 0, 'len': n, 'rho': rho, 'w': rho - r0, 'e': 0.0, 'rf': rho}
+    best = None
+    for s in range(n):
+        if not ok[s]:
+            continue
+        lo = hi = w[s]
+        k = 1
+        while k < n and ok[(s + k) % n]:
+            x = w[(s + k) % n]
+            if max(hi, x) - min(lo, x) > _BOSS_SPREAD + _EPS:
+                break
+            lo, hi, k = min(lo, x), max(hi, x), k + 1
+        for kk in range(k, _BOSS_RUN - 1, -1):
+            if best is not None and kk <= best['len']:
+                break
+            idx = [(s + i) % n for i in range(kk)]
+            pts = [((r0 + w[i]) * math.cos(2 * math.pi * i / n), (r0 + w[i]) * math.sin(2 * math.pi * i / n)) for i in idx]
+            f = _boss_circle(pts)
+            if not f:
+                continue
+            rho = sum(r0 + w[i] for i in idx) / kk
+            e = math.hypot(f[0], f[1])
+            if e <= _BOSS_FIT + _EPS and abs(f[2] - rho) <= _BOSS_FIT + _EPS:
+                best = {'start': s, 'len': kk, 'rho': rho, 'w': rho - r0, 'e': e, 'rf': f[2]}
+                break
+    return best
+
+
+def _boss_into(point, d, rho, census):
+    """What the boss bulges into: the id and diameter of the census hole or bore wider than 12 mm that holds the point
+    just past the boss in its direction ("h18 D64"), else "the outer edge"."""
+    q = _G().v_add(point, _G().v_scale(d, rho + 0.3))
+    for h in _list((census or {}).get('holes')) + _list((census or {}).get('bores')):
+        a = h.get('anchor') if isinstance(h, dict) else None
+        segs = _segments(h) if isinstance(h, dict) else None
+        if not isinstance(a, dict) or not segs or not _num(h.get('depth')):
+            continue
+        dmax = max(sg['d'] for sg in segs)
+        try:
+            p0, ax = tuple(float(c) for c in a['point']), _G().v_unit(tuple(float(c) for c in a['axis']))
+        except (KeyError, TypeError, ValueError):
+            continue
+        if dmax <= 12.0:
+            continue
+        t = -_G().v_dot(_G().v_sub(q, p0), ax)
+        rad = _G().v_len(_G().v_sub(_G().v_sub(q, p0), _G().v_scale(ax, -t)))
+        if -0.5 <= t <= float(h['depth']) + 0.5 and rad <= dmax / 2.0 + 0.3:
+            return '%s D%s' % (h.get('id'), _g(round(dmax, 2)))
+    return 'the outer edge'
+
+
+def _boss_post(p, levels, census):
+    """Is the whole part the boss: a ring all round at every level measured, and nothing in the census off the pocket's
+    axis (no other hole, no opening)? Then it is a post (a standoff of the pocket's own diameter), not a boss on a part
+    whose wall could grow."""
+    if not levels or any(arc['len'] != n for arc, n in levels):
+        return False
+    if not isinstance(census, dict) or _list(census.get('openings')):
+        return False
+    a = _anchor(p.get('anchor'))
+    try:
+        p0, ax = tuple(float(c) for c in a['point']), _G().v_unit(tuple(float(c) for c in a['axis']))
+    except (KeyError, TypeError, ValueError):
+        return False
+    for h in _list(census.get('holes')) + _list(census.get('bores')):
+        ha = h.get('anchor') if isinstance(h, dict) else None
+        try:
+            q, hx = tuple(float(c) for c in ha['point']), _G().v_unit(tuple(float(c) for c in ha['axis']))
+        except (KeyError, TypeError, ValueError):
+            return False
+        if abs(abs(_G().v_dot(hx, ax)) - 1.0) > 1e-3 or _G().v_len(_G().v_sub(_G().v_sub(q, p0), _G().v_scale(ax, _G().v_dot(_G().v_sub(q, p0), ax)))) > 0.3:
+            return False
+    return True
+
+
+@judge
+def inserts_local_boss(facts, params, ctx):
+    """Attest rule inserts.local_boss. Reads the fusion_inserts facts inserts.wall reads ("pockets"[].walls.lead_in /
+    .insert: "w" the wall of each of the rays, "from_d" the diameter they start from, "blocked_by"; .ray.max, .anchor,
+    .hole) and ctx["census"] (the holes and openings of the part). Parameter inserts.wall_target and those of
+    _not_a_pocket. No Fusion work of its own: the rays of inserts.wall are enough.
+
+    A pocket whose wall at the lead-in or along the insert stands, over at least _BOSS_RUN rays in a row (30 degrees of
+    48 rays), on a circle round its own axis (_boss_arc: the walls spread by no more than _BOSS_SPREAD, the fitted
+    circle within _BOSS_FIT of the axis and of its radius) sits on a local round boss: one INFO row with ask =
+    "inserts.local_boss" (why not a wider wall along the whole edge, a smaller opening, or a moved pocket?). A flat wall
+    reads as a 1/cos profile, a corner as two of them, a large round outline as a circle far off the axis: none of them
+    is a boss. The longer of the two levels speaks.
+    Not asked: what _not_a_pocket leaves out, and a post (_boss_post): a ring all round at every level and nothing in
+    the census off its axis. NOT_RUN: a pocket none of whose levels has its rays ("w"), a facts file stored before them.
+    anchor = the pocket's, measure = the wall on the boss, limit = inserts.wall_target, by = what stopped the thin
+    rays (blocked_by of both levels) and the bought bodies on its axis that are no fastener ("seat" in the context),
+    context = kind, boss radius (0.05), arc in degrees, direction (0.05), what it bulges into."""
+    target = pv(params, 'inserts.wall_target')
+    pockets, out = _rows(facts, 'pockets', ctx)
+    pats = [str(params.get(k) or '') for k in ('inserts.ref_pattern', 'screws.ref_pattern')] + [_BOSS_FASTENER]
+    for p in pockets:
+        a = _anchor(p.get('anchor'))
+        if _not_a_pocket(p, params, ctx):
+            continue
+        walls = p.get('walls') if isinstance(p.get('walls'), dict) else {}
+        cap = (p.get('ray') or {}).get('max') if isinstance(p.get('ray'), dict) else None
+        levels, measured = [], 0
+        for key in ('lead_in', 'insert'):
+            wl = walls.get(key)
+            if not isinstance(wl, dict) or not isinstance(wl.get('w'), list) or not wl['w'] or not _num(wl.get('from_d')):
+                continue
+            measured += 1
+            arc = _boss_arc(wl['w'], wl['from_d'] / 2.0, cap if _num(cap) else 1e9)
+            if arc is not None:
+                levels.append((arc, len(wl['w'])))
+        if not measured:
+            out.append(_not_run(ctx, '%s: its walls hold no rays ("w"), so a local boss cannot be told from a wall: collect the facts of the part again' % _pocket(p, a), a))
+            continue
+        if not levels:
+            continue
+        census = ctx.get('census') if isinstance(ctx.get('census'), dict) else None
+        if len(levels) == measured and _boss_post(p, levels, census):
+            continue
+        arc, n = max(levels, key=lambda t: (t[0]['len'], -t[0]['e']))
+        try:
+            axis = _G().v_unit(tuple(float(c) for c in a['axis']))
+            point = tuple(float(c) for c in a['point'])
+        except (KeyError, TypeError, ValueError):
+            out.append(_not_run(ctx, '%s: no axis to turn its rays round' % _pocket(p, a), a))
+            continue
+        u, v = _G().axis_frame(axis)
+        th = 2.0 * math.pi * (arc['start'] + (arc['len'] - 1) / 2.0) / n
+        d = _G().v_unit(_G().v_add(_G().v_scale(u, math.cos(th)), _G().v_scale(v, math.sin(th))))
+        into = _boss_into(point, d, arc['rho'], census)
+        h = _census_hole(p, ctx)
+        seat = sorted({str(c.get('name')) for c in _list((h or {}).get('coaxial')) if isinstance(c, dict) and c.get('kind') in ('bought', 'hardware')
+                       and c.get('name') and not any(pt and _boss_search(pt, str(c.get('name'))) for pt in pats)})
+        named = sorted({str(b.get('name')) for key in ('lead_in', 'insert') for b in _list((walls.get(key) if isinstance(walls.get(key), dict) else {}).get('blocked_by'))
+                        if isinstance(b, dict) and b.get('name') and b.get('kind') != 'own_cavity'})
+        deg = round(360.0 * arc['len'] / n, 1)
+        r5 = lambda x: round(math.floor(x / 0.05 + 0.5) * 0.05, 2)
+        text = ('%s: its wall is %s only on a local round boss (R%s, %s degrees towards (%s), into %s). Why not a wider wall along the whole edge, '
+                'a smaller opening, or a moved pocket?' % (_pocket(p, a), _g(round(arc['w'], 2)), _g(r5(arc['rho'])), _g(deg),
+                                                           ', '.join(_g(r5(c)) for c in d), into))
+        if named:
+            text += ' What stopped the thin wall: %s.' % ', '.join(named)
+        if seat:
+            text += ' On its axis: %s.' % ', '.join(seat)
+        out.append(finding(ctx['rule'], ctx['part'], 'INFO', text, anchor=a, measure=round(arc['w'], 3), limit=target, by=named + [x for x in seat if x not in named],
+                           context={'kind': p.get('kind'), 'rho': r5(arc['rho']), 'arc': deg, 'dir': [r5(c) for c in d], 'into': into, 'seat': seat},
+                           ask='inserts.local_boss'))
+    return out
+
+
 @judge
 def inserts_wall_at_relief(facts, params, ctx):
     """Rule inserts.wall_at_relief. Reads fusion_inserts facts: "pockets"[].relief, .relief_room, .walls.relief.

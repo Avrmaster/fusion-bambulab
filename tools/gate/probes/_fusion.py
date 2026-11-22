@@ -324,12 +324,13 @@ def gate_states_same(saved, world):
 
 
 def gate_rows_key(world, indices=None):
-    """16 hex characters for the place of bodies in a list of gate_world(): index, path, body name, mesh or solid, shown
-    or hidden, and the box to 0.001 mm, of every record (or of those `indices` name, with the indices themselves).
-    Boxes are read by the walk anyway, so this costs no call. A body that moved, grew, was hidden, added or removed
-    changes it; a change inside an unchanged box does not (gate_states sees that for the bodies that were asked)."""
+    """16 hex characters for the place of bodies in a list of gate_world(): index, path, body name, mesh or solid, and
+    the box to 0.001 mm, of every record (or of those `indices` name, with the indices themselves). Boxes are read by
+    the walk anyway, so this costs no call. A body that moved, grew, was added or removed changes it; a change inside
+    an unchanged box does not (gate_states sees that for the bodies that were asked). Visibility is not in it: hiding
+    a body changes nothing a probe measures."""
     ks = range(len(world)) if indices is None else sorted(set(indices))
-    return state_digest([[k, world[k]['path'], world[k]['body_name'], bool(world[k]['mesh']), bool(world[k]['visible']),
+    return state_digest([[k, world[k]['path'], world[k]['body_name'], bool(world[k]['mesh']),
                           [round(c, 3) for c in world[k]['box'][0]], [round(c, 3) for c in world[k]['box'][1]]] for k in ks])
 
 
@@ -406,7 +407,7 @@ def gate_geo(obj):
 def gate_path_printed(path, comp_name, body_name, job):
     """The printed rule of the scan, by names alone: no name on the occurrence path (copy numbers dropped), nor the
     component name, nor the body name matches a not-printed pattern. Everything inside a bought assembly "ref motor:1"
-    is not printed. (The scan also wants the body's own light bulb on; gate_world() adds that.)"""
+    is not printed. Names only: no light bulb is read (a hidden body is what it is by its names)."""
     names = [n.rsplit(':', 1)[0] for n in (path or '').split('+') if n] + [comp_name, body_name]
     return all(gate_printed(n, job) for n in names)
 
@@ -475,47 +476,79 @@ def gate_above(occ):
 _GATE_READS = []                            # the regions of the document this call read (gate_read): the host's record of what a unit depends on
 
 
-def gate_read(box, margin, solid_only=False, printed_faces_max=None):
+def gate_read(box, margin, solid_only=False, printed_faces_max=None, mode=None, kinds=None, other_group=None, names=None):
     """Note that this call read the bodies whose box comes within `margin` mm of `box` (document frame): what the host
     stores as the dependencies of the unit (the bodies of the census that lie in one of these regions, with their
-    signature, pose and visibility). A unit is measured again when one of them changes, moves, is shown or hidden, or
-    when a body enters or leaves a region. A region must hold EVERY body the facts can depend on: a probe that narrows
-    what gate_world() reads names each smaller region it looks at.
+    signature, pose and shape). A unit is measured again when one of them changes or moves, or when a body enters or
+    leaves a region. A region must hold EVERY body the facts can depend on: a probe that narrows what gate_world()
+    reads names each smaller region it looks at.
       solid_only         mesh bodies are never read in this region
       printed_faces_max  printed bodies with more faces than this are never read in this region
+      mode               None: the region counts for both records; "wide": only for the record as 0.3.2 made it;
+                         "tight": only for the tight record (gate_deps: a project chooses which one decides)
+      kinds              only these census kinds ("part", "copy", "ref", "mesh") are read here
+      other_group        only bodies of another motion group than this one (its key)
+      names              only bodies whose names match one of these patterns
+    The filters are tested by region_admits() of _geom_rings.py, the same function the host uses.
     Regions are joined over the calls of a unit by the host; the envelope has them as "reads"."""
     row = {'box': [[round(float(c), 3) for c in box[0]], [round(float(c), 3) for c in box[1]]], 'margin': round(float(margin), 3)}
     if solid_only:
         row['solid_only'] = True
     if printed_faces_max is not None:
         row['printed_faces_max'] = int(printed_faces_max)
+    if mode is not None:
+        row['mode'] = str(mode)
+    if kinds is not None:
+        row['kinds'] = sorted(set(str(k) for k in kinds))
+    if other_group is not None:
+        row['other_group'] = str(other_group)
+    if names is not None:
+        row['names'] = sorted(set(str(n) for n in names if n))
     if row not in _GATE_READS:
         _GATE_READS.append(row)
 
 
-_GATE_ASKED = []                            # (name, box) of every other body a narrowing probe asked a question of (gate_asked)
+_GATE_ASKED = []                            # (name, box, key, kind) of every other body a narrowing probe asked a question of (gate_asked)
 
 
-def gate_asked(name, box):
-    """Note that the probe asked a question of this body (a point test, a cut). A probe that notes smaller regions
-    than its walk (read=False) notes the bodies it asked, and run() checks that each lies in a noted region: one that
-    does not is noted as a region of its own, with a line in the notes. The record of what the unit read never misses
-    a body it asked, whatever the region logic of the probe says."""
+def gate_census_kind(rec):
+    """The census kind of a record of gate_world(): "mesh", "part" (printed: the census calls a further copy "copy",
+    and no region tells the two apart) or "ref"."""
+    return 'mesh' if rec.get('mesh') else ('part' if rec.get('printed') else 'ref')
+
+
+def gate_asked(name, box, rec=None):
+    """Note that the probe asked a question of this body (a point test, a cut, a distance). A probe that notes smaller
+    regions than its walk (read=False) notes the bodies it asked, and run() checks that each lies in a noted region of
+    each record (wide and tight), filters included when `rec` (its gate_world() record) is given: one that does not is
+    noted as a plain region of its own, with a line in the notes. The record of what the unit read never misses a body
+    it asked, whatever the region logic of the probe says."""
     try:
-        _GATE_ASKED.append((str(name), ((float(box[0][0]), float(box[0][1]), float(box[0][2])), (float(box[1][0]), float(box[1][1]), float(box[1][2])))))
+        b = ((float(box[0][0]), float(box[0][1]), float(box[0][2])), (float(box[1][0]), float(box[1][1]), float(box[1][2])))
     except (TypeError, ValueError, IndexError):
-        pass
+        return
+    _GATE_ASKED.append((str(name), b, rec.get('key') if isinstance(rec, dict) else None, gate_census_kind(rec) if isinstance(rec, dict) else None))
 
 
 def _gate_cover_asked():
+    groups = (dict.get(JOB, 'motion_groups') or []) if isinstance(JOB, dict) else []     # not through GateInputs: the check reads no job key
     missed = []
-    for name, box in _GATE_ASKED:
-        if not any(boxes_near(box[0], box[1], r['box'][0], r['box'][1], r['margin']) for r in _GATE_READS):
-            gate_read(box, 0.0)
+    for name, box, key, kind in _GATE_ASKED:
+        lost = []
+        for mode in REGION_MODES:
+            regions = [r for r in _GATE_READS if r.get('mode') in (None, mode)]
+            if key is None:
+                held = any(boxes_near(box[0], box[1], r['box'][0], r['box'][1], r['margin']) for r in regions)
+            else:
+                held = any(region_admits(r, key, kind, None, box, groups, gate_search) for r in regions)
+            if not held:
+                lost.append(mode)
+        if lost:
+            gate_read(box, 0.0, mode=None if len(lost) == len(REGION_MODES) else lost[0])
             missed.append(name)
     if missed:
         note = ('the regions this unit noted did not hold %d body(ies) it asked (%s): they are noted as regions of their own. '
-                'A defect of the probe\'s regions: report it' % (len(missed), ', '.join(sorted(set(missed))[:6])))
+                'A defect of the probe\'s regions: report it' % (len(set(missed)), ', '.join(sorted(set(missed))[:6])))
         if note not in _GATE_NOTES:
             _GATE_NOTES.append(note)
 
@@ -575,28 +608,62 @@ class GateInputs(dict):
 
 def gate_world(design, job, box, margin, own_path, own_body, read=True):
     """Every solid and mesh body whose bounding box comes within `margin` mm of `box`, document frame, the part itself
-    included. ONE walker for bearings, openings, screws and gap, with the rule and the names of the scan:
+    included. ONE walker for bearings, openings, screws, gap and near, with the rule and the names of the scan:
 
-      printed   the body's own light bulb is on and gate_path_printed() holds (so a body inside a bought assembly is a
-                ref, and a switched-off tool body is one too)
+      printed   gate_path_printed() holds: no name on the path, the component or the body matches job["not_printed"]
+                (so a body inside a bought assembly is a ref). By names alone: no light bulb is read. A hidden body or
+                occurrence is a neighbour like any other; only an explicit rule leaves a body out (not_printed here,
+                access.overlay_pattern in the judges)
       name      a printed part: part_name(component, body, number of PRINTED bodies of the component) - the name its
                 part id is made from; a ref: the component name when the component holds one body, else
                 "<component> / <body>"
-      visible   every light bulb on the path and the body's own are on. Hidden bodies ARE listed: hiding a component
-                must not take it out of a check.
 
     No occurrence is skipped by its own bounding box (what that box holds for a hidden or mesh-only occurrence is not
     known): the box of every body is read. Returns
-    [{"name", "comp", "body_name", "path", "above", "body", "box", "printed", "hardware", "visible", "mesh", "own",
-      "kind": "printed" | "hardware" | "bought" | "mesh", "part": part id or None}], sorted by path and body name;
-    "above" = gate_above() of the occurrence (the components it lies in, outermost first); a mesh record
-    also has "matrix" (its component -> document). A solid body
-    is the occurrence's proxy (document frame). A mesh body whose box cannot be read (it was never drawn: no display
-    mesh) is left out and named in the envelope's "notes": it is not seen as an obstacle.
+    [{"name", "comp", "body_name", "path", "above", "body", "box", "printed", "hardware", "mesh", "own",
+      "kind": "printed" | "hardware" | "bought" | "mesh", "part": part id or None, "key": the census key of the body}],
+    sorted by path and body name; "above" = gate_above() of the occurrence (the components it lies in, outermost
+    first); "key" = "<path>|<body>" ("<path>|mesh:<body>" for a mesh), as gate_deps.body_key names it; a mesh record
+    also has "matrix" (its component -> document). A solid body is the occurrence's proxy (document frame). A mesh body
+    whose box cannot be read (it was never drawn: no display mesh) is left out and named in the envelope's "notes": it
+    is not seen as an obstacle.
     read=True notes the region (gate_read): every body this walk can return is a dependency of the unit. A probe that
-    uses only a part of the list passes read=False and notes the smaller regions it really looks at itself."""
+    uses only a part of the list passes read=False and notes the smaller regions it really looks at itself.
+    Within one call the walk over the document is made once (_gate_walk) and every caller gets fresh records."""
     if read:
         gate_read(box, margin)
+    out = []
+    for raw in _gate_walk(design, job):
+        bb = raw['box']
+        if box_gap(bb[0], bb[1], box[0], box[1]) > margin:
+            continue
+        if raw['mesh']:
+            out.append(dict(raw, own=False, above=list(raw['above'])))
+            continue
+        own = raw['path'] == own_path and raw['body_name'] == own_body
+        is_part = raw['printed']
+        name = raw['part_name'] if (is_part or own) else raw['ref_name']
+        out.append({'name': name, 'comp': raw['comp'], 'body_name': raw['body_name'], 'path': raw['path'], 'above': list(raw['above']),
+                    'body': raw['body'], 'box': bb, 'printed': is_part, 'hardware': raw['hardware'], 'mesh': False, 'own': own,
+                    'kind': 'printed' if (own or is_part) else ('hardware' if raw['hardware'] else 'bought'), 'key': raw['key'],
+                    'part': job.get('part') if own else ('%s/%s' % (job.get('doc_key'), part_slug(name)) if is_part else None)})
+    out.sort(key=lambda r: (r['path'], r['body_name']))
+    return out
+
+
+_GATE_WALKS = {}                            # one walk per document and printed rule in this call (shared by the jobs of a batch: _GATE_SHARED)
+
+
+def _gate_walk(design, job):
+    """Every solid and mesh body of the document once, with what does not depend on the asking probe: occurrence path,
+    component, body, box (document frame), the printed rule, the names a part and a ref get, the hardware rule. Made
+    once per call and document (the jobs of one batched call share it: nothing in Fusion changes inside one call).
+    The records are never handed out themselves: gate_world() copies them."""
+    memo = globals().get('_GATE_SHARED')
+    memo = memo if isinstance(memo, dict) else _GATE_WALKS
+    key = (job.get('doc'), json.dumps(job.get('not_printed') or []), json.dumps(gate_ref_patterns(job), sort_keys=True))
+    if key in memo:
+        return memo[key]
     root = design.rootComponent
     out, unread = [], []
     for occ in [None] + list(root.allOccurrences):
@@ -609,46 +676,74 @@ def gate_world(design, job, box, margin, own_path, own_body, read=True):
             meshes = []
         if not solids and not meshes:
             continue
-        vis, o = True, occ
-        while o is not None:
-            if not o.isLightBulbOn:
-                vis = False
-                break
-            o = o.assemblyContext
-        printed = [bool(b.isLightBulbOn) and gate_path_printed(path, comp.name, b.name, job) for b in solids]
+        printed = [gate_path_printed(path, comp.name, b.name, job) for b in solids]
         above = gate_above(occ)
         n_bodies = len(solids) + len(meshes)
+        n_printed = max(1, sum(printed))
         for b, is_part in zip(solids, printed):
             bb = gate_bbox(b)
-            if box_gap(bb[0], bb[1], box[0], box[1]) > margin:
-                continue
-            own = path == own_path and b.name == own_body
-            if is_part or own:
-                name = part_name(comp.name, b.name, max(1, sum(printed)))
-            else:
-                name = comp.name if n_bodies == 1 else '%s / %s' % (comp.name, b.name)
             hardware = (not is_part) and (gate_hardware(comp.name, job) or gate_hardware(b.name, job))
-            out.append({'name': name, 'comp': comp.name, 'body_name': b.name, 'path': path, 'above': above, 'body': b, 'box': bb, 'printed': is_part,
-                        'hardware': hardware, 'visible': vis and bool(b.isLightBulbOn), 'mesh': False, 'own': own,
-                        'kind': 'printed' if (own or is_part) else ('hardware' if hardware else 'bought'),
-                        'part': job.get('part') if own else ('%s/%s' % (job.get('doc_key'), part_slug(name)) if is_part else None)})
+            out.append({'comp': comp.name, 'body_name': b.name, 'path': path, 'above': above, 'body': b, 'box': bb, 'printed': is_part,
+                        'hardware': hardware, 'mesh': False, 'key': '%s|%s' % (path, b.name),
+                        'part_name': part_name(comp.name, b.name, n_printed),
+                        'ref_name': comp.name if n_bodies == 1 else '%s / %s' % (comp.name, b.name)})
         m = gate_matrix(occ)
         for mb in meshes:
             bb = gate_mesh_box(mb, m)
             if bb is None:
                 unread.append('%s / %s' % (comp.name, mb.name))
                 continue
-            if box_gap(bb[0], bb[1], box[0], box[1]) > margin:
-                continue
             out.append({'name': comp.name if n_bodies == 1 else '%s / %s' % (comp.name, mb.name), 'comp': comp.name, 'body_name': mb.name,
-                        'path': path, 'above': above, 'body': mb, 'box': bb, 'printed': False, 'hardware': False, 'visible': vis and bool(mb.isLightBulbOn),
-                        'mesh': True, 'own': False, 'kind': 'mesh', 'part': None, 'matrix': m})
+                        'path': path, 'above': above, 'body': mb, 'box': bb, 'printed': False, 'hardware': False,
+                        'mesh': True, 'kind': 'mesh', 'part': None, 'matrix': m, 'key': '%s|mesh:%s' % (path, mb.name)})
     if unread:
         note = '%d mesh bodies have no readable box and were not looked at: %s' % (len(unread), ', '.join(sorted(unread)[:8]))
         if note not in _GATE_NOTES:
             _GATE_NOTES.append(note)
-    out.sort(key=lambda r: (r['path'], r['body_name']))
+    memo[key] = out
     return out
+
+
+def gate_pulse(design, job, doc=None):
+    """(16 hex or None, bodies read, why it is None or None): one digest over what a scan of the document reads, without
+    the faces of any body (fusion_pulse.py says what goes in). None when a body gives no revision id, when something
+    cannot be read, or when the time of the call is used up: then the host scans in full."""
+    h = hashlib.sha256()
+    n = 0
+    try:
+        root = design.rootComponent
+        for i, occ in enumerate([None] + list(root.allOccurrences)):
+            if i % 64 == 0 and gate_time_up(job, 1.0):
+                return None, n, 'the time of the call was used up after %d occurrences' % i
+            comp = root if occ is None else occ.component
+            m = gate_matrix(occ)
+            h.update(('O|%s|%s|%s|%s\n' % ('' if occ is None else occ.fullPathName, comp.id, comp.name,
+                                           ','.join('%.4f' % x for x in m))).encode('utf-8', 'replace'))
+            for b in comp.bRepBodies:
+                key = _gate_sig_key(b)
+                if key is None:
+                    return None, n, 'the body %s / %s gives no revision id' % (comp.name, b.name)
+                h.update(('B|%s|%s|%s\n' % (b.name, bool(b.isSolid), key)).encode('utf-8', 'replace'))
+                n += 1
+            for mb in comp.meshBodies:
+                from array import array
+                dm = mb.displayMesh                     # its nodes, as the scan digests them ("shape"): a mesh edited in place is a change
+                h.update(('M|%s|' % mb.name).encode('utf-8', 'replace') + array('f', dm.nodeCoordinatesAsDouble).tobytes() + b'\n')
+                n += 1
+        try:
+            refs = list(doc.documentReferences) if doc is not None else []
+        except Exception:
+            refs = []
+        for r in refs[:200]:
+            try:
+                f = r.dataFile
+                h.update(('R|%s|%s|%s|%s\n' % (f.name if f is not None else '', r.version, r.isOutOfDate,
+                                               f.latestVersionNumber if f is not None else '')).encode('utf-8', 'replace'))
+            except Exception:
+                return None, n, 'a linked document cannot be read'
+    except Exception as e:
+        return None, n, '%s: %s' % (type(e).__name__, str(e)[:120])
+    return h.hexdigest()[:16], n, None
 
 
 class GateNotYet(Exception):

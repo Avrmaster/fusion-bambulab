@@ -28,8 +28,8 @@ How it measures (the way tools/fusion/screw_access.py does, for every opening an
             not how much it covers, and a mesh has no axis, so a mating hole in it is never "expected". The judges
             take a mesh hit for what it is: not a measurement.
 Which bodies are printed and how they are named: gate_world() of _fusion.py, the one walker with the rule of the scan.
-Limits: a slot or window is tested with the circle that fits into it, not with its own outline; hidden bodies are
-tested like visible ones and reported as "hidden"."""
+Limits: a slot or window is tested with the circle that fits into it, not with its own outline. Visibility is never
+read: a hidden body is tested and reported as what it is."""
 
 
 
@@ -183,7 +183,7 @@ def _opn_path(point, axis, r, reach, world, skip, coax_names, part=None, clock=N
             if share <= 0.0:
                 continue
         expected = (not rec['own']) and (rec['name'] in coax_names or any(coaxial(point, axis, o, a, 0.15) for o, a, _ in _opn_axes(rec)))
-        hit = {'name': rec['name'], 'kind': body_kind(rec['printed'], rec['hardware'], rec['visible'], False, rec['own']),
+        hit = {'name': rec['name'], 'kind': body_kind(rec['printed'], rec['hardware'], False, rec['own']),
                'part': rec['part'], 'at': round(at + 0.05, 2), 'share': round(min(1.0, share), 3), 'approx': approx, 'expected': expected}
         if not approx and at <= 0.5:
             # how the section fills in front of the mouth: [distance from the mouth, share] at _OPN_FULL_AT past the start

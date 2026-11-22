@@ -680,6 +680,7 @@ BUNDLE_KINDS = {                                 # kind -> (required fields, opt
     'decide': (('item', 'decision'), ('note', 'part')),
     'adopt': ((), ()),
     'mode': (('mode',), ()),
+    'deps': (('deps',), ()),                                         # which record of what a unit read decides (gate_deps.deps_mode)
     'baseline': (('project', 'objects', 'expect'), ('reason',)),     # expect: {object: {"support_e", "top_z", "pose"}} as the dry run shows them
     'table': (('table', 'source'), ('row', 'value', 'under')),       # a row of gate/owner/tables.json, as `owner table`
 }
@@ -722,6 +723,8 @@ def read_bundle(path):
             raise GateError('entry %d (target): "set" must be an object of key -> value, "unset" a list of keys' % i)
         if e['kind'] == 'mode' and e['mode'] not in ('observe', 'enforce'):
             raise GateError('entry %d (mode): "mode" must be "observe" or "enforce"' % i)
+        if e['kind'] == 'deps' and e['deps'] not in ('wide', 'tight'):
+            raise GateError('entry %d (deps): "deps" must be "wide" or "tight"' % i)
         if e['kind'] == 'baseline' and (not isinstance(e['expect'], dict) or not isinstance(e['objects'], list)
                                         or any(not isinstance(e['expect'].get(o), dict) for o in e['objects'])):
             raise GateError('entry %d (baseline): "expect" must give each object of "objects" the numbers the owner is shown '
@@ -861,6 +864,34 @@ def _owner_mode(root, args):
     return EXIT_PASS
 
 
+def _owner_deps(root, args):
+    """Which record of what a unit read decides whether it is measured again (gate/project.json "deps", gate_deps.py).
+    "tight" is refused while the shadow record (gate_deps.shadow_summary over gate/run/*/deps_shadow.jsonl) holds a
+    violation or no unit at all: the switch rests on proof that the tight record missed nothing. "wide" is always
+    taken (it measures more, never less)."""
+    import gate_deps
+    path = gate_common.gate_path(root, 'project.json')
+    data = gate_common.read_json(path, {})
+    if not isinstance(data, dict):
+        raise GateError('gate/project.json must be an object')
+    s = gate_deps.shadow_summary(root)
+    said = '%d shadow unit(s) over %d run(s), %d part(s) in %d document(s): %d gave the same facts, %d differed' % (
+        s['units'], s['runs'], len(s['parts']), len(s['docs']), s['same'], len(s['violations']))
+    if args.deps == 'tight':
+        if s['violations']:
+            bad = s['violations'][0]
+            raise GateError('"deps": "tight" is refused: %s (the first: %s %s, %s). The tight record would have missed what changed those facts: '
+                            'report it; "wide" stays' % (said, bad.get('part'), bad.get('probe'), ', '.join(bad.get('keys') or []) or bad.get('why') or '?'))
+        if not s['units']:
+            raise GateError('"deps": "tight" is refused: the shadow record holds no unit yet, nothing proves the tight record. Runs with "wide" '
+                            'write it (gate/run/<run>/deps_shadow.jsonl)')
+    old = data.get('deps', 'wide')
+    data['deps'] = args.deps
+    gate_common.write_json(path, data)
+    print('deps: %s -> %s (%s)' % (old, args.deps, said))
+    return EXIT_PASS
+
+
 def _owner_bundle(root, args):
     """gate.py owner bundle PROPOSAL --quote "...": apply every entry of a prepared proposal (read_bundle) with the
     owner commands, under one quote, in one call: either every entry holds and every file is written, or nothing is.
@@ -876,7 +907,7 @@ def _owner_bundle(root, args):
         raise GateError('an owner command needs --quote: the owner\'s own words for this decision; nothing was written')
     with open(path, 'rb') as f:
         sha = hashlib.sha256(f.read()).hexdigest()
-    funcs = {'param': _owner_param, 'target': _owner_target, 'waive': _owner_waive, 'decide': _owner_decide, 'adopt': _owner_adopt, 'mode': _owner_mode, 'baseline': _owner_baseline,
+    funcs = {'param': _owner_param, 'target': _owner_target, 'waive': _owner_waive, 'decide': _owner_decide, 'adopt': _owner_adopt, 'mode': _owner_mode, 'deps': _owner_deps, 'baseline': _owner_baseline,
              'table': _owner_table}
     print('%s %s: %d entr%s%s' % ('DRY RUN of' if dry else 'bundle', gate_common.rel(root, path), len(data['entries']), 'y' if len(data['entries']) == 1 else 'ies',
                                   (' - ' + data['title']) if data.get('title') else ''))

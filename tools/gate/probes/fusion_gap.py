@@ -13,7 +13,7 @@ motion group whose bounding box comes within the margin. Both are taken in the d
 body), so the pose is the one drawn. A mesh body has no B-rep: its bounding box stands for it ("approx").
 A body whose measurement fails is listed with the distance between the bounding boxes (never more than the real gap)
 and "approx": True, so a failed call cannot read as "far enough".
-Which bodies are printed, how they are named and that hidden ones are measured too: gate_world() of _fusion.py, the
+Which bodies are printed and how they are named (a hidden body is measured like a shown one, visibility is never read): gate_world() of _fusion.py, the
 one walker with the rule of the scan.
 Limits: the pose as modelled only, no sweep over the travel; a body in no declared group is not measured."""
 
@@ -32,8 +32,7 @@ def probe(job):
                 "approx": bool}]           True for a mesh ref measured by its bounding box
             one entry per body of another group within the margin
 
-    More than the contract lists: a gap also has "hidden": True for a body with its light bulb off (it is measured all
-    the same) and "error" with the text when the measurement failed and the bounding boxes were used; facts hold
+    More than the contract lists: a gap also has "error" with the text when the measurement failed and the bounding boxes were used; facts hold
     "n_bodies": the bodies of other groups whose bounding box is within the margin, and "groups": how many motion groups
     the document declares (0: nothing can be checked for any part, the judge says so). A part at the root of the document
     is matched to its group by the component name, every other part by its occurrence path.
@@ -54,7 +53,11 @@ def probe(job):
         return {'facts': facts, 'done': True, 'cursor': None, 'sig': sig}
     groups = job.get('motion_groups') or []
     world = []
-    for rec in gate_world(design, job, part_box, margin, own_path, body.name):
+    # what the facts depend on: every body in the box (the wide record) and, exactly, the bodies of another motion group
+    # (the tight record: a body of its own group or of none is never measured; a body at the root is always held)
+    gate_read(part_box, margin, mode='wide')
+    gate_read(part_box, margin, mode='tight', other_group=own_group)
+    for rec in gate_world(design, job, part_box, margin, own_path, body.name, read=False):
         if rec['own']:
             continue
         group = group_of(rec['path'] or rec['comp'], groups, gate_search)
@@ -71,6 +74,7 @@ def probe(job):
             return {'facts': facts, 'done': False, 'cursor': i, 'sig': sig}
         rec = world[i]
         i += 1
+        gate_asked(rec['name'], rec['box'], rec)                     # the cover check: it must lie in a region of each record
         t0 = time.time()
         centre = tuple((rec['box'][0][k] + rec['box'][1][k]) / 2.0 for k in range(3))
         row = {'name': rec['name'], 'kind': rec['kind'], 'part': rec['part'], 'group': rec['group'], 'approx': rec['mesh']}
@@ -93,7 +97,5 @@ def probe(job):
             d = v_unit(v_sub(centre, p1))
         row.update({'gap': round(max(0.0, gap), 3), 'point': [round(c, 2) for c in mat_point(inv, p1)],
                     'dir': [round(c, 4) for c in v_unit(mat_vector(inv, d))]})
-        if not rec['visible']:
-            row['hidden'] = True
         facts['gaps'].append(row)
     return {'facts': facts, 'done': True, 'cursor': None, 'sig': sig}

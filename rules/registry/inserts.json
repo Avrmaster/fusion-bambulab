@@ -207,6 +207,67 @@
       ]
     },
     {
+      "id": "inserts.local_boss",
+      "title": "A local boss only where the outline cannot move",
+      "statement": "A heat-set pocket whose wall of {inserts.wall_target} exists only on a round boss coaxial with it is asked why the whole wall was not made wider, the big opening smaller, or the pocket moved. A boss is at least 30 degrees of consecutive rays whose exits lie on a circle round the pocket axis (walls within 0.06 of each other; fitted centre and radius within 0.3). A post whose whole outline is that ring, with nothing else in the part, is no boss.",
+      "why": "A boss added round each thin pocket passed the wall check, while a wider flat wall along the same edge was possible and would have held the inserts better: the wall was fixed point by point instead of where the outline had room.",
+      "params": [
+        "inserts.wall_target",
+        "inserts.wall_floor",
+        "inserts.relief_wall_min",
+        "sensors.magnet_pocket_d",
+        "sensors.magnet_pocket_depth",
+        "inserts.ref_pattern",
+        "screws.ref_pattern",
+        "sensors.magnet_d6_pocket_d",
+        "sensors.magnet_d6_pocket_depth",
+        "fits.pin_ref_pattern",
+        "screws.wood_pattern"
+      ],
+      "check": {
+        "probe": "fusion_inserts",
+        "judge": "inserts_local_boss",
+        "needs": "fusion"
+      },
+      "level": "attest",
+      "stage": "design",
+      "fix_order": [
+        "Where the outline of the part is free on that side, make the whole wall, shoulder or lap wider: one flat face, no islands.",
+        "Move the pocket together with its screw hole in the mating part and its hardware refs.",
+        "A local boss only where the outline cannot move, with the reason named.",
+        "Blocked on every side: report it with the neighbour that stops the wall and ask the owner for a waiver."
+      ],
+      "attest": {
+        "question": "Pocket {feature}: its wall stands only on a local round boss. Why not a wider wall along the whole edge, a smaller opening, or a moved pocket?",
+        "evidence": [
+          "label",
+          "shot",
+          "waiver"
+        ],
+        "per": "finding",
+        "labels": [
+          "the outline cannot move: the neighbour, seat or bearing named in this row stands beside the rest of the wall",
+          "the outline cannot move: a swept path (a part that turns or slides past, a motor or plug slid in) stands beside the rest of the wall; the sweep or dry run is in the design decisions",
+          "the boss is the function: a standoff or seat for the bought part on its axis, named in this row"
+        ],
+        "held": {
+          "the outline cannot move: the neighbour, seat or bearing named in this row stands beside the rest of the wall": {
+            "by": "some"
+          },
+          "the boss is the function: a standoff or seat for the bought part on its axis, named in this row": {
+            "text": {
+              "has": "On its axis: ",
+              "says": "a bought part on its axis (not a fastener)"
+            }
+          }
+        }
+      },
+      "note": "Judged from the rays inserts.wall already stores: no Fusion work of its own. There is no label for \"a wider wall is possible\": then the question stays open, the fix is the first two steps of the fix order, and the row goes with the boss. Only round bosses are seen: a square pad round a pocket reads like a flat wall (inserts.wall still judges it).",
+      "supersedes": [
+        "a boss passes as a wall of the target"
+      ]
+    },
+    {
       "id": "inserts.floor",
       "title": "Plastic under a blind pocket",
       "statement": "Under the floor of a blind pocket at least {inserts.floor_min} of plastic stays, or the pocket is through on purpose. An insert is never longer than the material it sits in.",

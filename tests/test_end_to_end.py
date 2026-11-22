@@ -62,7 +62,9 @@ def foot_census():
 def foot_pocket(wall):
     """The plastic round that pocket: `wall` mm at the lead-in with nothing near it on any side. The relief is 1.55 mm
     wider in radius than the lead-in, so that much less stays beside it."""
-    w = lambda mm: {'min': round(mm, 2), 'dir': [-1, 0, 0], 'free_arc_deg': 360, 'blocked_by': []}
+    # the rays of one level (0.3.3 reads them for inserts.local_boss): the least wall on one ray, the outline far beyond on the others
+    w = lambda mm: {'min': round(mm, 2), 'dir': [-1, 0, 0], 'free_arc_deg': 360, 'blocked_by': [], 'from_d': 4.4,
+                    'w': [round(mm, 2), round(mm + 0.5, 2)] + [8.0] * 45 + [round(mm + 0.5, 2)]}
     return {'pockets': [{'hole': 'h1', 'anchor': POCKET, 'kind': 'M3x4x5', 'segments': STACK, 'relief': {'d': 7.5, 'depth': 0.54},
                          'relief_room': [{'d': 7.5, 'wall': round(wall - 1.55, 2)}, {'d': 6.5, 'wall': round(wall - 1.05, 2)}, {'d': 5.9, 'wall': round(wall - 0.75, 2)}],
                          'walls': {'lead_in': w(wall), 'insert': w(wall + 0.4), 'relief': w(wall - 1.55)}, 'floor': 2.96, 'ray': {'n': 48, 'step': 0.1, 'max': 8.0}}]}
