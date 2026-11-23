@@ -285,7 +285,7 @@ class Dispatch(Project):
         p = gate.parser()
         a = p.parse_args(['run', '--part', 'demo/a', '--part', 'demo/b', '--parts', 'demo/a,demo/c', '--wall', '15', '--audit'])
         self.assertEqual((a.part, a.intent, a.wall, a.audit, a.offline, a.changed, a.all), (['demo/a', 'demo/b'], ['demo/a', 'demo/c'], 15.0, True, False, False, False))
-        a = p.parse_args(['run']); self.assertEqual((a.part, a.intent, a.wall), ([], None, 20.0))
+        a = p.parse_args(['run']); self.assertEqual((a.part, a.intent, a.wall), ([], None, 120.0))
         a = p.parse_args(['attest', 'answer', 'Q-51b0c2', '--label', 'the bottom'])
         self.assertEqual((a.action, a.question, a.label, a.na, a.param, a.shot), ('answer', 'Q-51b0c2', 'the bottom', None, None, None))
         a = p.parse_args(['export', 'demo/a', 'demo/b', '--for', 'main']); self.assertEqual((a.parts, a.generated, a.target), (['demo/a', 'demo/b'], None, 'main'))

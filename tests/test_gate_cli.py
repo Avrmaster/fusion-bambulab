@@ -57,7 +57,7 @@ class Resumable(Cli):
         self.demo.model({'Bracket': 'v1', 'Cover': 'v1'}, elapsed_s=12.0)                 # every call into Fusion takes 12 s; --wall is 20
         seen, opens, confirm = [], [], 0
         for _ in range(20):
-            code, out, err = self.gate('run')
+            code, out, err = self.gate('run', '--wall', '20')
             self.assertEqual(err, '')
             if code != 3:
                 break
@@ -82,10 +82,10 @@ class Resumable(Cli):
 
     def test_an_unfinished_run_is_continued_and_a_finished_one_starts_with_a_new_scan(self):
         self.demo.model({'Bracket': 'v1'}, elapsed_s=12.0)
-        self.assertEqual(self.gate('run')[0], 3); self.assertEqual(self.gate('run')[0], 3)
+        self.assertEqual(self.gate('run', '--wall', '20')[0], 3); self.assertEqual(self.gate('run', '--wall', '20')[0], 3)
         first = gate_plan.load_plan(self.root)['run']
         self.assertEqual((self.scans(), gate_plan.progress(gate_plan.load_plan(self.root))), (1, (1, 4)))
-        code, out, err = self.gate('run', '--all')                                        # another request: a new plan, a new scan
+        code, out, err = self.gate('run', '--wall', '20', '--all')                                        # another request: a new plan, a new scan
         self.assertEqual(code, 3); self.assertNotEqual(gate_plan.load_plan(self.root)['run'], first); self.assertEqual(self.scans(), 2)
         going = gate_plan.load_plan(self.root)
         n = len(self.fusion.calls)
@@ -139,7 +139,7 @@ class ExitCodes(Cli):
 
     def test_3_more_calls_needed(self):
         self.demo.model({'Bracket': 'v1'}, elapsed_s=15.0)
-        code, out, err = self.gate('run')
+        code, out, err = self.gate('run', '--wall', '20')
         self.assertEqual(code, 3); self.assertEqual(out.strip().splitlines()[-1], 'NEXT 0/4')
 
     def test_4_fusion_does_not_answer(self):
@@ -414,7 +414,7 @@ class Audit(Cli):
 
     def test_an_audit_that_needs_more_calls_still_says_so(self):
         self.demo.model({'Bracket': 'v1'}, elapsed_s=15.0)
-        self.assertEqual(self.gate('run', '--audit')[0], 3)
+        self.assertEqual(self.gate('run', '--wall', '20', '--audit')[0], 3)
 
     def test_the_owners_first_decision_adopts_the_list_and_inherited_rows_stop_only_their_export(self):
         self.audited()

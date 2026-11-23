@@ -922,9 +922,10 @@ def questions_for_part(root, reg, part, sig, findings, stages=('design',)):
     except GateError:
         source = 'fusion'
     answers, waivers, out, seen = load_answers(root, part), _owner_waivers(root), [], set()
+    off = gate_common.questions_off(root)
     for rule in gate_registry.rules(reg, level='attest', deferred=False):
         a = rule.get('attest') or {}
-        if a.get('per') != 'part' or rule['stage'] not in stages or not gate_registry.applies_to(rule, source):
+        if off or a.get('per') != 'part' or rule['stage'] not in stages or not gate_registry.applies_to(rule, source):
             continue
         out.append(_question(rule, part, gate_features.part_anchor(), gate_common.sig12(sig) if sig else '', a.get('question', '')))
     for f in findings or []:
@@ -1418,6 +1419,10 @@ def cmd_attest(root, args):
     it is refused or the id is unknown."""
     import gate_params
     reg = gate_registry.load_default(root)
+    if args.action == 'answer' and gate_common.questions_off(root):
+        print('refused: the questions are switched off (gate/project.json "questions": "off"). The gate decides by measurement alone: '
+              'fix the model, or the owner waives the row.')
+        return 4
     if args.action == 'list':
         only = getattr(args, 'part', None)
         every = open_questions(root, reg, parts=[only] if only else None, waiting=True)

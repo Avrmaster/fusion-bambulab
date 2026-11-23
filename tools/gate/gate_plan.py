@@ -190,7 +190,7 @@ def _question_probes(reg, source):
     because of this. Such a unit that fails stops nothing: the question is asked."""
     import gate_attest
     out = set()
-    if source != 'fusion':
+    if source != 'fusion' or gate_common.questions_off(gate_registry._project_root()):
         return out
     for r in gate_registry.rules(reg, stage='design', level='attest', deferred=False):
         a = r.get('attest') or {}
@@ -332,7 +332,7 @@ def _number(root, plan):
     return plan
 
 
-def new_plan(root, reg, parts, command='run', intent=None, audit=False, stale=None, shadow=None):
+def new_plan(root, reg, parts, command='run', intent=None, audit=False, stale=None, shadow=None, only=None):
     """Make and save a plan for these parts (units_for_part each), name it in gate/run/current.json and return it.
 
     stale  stale_units() for these parts, or None (every unit is measured). A unit whose stored facts hold (None) is
@@ -351,6 +351,8 @@ def new_plan(root, reg, parts, command='run', intent=None, audit=False, stale=No
             'unreachable': [], 'changed_under_run': []}
     for p in parts:
         units = _units(reg, p, census['parts'][p], budget)
+        if only:                                        # a partial run: only these probes are measured (census_again below sees the filtered list)
+            units = [u for u in units if u['probe'] in only]
         stored = _stored_units(root, p, census['parts'][p])
         for u in units:
             cost = _expected_cost(stored.get(u['probe']))
@@ -1967,6 +1969,7 @@ def part_verdict(root, reg, part, sig=None, stages=('design',), defer_inherited=
         else:
             fresh.append(f)
     questions = gate_attest.questions_for_part(root, reg, part, sig, fresh, stages) if sig else []
+    questions_off = gate_common.questions_off(root)
     by_id = {q['q']: q for q in questions}
     open_, asked, answered, ask_questions = [], [], [], []
     for f in fresh:
@@ -1976,6 +1979,8 @@ def part_verdict(root, reg, part, sig=None, stages=('design',), defer_inherited=
         q = by_id.get(gate_attest.question_id(f['ask'], part, f.get('anchor'), f.get('context')))
         if q is not None and q.get('answer'):
             answered.append(dict(f, answer=q['answer']))
+        elif questions_off:
+            (info if f.get('verdict') == 'INFO' else open_).append(f)
         else:
             asked.append(f)
             if q is not None and q not in ask_questions:
@@ -2123,6 +2128,20 @@ def _request(args):
         out['fresh'] = True                       # measured again: never the plan of a run that takes stored facts over
     if getattr(args, 'target', None):
         out['for'] = args.target                  # another target is another run: the units are sent with its numbers
+    if getattr(args, 'only', None):
+        out['only'] = sorted(args.only)           # a partial run is never the plan of a full one
+    return out
+
+
+def only_probes(reg, names):
+    """The probe names a `--only` list stands for: "inserts" is fusion_inserts. GateError for a name no rule uses."""
+    known = {r['check']['probe'] for r in gate_registry.rules(reg) if (r.get('check') or {}).get('needs') == 'fusion'} - {'fusion_scan'}
+    out = set()
+    for n in names or []:
+        full = n if n in known else 'fusion_' + n
+        if full not in known:
+            raise GateError('--only %s: no such probe (known: %s)' % (n, ', '.join(sorted(p[len('fusion_'):] for p in known))))
+        out.add(full)
     return out
 
 
@@ -2343,8 +2362,11 @@ def cmd_run(root, args):
         stale = stale_units(root, reg, resolved, census, target_key=target_key, layout=layout, project=project, shadow=shadow)
         parts = _select(root, args, census, args.intent, stale=stale, reg=reg, resolved=resolved)
         intent = args.intent
-        plan = new_plan(root, reg, parts, 'run', intent, args.audit, stale=None if fresh else stale, shadow=None if fresh else shadow)
+        only = only_probes(reg, getattr(args, 'only', None))
+        plan = new_plan(root, reg, parts, 'run', intent, args.audit, stale=None if fresh else stale, shadow=None if fresh else shadow, only=only or None)
         plan['request'], plan['fresh'] = request, bool(fresh)
+        if only:
+            print('partial run: only %s is measured; the other rules of the part stay NOT_RUN until a full `gate.py run`' % ', '.join(sorted(only)))
         for key in unreachable:
             _skip_doc(plan, key)
         save_plan(root, plan)

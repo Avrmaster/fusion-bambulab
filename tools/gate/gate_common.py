@@ -168,7 +168,23 @@ def load_project(root):
     data.update(read_json(gate_path(root, 'project.json')))
     if data['mode'] not in ('observe', 'enforce'):
         raise GateError('gate/project.json: mode must be "observe" or "enforce", got %r' % (data['mode'],))
+    if data.get('questions', 'on') not in ('on', 'off'):
+        raise GateError('gate/project.json: questions must be "on" or "off", got %r' % (data.get('questions'),))
     return data
+
+
+def questions_off(root):
+    """True when the project switched the questions off (gate/project.json "questions": "off"): the gate then decides by
+    measurement alone. No question is asked, no probe runs only for a question, a finding that would ask becomes an open
+    row (INFO stays INFO), and `attest answer` is refused. Answers stored before still close what they closed: they are
+    recorded data, replayed the same way every time."""
+    if not root:
+        return False
+    try:
+        data = read_json(gate_path(root, 'project.json'), {})
+    except Exception:
+        return False
+    return isinstance(data, dict) and data.get('questions') == 'off'
 
 
 def stl_name_error(name):
@@ -318,7 +334,7 @@ def ask_rules_missing(root):
         except GateError:
             continue
         perms = data.get('permissions') if isinstance(data, dict) else None
-        for kind in ('ask', 'deny'):
+        for kind in ('ask', 'deny', 'allow'):
             got = perms.get(kind) if isinstance(perms, dict) else None
             rules += [r for r in got if isinstance(r, str)] if isinstance(got, list) else []
     have = {'edit': any(r.startswith(('Edit(', 'Write(')) and 'gate/owner' in r for r in rules),

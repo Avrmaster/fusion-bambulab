@@ -5,10 +5,10 @@
     python3 gate/tools/gate.py rules [--md] [--category C] effective rules with this project's numbers
     python3 gate/tools/gate.py params check | explain NAME [--target KEY]
     python3 gate/tools/gate.py scan [--doc KEY]            discover parts and signatures (short Fusion calls), update census.json
-    python3 gate/tools/gate.py run [--changed | --all | --part ID ...] [--parts ID,ID] [--for KEY] [--wall 20] [--audit] [--offline] [--no-scan]
+    python3 gate/tools/gate.py run [--changed | --all | --part ID ...] [--parts ID,ID] [--for KEY] [--wall 120] [--audit] [--offline] [--no-scan]
     python3 gate/tools/gate.py status [--json] [--digest]  no Fusion
     python3 gate/tools/gate.py attest list [--part ID] [--waiting] | answer Q (--label "..." | --na "why" | --param NAME | --shot PATH) [--for KEY]
-    python3 gate/tools/gate.py export PART [...] [--for KEY] [--wall 20]   quarantine STL -> STL checks -> promote + stamp
+    python3 gate/tools/gate.py export PART [...] [--for KEY] [--wall 120]   quarantine STL -> STL checks -> promote + stamp
     python3 gate/tools/gate.py export --generated STL [--for KEY]  a part made by code: STL checks + its attest, then stamp
     python3 gate/tools/gate.py verify [PROJECT.3mf]        stamps <-> STLs <-> meshes, project consistency; no Fusion
     python3 gate/tools/gate.py slice [PROJECT] [--changed | --all | --plates 1,4]   the slicer's support per object, on a copy
@@ -124,16 +124,18 @@ def parser():
     g = s.add_mutually_exclusive_group()
     g.add_argument('--changed', action='store_true'); g.add_argument('--all', action='store_true')
     s.add_argument('--part', action='append', default=[]); s.add_argument('--parts', dest='intent', type=lambda t: [x for x in t.split(',') if x])
-    s.add_argument('--wall', type=float, default=20.0); s.add_argument('--audit', action='store_true'); s.add_argument('--offline', action='store_true')
+    s.add_argument('--wall', type=float, default=120.0); s.add_argument('--audit', action='store_true'); s.add_argument('--offline', action='store_true')
     s.add_argument('--no-scan', dest='no_scan', action='store_true'); s.add_argument('--for', dest='target')
     s.add_argument('--fresh', action='store_true', help='measure every unit of the chosen parts again, also when its stored facts still hold')
+    s.add_argument('--only', type=lambda t: [x for x in t.split(',') if x],
+                   help='measure only these probes (comma list: inserts,thin or fusion_inserts,fusion_thin): a fast check of one kind of change; the other rules of the part stay NOT_RUN until a full run')
     s = sub.add_parser('status'); s.add_argument('--json', action='store_true'); s.add_argument('--digest', action='store_true')
     s = sub.add_parser('attest'); s.add_argument('action', choices=('list', 'answer')); s.add_argument('question', nargs='?')
     g = s.add_mutually_exclusive_group()
     g.add_argument('--label'); g.add_argument('--na'); g.add_argument('--param'); g.add_argument('--shot')
     s.add_argument('--for', dest='target'); s.add_argument('--part'); s.add_argument('--waiting', action='store_true')
     s = sub.add_parser('export'); s.add_argument('parts', nargs='*'); s.add_argument('--generated'); s.add_argument('--for', dest='target')
-    s.add_argument('--wall', type=float, default=20.0)
+    s.add_argument('--wall', type=float, default=120.0)
     s = sub.add_parser('verify'); s.add_argument('project', nargs='?')
     s = sub.add_parser('slice'); s.add_argument('project', nargs='?')
     g = s.add_mutually_exclusive_group()
@@ -834,6 +836,7 @@ BUNDLE_KINDS = {                                 # kind -> (required fields, opt
     'decide': (('item', 'decision'), ('note', 'part')),
     'adopt': ((), ()),
     'mode': (('mode',), ()),
+    'questions': (('questions',), ()),                               # "on" | "off": no questions, measurement alone (gate_common.questions_off)
     'deps': (('deps',), ()),                                         # which record of what a unit read decides (gate_deps.deps_mode)
     'baseline': (('project', 'objects', 'expect'), ('reason',)),     # expect: {object: {"support_e", "top_z", "pose"}} as the dry run shows them
     'table': (('table', 'source'), ('row', 'value', 'under')),       # a row of gate/owner/tables.json, as `owner table`
@@ -878,6 +881,8 @@ def read_bundle(path):
             raise GateError('entry %d (target): "set" must be an object of key -> value, "unset" a list of keys' % i)
         if e['kind'] == 'mode' and e['mode'] not in ('observe', 'enforce'):
             raise GateError('entry %d (mode): "mode" must be "observe" or "enforce"' % i)
+        if e['kind'] == 'questions' and e['questions'] not in ('on', 'off'):
+            raise GateError('entry %d (questions): "questions" must be "on" or "off"' % i)
         if e['kind'] == 'deps' and e['deps'] not in ('wide', 'tight'):
             raise GateError('entry %d (deps): "deps" must be "wide" or "tight"' % i)
         if e['kind'] == 'baseline' and (not isinstance(e['expect'], dict) or not isinstance(e['objects'], list)
@@ -1023,6 +1028,20 @@ def _owner_mode(root, args):
     return EXIT_PASS
 
 
+def _owner_questions(root, args):
+    """gate/project.json "questions": "off" makes the gate decide by measurement alone (gate_common.questions_off): no
+    question is asked, a finding that would ask is an open row, `attest answer` is refused. "on" is the default."""
+    path = gate_common.gate_path(root, 'project.json')
+    data = gate_common.read_json(path, {})
+    if not isinstance(data, dict):
+        raise GateError('gate/project.json must be an object')
+    old = data.get('questions', 'on')
+    data['questions'] = args.questions
+    gate_common.write_json(path, data)
+    print('questions: %s -> %s' % (old, args.questions))
+    return EXIT_PASS
+
+
 def _owner_deps(root, args):
     """Which record of what a unit read decides whether it is measured again (gate/project.json "deps", gate_deps.py).
     "tight" is refused while the shadow record (gate_deps.shadow_summary over gate/run/*/deps_shadow.jsonl) holds a
@@ -1071,7 +1090,7 @@ def _owner_bundle(root, args):
         raise GateError('an owner command needs --quote: the owner\'s own words for this decision; nothing was written')
     with open(path, 'rb') as f:
         sha = hashlib.sha256(f.read()).hexdigest()
-    funcs = {'param': _owner_param, 'target': _owner_target, 'waive': _owner_waive, 'decide': _owner_decide, 'adopt': _owner_adopt, 'mode': _owner_mode, 'deps': _owner_deps, 'baseline': _owner_baseline,
+    funcs = {'param': _owner_param, 'target': _owner_target, 'waive': _owner_waive, 'decide': _owner_decide, 'adopt': _owner_adopt, 'mode': _owner_mode, 'questions': _owner_questions, 'deps': _owner_deps, 'baseline': _owner_baseline,
              'table': _owner_table, 'outside': _owner_outside}
     print('%s %s: %d entr%s%s' % ('DRY RUN of' if dry else 'bundle', gate_common.rel(root, path), len(data['entries']), 'y' if len(data['entries']) == 1 else 'ies',
                                   (' - ' + data['title']) if data.get('title') else ''))
