@@ -2,6 +2,10 @@
 
 What each version of the plugin changes. Skills update with the plugin; the tools copied into a project do not. Read the section of a version before you refresh a project with `python3 <plugin>/tools/setup_project.py <dir> --update-tools`, and review `git diff` afterwards.
 
+## 0.4.1
+
+The heat-set gate, the fast export and the gate skill below reach installs (0.4.0 was published before them).
+
 ## 0.4.0
 
 The print gate starts again from step 0 [owner, 2026-11-23: the gates had become too many and out of date].
