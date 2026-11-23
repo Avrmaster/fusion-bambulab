@@ -7,7 +7,7 @@ GROUPS = [('Fusion', ['Live\nFusion', 'Checked\nSTL export']),
           ('Bambu project', ['Multi-plate\n.3mf build', 'Keeps hand\nedits', 'Support\nblockers', 'Guards an\nopen file']),
           ('Beyond', ['Printer\ncontrol', 'Modelling\nwithout CAD', 'Finds existing\nmodels']),
           ('Install', ['Claude Code\nplugin'])]
-ROWS = [('fusion-bambulab', [2, 2, 2, 2, 2, 2, 0, 0, 0, 2]),
+ROWS = [('print-engineering', [2, 2, 2, 2, 2, 2, 0, 0, 0, 2]),
         ('bambu-printer-mcp', [1, 1, 1, 0, 0, 0, 2, 1, 0, 0]),
         ('bambu-studio-ai', [0, 0, 1, 0, 0, 0, 2, 2, 2, 0]),
         ('3dprint-scout', [1, 1, 1, 0, 0, 0, 0, 2, 2, 0]),

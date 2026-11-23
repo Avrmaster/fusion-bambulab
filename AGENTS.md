@@ -1,13 +1,13 @@
 # Agent guide
 
-Map for agents installing or working on fusion-bambulab.
+Map for agents installing or working on print-engineering.
 
 ## Installing in Claude Code
 
 1. Check `claude --version` works.
-2. Run the commands in [INSTALL.md](INSTALL.md), then `claude plugin list`, and confirm `fusion-bambulab` is enabled.
+2. Run the commands in [INSTALL.md](INSTALL.md), then `claude plugin list`, and confirm `print-engineering` is enabled.
 3. Tell the user to run `/reload-plugins` or restart, and to enable **Preferences > General > API > Fusion MCP Server** in Fusion.
-4. Suggest `/fusion-bambulab:setup-project <name>` in a project folder. Do not create a project unasked.
+4. Suggest `/print-engineering:setup-project <name>` in a project folder. Do not create a project unasked.
 
 ## Installing in another agent
 

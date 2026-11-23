@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
 """Printer templates: the printer, nozzle, process and filament presets of a Bambu project, without its parts.
-A template lives in ~/.config/fusion-bambulab/templates/<name>.3mf (FUSION_BAMBULAB_HOME moves it) and is reused by every new project.
+A template lives in ~/.config/print-engineering/templates/<name>.3mf (PRINT_ENGINEERING_HOME moves it) and is reused by every new project.
     python3 bambu_template.py make <saved-project.3mf> <name>     make a template from any project saved by Bambu Studio
     python3 bambu_template.py list                                the templates on this machine
     python3 bambu_template.py show <name-or-path.3mf>             printer, process, filaments, overrides"""
 import json, os, sys, zipfile
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__))); import bambu3mf
-HOME = os.environ.get('FUSION_BAMBULAB_HOME') or os.path.expanduser('~/.config/fusion-bambulab')
+HOME = (os.environ.get('PRINT_ENGINEERING_HOME') or os.environ.get('FUSION_BAMBULAB_HOME')
+        or next((p for p in (os.path.expanduser('~/.config/print-engineering'), os.path.expanduser('~/.config/fusion-bambulab')) if os.path.isdir(p)),
+                os.path.expanduser('~/.config/print-engineering')))   # the plugin was fusion-bambulab until 0.5.0: its templates are still found
 KEEP = ('[Content_Types].xml', '_rels/.rels', 'Metadata/slice_info.config', 'Metadata/project_settings.config')
 
 def path_of(name): return name if os.path.exists(name) else os.path.join(HOME, 'templates', name + '.3mf')

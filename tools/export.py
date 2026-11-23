@@ -171,11 +171,11 @@ def main():
         swap = [n for n in names if n not in dict(failed)]
     import bambu3mf
     projects = sorted({t['file'] for n in swap for t in cfg['parts'][n].get('3mf') or []})
-    if projects and bambu3mf.studio_running() and not os.environ.get('FUSION_BAMBULAB_BAMBU_CLOSED'):
+    if projects and bambu3mf.studio_running() and not os.environ.get('PRINT_ENGINEERING_BAMBU_CLOSED'):
         print('Bambu Studio is running: the .3mf step runs under with_bambu_closed.py (it quits Bambu and reopens the project)')
         cmd = [sys.executable, os.path.join(HERE, 'bambu', 'with_bambu_closed.py'), ','.join(os.path.join(root, p) for p in projects),
                sys.executable, os.path.abspath(__file__), '--project', root, '--3mf-only'] + swap
-        env = dict(os.environ, FUSION_BAMBULAB_BAMBU_CLOSED='1')
+        env = dict(os.environ, PRINT_ENGINEERING_BAMBU_CLOSED='1')
         sys.exit(subprocess.call(cmd, env=env))
     t1 = time.time()
     res = swap_3mf(root, cfg, swap)

@@ -122,7 +122,7 @@ class Setup(unittest.TestCase):
         tool = os.path.join(d, 'bambulab', 'tools', 'bambu3mf.py'); open(tool, 'a').write('# local fix\n')
         subprocess.run(run, check=True, capture_output=True)
         self.assertEqual(open(rules).read(), 'mine'); self.assertIn('# local fix', open(tool).read())
-        self.assertEqual(open(os.path.join(d, 'CLAUDE.md')).read().count('fusion-bambulab:start'), 1)
+        self.assertEqual(open(os.path.join(d, 'CLAUDE.md')).read().count('print-engineering:start'), 1)
 
 
 class Safety(Base):

@@ -30,7 +30,7 @@ def vendor(root, overwrite_fork=False):
         if src == 'bambu':                                    # the print ledger lives beside bambu3mf.py, which calls it
             for f in sorted(os.listdir(os.path.join(HERE, 'ledger'))):
                 if f.endswith('.py') and f not in keep: shutil.copy(os.path.join(HERE, 'ledger', f), d)
-        open(os.path.join(d, 'VERSION'), 'w').write('fusion-bambulab %s\n' % version); say('vendored', d)
+        open(os.path.join(d, 'VERSION'), 'w').write('print-engineering %s\n' % version); say('vendored', d)
     if os.path.isdir(os.path.join(root, 'cnc')): vendor_cnc(root, version)
 
 def vendor_cnc(root, version):
@@ -39,7 +39,7 @@ def vendor_cnc(root, version):
         os.makedirs(os.path.join(d, sub), exist_ok=True)
         for f in sorted(os.listdir(os.path.join(src, sub))):
             if f.endswith(('.py', '.sh', '.ps1', '.html')): shutil.copy(os.path.join(src, sub, f), os.path.join(d, sub))
-    open(os.path.join(d, 'VERSION'), 'w').write('fusion-bambulab %s\n' % version); say('vendored', d)
+    open(os.path.join(d, 'VERSION'), 'w').write('print-engineering %s\n' % version); say('vendored', d)
 
 def setup_cnc(root, machine, lang):
     v = {'MACHINE': machine, 'LANG': lang}
@@ -77,7 +77,7 @@ def main():
     write_new(os.path.join(root, 'DESIGN_RULES.md'), tpl('DESIGN_RULES.md'))
     write_new(os.path.join(root, 'bambulab', 'build_3mf.py'), tpl('build_3mf.py'))
     md = os.path.join(root, 'CLAUDE.md'); old = open(md, encoding='utf-8').read() if os.path.exists(md) else ''
-    if 'fusion-bambulab:start' in old: say('kept', md)
+    if 'print-engineering:start' in old or 'fusion-bambulab:start' in old: say('kept', md)   # fusion-bambulab = the name before 0.5.0
     else:
         open(md, 'w', encoding='utf-8').write((old.rstrip() + '\n\n' if old.strip() else '') + tpl('CLAUDE.md')); say('updated', md)
     gitignore(root, GITIGNORE)

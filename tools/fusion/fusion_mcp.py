@@ -19,7 +19,7 @@ def post(body, sid=None, timeout=600):
 
 def connect():
     res, sid = post({'jsonrpc': '2.0', 'id': 1, 'method': 'initialize', 'params': {'protocolVersion': '2025-03-26', 'capabilities': {},
-                     'clientInfo': {'name': 'fusion-bambulab', 'version': '1'}}}, timeout=20)
+                     'clientInfo': {'name': 'print-engineering', 'version': '1'}}}, timeout=20)
     post({'jsonrpc': '2.0', 'method': 'notifications/initialized'}, sid, timeout=20)
     return res, sid
 

@@ -23,9 +23,9 @@ or by your own script what the gate measures: run it.
 The plugin's own copy is the one to run; nothing is vendored into the project.
 
 ```bash
-python3 ~/.claude/plugins/marketplaces/fusion-bambulab/tools/gate/gate.py check [PART ...]
-python3 ~/.claude/plugins/marketplaces/fusion-bambulab/tools/gate/gate.py fix-inserts PART ... [--component NAME] [--dry-run]
-python3 ~/.claude/plugins/marketplaces/fusion-bambulab/tools/gate/gate.py rules
+python3 ~/.claude/plugins/marketplaces/print-engineering/tools/gate/gate.py check [PART ...]
+python3 ~/.claude/plugins/marketplaces/print-engineering/tools/gate/gate.py fix-inserts PART ... [--component NAME] [--dry-run]
+python3 ~/.claude/plugins/marketplaces/print-engineering/tools/gate/gate.py rules
 ```
 
 Run them from the project folder (or pass `--project DIR`). Exit 0: every checked part passes; 1: findings; 4: the gate

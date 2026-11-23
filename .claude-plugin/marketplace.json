@@ -1,13 +1,13 @@
 {
   "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
-  "name": "fusion-bambulab",
+  "name": "print-engineering",
   "description": "Engineering skills for 3D-printed parts: tested recipes for Autodesk Fusion and Bambu Studio.",
   "owner": {
     "name": "Oleksandr Leskiv"
   },
   "plugins": [
     {
-      "name": "fusion-bambulab",
+      "name": "print-engineering",
       "source": "./",
       "description": "Engineering skills for 3D-printed parts: tested recipes for Autodesk Fusion and Bambu Studio.",
       "category": "design"

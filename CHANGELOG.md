@@ -2,6 +2,16 @@
 
 What each version of the plugin changes. Skills update with the plugin; the tools copied into a project do not. Read the section of a version before you refresh a project with `python3 <plugin>/tools/setup_project.py <dir> --update-tools`, and review `git diff` afterwards.
 
+## 0.5.0 - 2026-11-24
+
+- **The plugin is now `print-engineering`** (was `fusion-bambulab`): plugin and marketplace name, GitHub repository
+  `Avrmaster/print-engineering` (the old URL redirects), skills `print-engineering:<skill>`, the stable tool path
+  `~/.claude/plugins/marketplaces/print-engineering/tools/...`, env vars `PRINT_ENGINEERING_*`.
+- To move: `claude plugin marketplace remove fusion-bambulab`, `claude plugin marketplace add Avrmaster/print-engineering`,
+  `claude plugin install print-engineering@print-engineering`; change the tool paths in your project's CLAUDE.md.
+- Kept working: templates in `~/.config/fusion-bambulab` and `FUSION_BAMBULAB_HOME`; a project CLAUDE.md block marked
+  `fusion-bambulab:start` is recognised by `setup_project.py`.
+
 ## 0.4.4 - 2026-11-24
 
 - New description: "Engineering skills for 3D-printed parts: tested recipes for Autodesk Fusion and Bambu Studio." (plugin.json, marketplace.json, README).

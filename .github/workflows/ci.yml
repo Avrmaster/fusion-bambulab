@@ -29,6 +29,6 @@ jobs:
           export CLAUDE_CONFIG_DIR="$RUNNER_TEMP/claude-scratch"
           mkdir -p "$CLAUDE_CONFIG_DIR"
           claude plugin marketplace add "$GITHUB_WORKSPACE"
-          claude plugin install fusion-bambulab@fusion-bambulab
+          claude plugin install print-engineering@print-engineering
           claude plugin list | tee plugin-list.txt
           grep -q "enabled" plugin-list.txt

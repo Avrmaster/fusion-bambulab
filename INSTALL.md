@@ -5,20 +5,20 @@
 In Claude Code:
 
 ```text
-/plugin install fusion-bambulab --marketplace Avrmaster/fusion-bambulab
+/plugin install print-engineering --marketplace Avrmaster/print-engineering
 ```
 
 Or from a terminal:
 
 ```bash
-claude plugin install fusion-bambulab --marketplace Avrmaster/fusion-bambulab
+claude plugin install print-engineering --marketplace Avrmaster/print-engineering
 ```
 
 On Claude Code older than 2.1.292, add the marketplace first:
 
 ```text
-/plugin marketplace add Avrmaster/fusion-bambulab
-/plugin install fusion-bambulab@fusion-bambulab
+/plugin marketplace add Avrmaster/print-engineering
+/plugin install print-engineering@print-engineering
 ```
 
 Then run `/reload-plugins`, or restart Claude Code.
@@ -29,7 +29,7 @@ Then run `/reload-plugins`, or restart Claude Code.
 claude plugin list
 ```
 
-`fusion-bambulab` should show as enabled, and `/fusion-bambulab:setup-project` should autocomplete.
+`print-engineering` should show as enabled, and `/print-engineering:setup-project` should autocomplete.
 
 ## Turn on Fusion's MCP server
 
@@ -58,8 +58,8 @@ If you changed the port, add a `.mcp.json` with that URL to the project.
 ## Update
 
 ```bash
-claude plugin marketplace update fusion-bambulab
-claude plugin update fusion-bambulab@fusion-bambulab
+claude plugin marketplace update print-engineering
+claude plugin update print-engineering@print-engineering
 ```
 
 Auto-update is off by default for third-party marketplaces. Turn it on under `/plugin` > Marketplaces.
@@ -71,14 +71,14 @@ What each version changes, the changed defaults of `insert_pockets.py` included,
 ## Uninstall
 
 ```bash
-claude plugin uninstall fusion-bambulab
-claude plugin marketplace remove fusion-bambulab
+claude plugin uninstall print-engineering
+claude plugin marketplace remove print-engineering
 ```
 
-Your projects keep working: their tools are copied in. Printer templates stay in `~/.config/fusion-bambulab/`.
+Your projects keep working: their tools are copied in. Printer templates stay in `~/.config/print-engineering/`.
 
 ## Try a local copy
 
 ```bash
-claude --plugin-dir /path/to/fusion-bambulab
+claude --plugin-dir /path/to/print-engineering
 ```

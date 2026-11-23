@@ -39,7 +39,7 @@ def _post(body, sid=None, timeout=600):
 def _connect():
     try:
         res, sid = _post({'jsonrpc': '2.0', 'id': 1, 'method': 'initialize', 'params': {'protocolVersion': '2025-03-26', 'capabilities': {},
-                          'clientInfo': {'name': 'fusion-bambulab', 'version': '1'}}}, timeout=10)
+                          'clientInfo': {'name': 'print-engineering', 'version': '1'}}}, timeout=10)
         _post({'jsonrpc': '2.0', 'method': 'notifications/initialized'}, sid, timeout=10)
     except (urllib.error.URLError, OSError) as e:
         raise FusionError('Fusion MCP does not answer at %s (%s). Is Fusion running, with Preferences > General > API > '
@@ -57,11 +57,11 @@ def run(_context=''):
         return None
     g['run'] = _done                         # whatever happens below: a later call of run() by any session does nothing
     job = _json.loads(%(job)r)
-    private = {'__name__': 'fusion_bambulab_job', 'JOB': job}
+    private = {'__name__': 'print_engineering_job', 'JOB': job}
     out = {'ok': False}
     awake = None
     try:
-        exec(compile(%(awake)r, 'fusion_bambulab_awake', 'exec'), private)
+        exec(compile(%(awake)r, 'print_engineering_awake', 'exec'), private)
         awake = private['awake_begin']()
         exec(compile(%(source)r, %(name)r, 'exec'), private)
         t0 = __import__('time').time()
@@ -99,7 +99,7 @@ def _objc():
         return ctypes.CFUNCTYPE(ctypes.c_void_p, *types)(send)(obj, objc.sel_registerName(sel), *args)
     return objc, msg, ctypes
 
-def awake_begin(reason='fusion-bambulab job'):
+def awake_begin(reason='print-engineering job'):
     """NSProcessInfo beginActivityWithOptions (user initiated, latency critical, idle system sleep allowed) for the length
     of one call: lifts App Nap at once. A handle for awake_end(), or None off macOS or when the call fails."""
     try:
@@ -135,7 +135,7 @@ def run_job(source, job=None, write=False, timeout=300, name='job'):
     job = dict(job or {})
     fd, out = tempfile.mkstemp(prefix='fb_job_', suffix='.json', dir=_out_dir()); os.close(fd); os.remove(out)
     job['out'] = out
-    script = _WRAPPER % {'job': json.dumps(job), 'source': source, 'awake': _AWAKE, 'name': 'fusion_bambulab_%s' % name}
+    script = _WRAPPER % {'job': json.dumps(job), 'source': source, 'awake': _AWAKE, 'name': 'print_engineering_%s' % name}
     sid = _connect()
     t0 = time.time()
     try:
@@ -160,7 +160,7 @@ def run_job(source, job=None, write=False, timeout=300, name='job'):
 
 def _out_dir():
     """A folder Fusion can write to: the macOS sandbox of the add-in reaches the user's home, not every temp folder."""
-    d = os.environ.get('FUSION_BAMBULAB_RUN_DIR') or os.path.join(os.path.expanduser('~'), '.fusion-bambulab', 'run')
+    d = os.environ.get('PRINT_ENGINEERING_RUN_DIR') or os.path.join(os.path.expanduser('~'), '.print-engineering', 'run')
     os.makedirs(d, exist_ok=True)
     return d
 

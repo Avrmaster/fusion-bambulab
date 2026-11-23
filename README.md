@@ -1,13 +1,13 @@
 <p align="center">
-  <img src=".claude-plugin/icon.png" alt="fusion-bambulab" width="120" />
+  <img src=".claude-plugin/icon.png" alt="print-engineering" width="120" />
 </p>
-<h1 align="center">fusion-bambulab</h1>
+<h1 align="center">print-engineering</h1>
 <p align="center">
   <strong>Engineering skills for 3D-printed parts: tested recipes for Autodesk Fusion and Bambu Studio.</strong>
 </p>
 <p align="center">
-  <a href="https://github.com/Avrmaster/fusion-bambulab/actions/workflows/ci.yml"><img src="https://github.com/Avrmaster/fusion-bambulab/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
-  <a href="LICENSE"><img src="https://img.shields.io/github/license/Avrmaster/fusion-bambulab?style=flat" alt="License"></a>
+  <a href="https://github.com/Avrmaster/print-engineering/actions/workflows/ci.yml"><img src="https://github.com/Avrmaster/print-engineering/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/github/license/Avrmaster/print-engineering?style=flat" alt="License"></a>
 </p>
 
 ## Install
@@ -15,13 +15,13 @@
 **Claude Code:**
 
 ```text
-/plugin install fusion-bambulab --marketplace Avrmaster/fusion-bambulab
+/plugin install print-engineering --marketplace Avrmaster/print-engineering
 ```
 
 **Another agent:**
 
 ```text
-Install the fusion-bambulab skills from https://github.com/Avrmaster/fusion-bambulab, refer to the repo's AGENTS.md for instructions.
+Install the print-engineering skills from https://github.com/Avrmaster/print-engineering, refer to the repo's AGENTS.md for instructions.
 ```
 
 Then turn on Fusion's MCP server: [two clicks, with screenshots](INSTALL.md#turn-on-fusions-mcp-server). Update, uninstall and older versions: [INSTALL.md](INSTALL.md). What each version changes, and what to check before refreshing a project: [CHANGELOG.md](CHANGELOG.md). Only Claude Code has been tested so far.
@@ -49,7 +49,7 @@ Claude can drive Fusion and write `.3mf` files, but every new project starts fro
 
 ### After
 
-> `/fusion-bambulab:setup-project Bracket`
+> `/print-engineering:setup-project Bracket`
 >
 > Then: *Design a wall bracket for a 25 mm pipe, export it, and make a Bambu project.*
 >
@@ -77,7 +77,7 @@ The plugin connects Claude Code to Fusion's built-in MCP server, so every sessio
 
 | Skill | Does |
 |---|---|
-| `/fusion-bambulab:setup-project` | Sets a folder up: printer template, build script, design-rules file |
+| `/print-engineering:setup-project` | Sets a folder up: printer template, build script, design-rules file |
 | `fusion-modeling` | Safe Fusion scripting, and the API traps that fail silently |
 | `fusion-export` | Checked STL export, stamped with the Fusion version, plus stale-part and thin-feature checks |
 | `bambu-project` | Builds and updates `.3mf` projects from code, keeping what you changed by hand |
@@ -97,7 +97,7 @@ Claude picks all but the first up on its own when the task calls for them.
 
 The core tools use only the Python standard library. `numpy`, `scipy` and `shapely` add wall-thickness checks, bed packing and exact plate checks.
 
-Developed and tested on macOS with a Bambu Lab P2S. Windows paths exist but have not been tested on real Fusion or Bambu Studio. Bed size comes from your printer's template, so other Bambu printers should work: [tell us how it goes](https://github.com/Avrmaster/fusion-bambulab/issues).
+Developed and tested on macOS with a Bambu Lab P2S. Windows paths exist but have not been tested on real Fusion or Bambu Studio. Bed size comes from your printer's template, so other Bambu printers should work: [tell us how it goes](https://github.com/Avrmaster/print-engineering/issues).
 
 ## A project looks like this
 
@@ -137,7 +137,7 @@ The gate of 0.3.x (24 thousand lines, 214 rules, hooks on every tool call) is ke
 This plugin stops at a ready Bambu Studio project: you open it, slice and print. To go further from Claude, add [bambu-printer-mcp](https://github.com/DMontgomery40/bambu-printer-mcp), which handles slicing, sending to the printer, AMS and monitoring. The two split the work:
 
 ```text
-fusion-bambulab        Fusion design -> checked STL -> Bambu Studio project
+print-engineering        Fusion design -> checked STL -> Bambu Studio project
 bambu-printer-mcp   project -> sliced file -> printer
 ```
 
@@ -147,7 +147,7 @@ It is a separate project with its own licence (GPL-2.0), and it can start prints
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/comparison-dark.svg">
-  <img src="docs/comparison-light.svg" alt="Comparison of fusion-bambulab with six related projects across Fusion, Bambu project, printing and install features" width="100%">
+  <img src="docs/comparison-light.svg" alt="Comparison of print-engineering with six related projects across Fusion, Bambu project, printing and install features" width="100%">
 </picture>
 
 Each of these does something this plugin does not:
@@ -159,7 +159,7 @@ Each of these does something this plugin does not:
 - **[bambu-3mf](https://github.com/woolimi/bambu-3mf):** projects built from system profiles, on many printer models
 - **[bambu-studio-model-builder](https://github.com/DaveBitter/bambu-studio-model-builder):** quick single-object iteration with live reload in Claude Cowork
 
-Several `.3mf` facts in `bambu-project` were confirmed by, or first learned from, these projects. See something wrong in the table? [Open an issue](https://github.com/Avrmaster/fusion-bambulab/issues) or edit `docs/comparison.py`.
+Several `.3mf` facts in `bambu-project` were confirmed by, or first learned from, these projects. See something wrong in the table? [Open an issue](https://github.com/Avrmaster/print-engineering/issues) or edit `docs/comparison.py`.
 
 ## Contributing
 
