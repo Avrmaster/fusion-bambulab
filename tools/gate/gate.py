@@ -111,15 +111,19 @@ def check(root, names, as_json=False):
     by_part = {}
     for f in res['findings']:
         by_part.setdefault(f['part'], []).append(f)
-    pockets_by = {}
+    pockets_by, plist = {}, {}
     for p in res['pockets']:
         pockets_by[p['part']] = pockets_by.get(p['part'], 0) + 1
+        plist.setdefault(p['part'], []).append({'kind': p['kind'], 'at': heatset_core._at(p), 'out': heatset_core._out(p),
+                                                'floor_depth': round((p['t_floor'] - p['t_mouth']) * p['sign'], 3), 'through': p['through'],
+                                                'profile': heatset_core.fmt_profile(p['profile'], 12),
+                                                'inserts': [s['ins'].get('path') for s in p['inserts']]})
     failed = 0
     for p in facts['parts']:
         fs = by_part.get(p['name'], [])
         failed += bool(fs)
         rec = dict(stamp, part=p['name'], body={'faces': p['faces'], 'volume_mm3': p['volume'], 'area_mm2': p['area']},
-                   verdict='fail' if fs else 'pass', pockets=pockets_by.get(p['name'], 0), findings=fs)
+                   verdict='fail' if fs else 'pass', pockets=pockets_by.get(p['name'], 0), findings=fs, pocket_list=plist.get(p['name'], []))
         with open(os.path.join(out_dir, p['name'] + '.json'), 'w', encoding='utf-8') as fh:
             json.dump(rec, fh, indent=1, ensure_ascii=False); fh.write('\n')
     summary = dict(stamp, counts=res['counts'], parts=len(facts['parts']), failed=failed, errors=facts['errors'],

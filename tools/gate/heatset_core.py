@@ -64,7 +64,7 @@ def group_holes(cylinders, tol):
             groups.append(g)
         p0 = _add(c['o'], _mul(_norm(c['a']), c['t0'])); p1 = _add(c['o'], _mul(_norm(c['a']), c['t1']))
         t0, t1 = sorted((_dot(_sub(p0, g['base']), g['a']), _dot(_sub(p1, g['base']), g['a'])))
-        g['raw'].append({'d': c['d'], 't0': t0, 't1': t1, 'span': c.get('span', 360.0)})
+        g['raw'].append({'d': c['d'], 't0': t0, 't1': t1, 'span': c.get('span', 360.0), 'intrudes': c.get('intrudes', False)})
     for g in groups:
         g['segs'] = merge_segments(g.pop('raw'), tol)
     return groups
@@ -85,6 +85,7 @@ def merge_segments(raw, tol):
         m = next((x for x in joined if abs(x['d'] - s['d']) <= tol['d'] and s['t0'] <= x['t1'] + EPS_T and s['t1'] >= x['t0'] - EPS_T), None)
         if m:
             m['t0'], m['t1'] = min(m['t0'], s['t0']), max(m['t1'], s['t1']); m['span'] = min(m['span'], s['span'])
+            m['intrudes'] = m.get('intrudes') or s.get('intrudes')
         else:
             joined.append(dict(s))
     return sorted(joined, key=lambda s: (s['t0'], -s['d']))
@@ -138,7 +139,7 @@ def walk(group, from_lo):
         start = max(x0, pos)
         if start - pos > EPS_T:
             prof.append({'d': None, 'len': start - pos, 'span': 360.0})
-        prof.append({'d': s['d'], 'len': x1 - start, 'span': s['span']})
+        prof.append({'d': s['d'], 'len': x1 - start, 'span': s['span'], 'intrudes': s.get('intrudes', False)})
         pos = x1
     return prof
 
@@ -264,6 +265,10 @@ def judge_pocket(kind, rest, through, tol):
     pos = 0.0
     for p in rest:
         if pos >= depth_needed - tol['depth']:
+            break
+        if p['d'] is not None and p.get('intrudes'):
+            out.append(('not_round', 'plastic inside the D%.2f circle on one side (a sliver left by two cuts that do not meet)' % p['d'], 'a round D%.2f' % p['d'],
+                        'recut that step of the pocket in one cut from the table'))
             break
         if p['d'] is not None and p['span'] < tol['full_circle_deg']:
             out.append(('open_wall', 'D%.2f covers %.0f degrees' % (p['d'], p['span']), 'a full circle', 'close the pocket wall: the insert has nothing to grip on that side'))

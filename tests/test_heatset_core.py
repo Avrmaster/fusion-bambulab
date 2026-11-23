@@ -115,6 +115,12 @@ class Pocket(unittest.TestCase):
         c[1]['span'] = 200.0
         self.assertEqual(codes(run(c, [golden_insert(10 - 0.54)])), ['open_wall'])
 
+    def test_sliver_inside_the_relief(self):
+        c = pocket()
+        c[0]['intrudes'] = True
+        res = run(c, [golden_insert(10 - 0.54)])
+        self.assertEqual(codes(res), ['not_round']); self.assertIn('sliver', res['findings'][0]['measured'])
+
     def test_split_faces_join(self):
         c = pocket()
         half = dict(c[1], span=180.0); c[1] = half; c.append(dict(half))

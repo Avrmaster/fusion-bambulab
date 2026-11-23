@@ -2,6 +2,17 @@
 
 What each version of the plugin changes. Skills update with the plugin; the tools copied into a project do not. Read the section of a version before you refresh a project with `python3 <plugin>/tools/setup_project.py <dir> --update-tools`, and review `git diff` afterwards.
 
+## 0.4.2
+
+Every verdict of the heat-set gate checked against an independent audit (`tests/audit_heatset/`: no shared code, the
+pockets felt with pointContainment). Robot Arm V2: 142 pockets, 138 agree; the 4 left are explained in its README.
+- An open wall is confirmed by feeling the gap: a hole closed by a face of another kind is no longer `open_wall` (one false finding on the J3 idler 2 slider).
+- `not_round`: plastic inside a step's circle, a sliver left by two cuts that do not meet (J1 base, two pockets).
+- A lead-in is a lead-in only when the hole of the kind follows it, or it ends blind: a D4.4 -> D4.2 wood-screw hole is no pocket.
+- An insert belongs to the printed body with plastic round it, and is matched only to that body's holes.
+- `relief_missing` names a washer seat or recess the pocket sits in: the relief goes into its floor.
+- Results list every pocket (`pocket_list`), passed ones included.
+
 ## 0.4.1
 
 The heat-set gate, the fast export and the gate skill below reach installs (0.4.0 was published before them).

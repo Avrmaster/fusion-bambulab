@@ -138,6 +138,25 @@ def job(JOB):
         for g in group_holes(cyl, tol):                                 # heatset_core, pasted in front
             groups.extend(split_group(g, lambda pt: _inside(b, pt)))    # two holes on one axis with plastic between
         for g in groups:
+            # a face that covers less than the full circle is only an open wall when there is no plastic in the gap:
+            # a hole can be closed by a face of another kind (a cylinder split into faces of different lengths with a
+            # patch between them). Felt at 16 angles, 0.2 mm beyond the wall, at a quarter, half and three quarters.
+            e1, e2 = perp(g['a'])
+            for sg in g['segs']:
+                if sg['span'] >= tol['full_circle_deg']:
+                    continue
+                r = sg['d'] / 2 + 0.2
+                closed = all(_inside(b, [g['base'][i] + g['a'][i] * (sg['t0'] + f * (sg['t1'] - sg['t0'])) +
+                                          r * (math.cos(k * math.pi / 8) * e1[i] + math.sin(k * math.pi / 8) * e2[i]) for i in range(3)])
+                             for f in (0.25, 0.5, 0.75) for k in range(16))
+                if closed:
+                    sg['span_faces'], sg['span'] = sg['span'], 360.0
+                # plastic INSIDE the circle where the face is missing: a sliver left by two cuts that do not meet
+                ri = sg['d'] / 2 - 0.2
+                if ri > 0.3 and any(_inside(b, [g['base'][i] + g['a'][i] * (sg['t0'] + f * (sg['t1'] - sg['t0'])) +
+                                                ri * (math.cos(k * math.pi / 8) * e1[i] + math.sin(k * math.pi / 8) * e2[i]) for i in range(3)])
+                                    for f in (0.25, 0.5, 0.75) for k in range(16)):
+                    sg['intrudes'] = True
             lo, hi = ends(g)
             g['open_lo'] = _outside(b, [g['base'][i] + g['a'][i] * (lo - 0.3) for i in range(3)])
             g['open_hi'] = _outside(b, [g['base'][i] + g['a'][i] * (hi + 0.3) for i in range(3)])
