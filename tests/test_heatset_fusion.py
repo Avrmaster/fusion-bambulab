@@ -45,6 +45,15 @@ def job(JOB):
 '''
 
 
+HW_COUNT = r'''
+import adsk.core, adsk.fusion
+def job(J):
+    app = adsk.core.Application.get(); d = next(x for x in app.documents if x.name == J['doc'])
+    des = adsk.fusion.Design.cast(d.products.itemByProductType('DesignProductType'))
+    return {'n': next(c for c in des.allComponents if c.name == 'HW (ref)').bRepBodies.count}
+'''
+
+
 def text(p):
     with open(p, encoding='utf-8') as f:
         return f.read()
@@ -108,16 +117,34 @@ class HeatsetInFusion(unittest.TestCase):
                 self.assertTrue(f.get(k), (f['code'], k))
         self.assertIn('expected:', text); self.assertIn('fix:', text)
 
+    def hw_count(self):
+        return fusion_rpc.run_job(HW_COUNT, {'doc': self.doc}, timeout=30, name='count')['n']
+
     def test_2_fix_inserts_leaves_only_pocket_findings(self):
+        before = self.hw_count()
         buf = io.StringIO()
         with contextlib.redirect_stdout(buf):
             self.assertEqual(gate.fix_inserts(self.root, ['block'], component='HW (ref)'), 0, buf.getvalue())
+        self.assertEqual(self.hw_count(), before + 1, 'fix-inserts must replace 4 and add 1, and remove nothing else')
         code, res, text, _ = self.run_gate()
         left = {f['code'] for f in res['findings']}
         self.assertTrue(left <= POCKET_CODES, 'insert findings left after fix-inserts: %s\n%s' % (left - POCKET_CODES, text))
         got = self.by_case(res['findings'])
         for c in ('good', 'no_insert', 'not_flush', 'upside_down', 'old_insert', 'in_recess'):
             self.assertEqual(got[c], [], c)
+
+
+    def test_3_fix_pockets_then_inserts_passes(self):
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            self.assertEqual(gate.fix_pockets(self.root, ['block']), 0, buf.getvalue())
+            self.assertEqual(gate.fix_inserts(self.root, ['block'], component='HW (ref)'), 0, buf.getvalue())
+        code, res, text, _ = self.run_gate()
+        got = self.by_case(res['findings'])
+        for c in EXPECTED:
+            want = ['insert_without_pocket'] if c == 'insert_in_solid' else []
+            self.assertEqual(got[c], want, '%s\n%s\n%s' % (c, buf.getvalue(), text))
+        self.assertEqual(res['pockets'], 14)
 
 
 if __name__ == '__main__':

@@ -2,6 +2,20 @@
 
 What each version of the plugin changes. Skills update with the plugin; the tools copied into a project do not. Read the section of a version before you refresh a project with `python3 <plugin>/tools/setup_project.py <dir> --update-tools`, and review `git diff` afterwards.
 
+## 0.4.3
+
+The heat-set gate fixes Robot Arm V2 to zero open findings but four that need a design decision, and every verdict is
+checked again by the independent audit (142 of 142 pockets agree).
+- `gate.py fix-pockets PART`: each non-standard pocket is filled exactly (a plug of its present steps, kept inside a
+  coaxial boss and out of a wide bore it stands beside) and the table's pocket is cut at the same mouth; the relief
+  keeps a diameter of the table, else the widest that leaves 1.2 mm of plastic.
+- `fix-inserts` deletes the second insert on a pocket, removes bodies with a Remove feature (deleteMe on a body of a
+  base feature took its neighbours along) and reads every occurrence as a proxy (a nested part was placed in its
+  parent's frame).
+- New rule: a hole shorter than the table that runs out of the part onto another body is `hole_short` (the displaced
+  plastic and the screw tip push against the neighbour). Through into free space stays fine.
+- The Fusion fixture is nested one level down at an offset, and fix-pockets + fix-inserts must bring it to zero.
+
 ## 0.4.2
 
 Every verdict of the heat-set gate checked against an independent audit (`tests/audit_heatset/`: no shared code, the

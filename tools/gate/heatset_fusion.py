@@ -116,6 +116,21 @@ def _inside(body, pt_mm):
     return body.pointContainment(p) == adsk.fusion.PointContainment.PointInsidePointContainment
 
 
+_ALL = []
+
+
+def _bodies_at(pt_mm, skip):
+    """Names of the bodies (other than skip) that hold the point."""
+    p = adsk.core.Point3D.create(pt_mm[0] / CM, pt_mm[1] / CM, pt_mm[2] / CM)
+    out = []
+    for name, b, bb in _ALL:
+        if b == skip or not (bb.minPoint.x <= p.x <= bb.maxPoint.x and bb.minPoint.y <= p.y <= bb.maxPoint.y and bb.minPoint.z <= p.z <= bb.maxPoint.z):
+            continue
+        if b.pointContainment(p) == adsk.fusion.PointContainment.PointInsidePointContainment:
+            out.append(name)
+    return out
+
+
 def job(JOB):
     t_start = time.time()
     rules = JOB['rules']; tol = rules['tolerance']; max_d = float(JOB.get('max_d') or 30.0)
@@ -125,6 +140,10 @@ def job(JOB):
     by_comp = {}
     for o in occs:
         by_comp.setdefault(o.component.name, []).append(o)
+    del _ALL[:]
+    for o in occs:
+        for bb_ in o.bRepBodies:
+            _ALL.append((bb_.name, bb_, bb_.boundingBox))
     parts, errors, printed, bodies = [], [], set(), {}
     for spec in JOB['parts']:
         t = time.time()
@@ -160,6 +179,11 @@ def job(JOB):
             lo, hi = ends(g)
             g['open_lo'] = _outside(b, [g['base'][i] + g['a'][i] * (lo - 0.3) for i in range(3)])
             g['open_hi'] = _outside(b, [g['base'][i] + g['a'][i] * (hi + 0.3) for i in range(3)])
+            # what stands right beyond an open end (on the axis, 0.3 and 1.0 mm out): a neighbour there takes the room
+            # a short hole relies on
+            for key, t, sgn in (('beyond_lo', lo, -1), ('beyond_hi', hi, 1)):
+                if g['open_lo' if sgn < 0 else 'open_hi']:
+                    g[key] = sorted({n for dd in (0.3, 1.0) for n in _bodies_at([g['base'][i] + g['a'][i] * (t + sgn * dd) for i in range(3)], b)})
         bb = b.boundingBox
         parts.append({'name': spec['name'], 'groups': groups, 'faces': b.faces.count, 'volume': round(b.volume * 1000, 2),
                       'area': round(b.area * 100, 2), 'box': [_p(bb.minPoint), _p(bb.maxPoint)], 's': round(time.time() - t, 3)})

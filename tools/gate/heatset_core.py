@@ -204,7 +204,7 @@ def forced_pocket(prof, rules):
     return prof[i:], i
 
 
-def judge_pocket(kind, rest, through, tol):
+def judge_pocket(kind, rest, through, tol, beyond=None):
     """Problems of one pocket against its kind: [(code, measured, expected, fix)]."""
     pk, out = kind['pocket'], []
     i = 0
@@ -256,7 +256,13 @@ def judge_pocket(kind, rest, through, tol):
         reach = sum(p['len'] for p in rest[i:j + 1])           # from the relief floor to the end of the hole segment
         nxt = rest[j + 1] if j + 1 < len(rest) else None
         # short is fine only where the hole runs out of the part (through): the plastic and the screw tip leave that way
-        if reach < need - tol['depth'] and not (nxt is None and through):
+        free = nxt is None and through and not beyond
+        if reach < need - tol['depth'] and nxt is None and through and beyond:
+            out.append(('hole_short', 'the D%.2f hole runs out of the part %.2f below the relief floor, onto %s' % (hole['d'], reach, ', '.join(beyond[:3])),
+                        '%.2f below the relief floor, or a way out into free space' % need,
+                        'the wall is too thin here and the hole may not open onto a neighbour: the displaced plastic and the screw tip would '
+                        'push against it. A thicker wall or a shorter insert; never a hole through into the neighbour'))
+        elif reach < need - tol['depth'] and not free:
             what = 'a blind floor' if nxt is None else ('D%.2f' % nxt['d'] if nxt['d'] else 'a cone')
             out.append(('hole_short', 'the D%.2f hole ends %.2f below the relief floor (then %s)' % (hole['d'], reach, what),
                         '%.2f below the relief floor' % need,
@@ -393,7 +399,7 @@ def check(parts, inserts, rules, outside_hosts=None):
                 t_mouth = (lo + sum(p['len'] for p in prof[:skipped])) if from_lo else (hi - sum(p['len'] for p in prof[:skipped]))
                 sign = 1 if from_lo else -1                     # inwards along g["a"]
                 through = bool(g.get('open_hi') if from_lo else g.get('open_lo'))
-                problems, floor_depth = judge_pocket(kinds[name], rest, through, tol)
+                problems, floor_depth = judge_pocket(kinds[name], rest, through, tol, g.get('beyond_hi' if from_lo else 'beyond_lo'))
                 if skipped:                                     # the pocket is in the floor of a wider recess
                     rd = max(p['d'] for p in prof[:skipped] if p['d']) if any(p['d'] for p in prof[:skipped]) else None
                     problems = [(c, (m + ' (at the bottom of a %s recess %.2f deep: the recess, a washer seat, is not the relief)' % (
@@ -479,7 +485,7 @@ def check(parts, inserts, rules, outside_hosts=None):
             t_mouth = (lo + sum(p['len'] for p in prof[:skipped])) if from_lo else (hi - sum(p['len'] for p in prof[:skipped]))
             sign = 1 if from_lo else -1
             through = bool(g.get('open_hi') if from_lo else g.get('open_lo'))
-            problems, floor_depth = judge_pocket(kinds[kname], rest, through, tol) if rest else ([('hole_missing', 'no hole under the insert', fmt_expected(kinds[kname]), 'cut the pocket from the table (insert_pockets.cut)')], 0.0)
+            problems, floor_depth = judge_pocket(kinds[kname], rest, through, tol, g.get('beyond_hi' if from_lo else 'beyond_lo')) if rest else ([('hole_missing', 'no hole under the insert', fmt_expected(kinds[kname]), 'cut the pocket from the table (insert_pockets.cut)')], 0.0)
             p = {'part': part['name'], 'kind': kname, 'a': g['a'], 'base': g['base'], 'sign': sign, 't_mouth': t_mouth,
                  't_floor': t_mouth + sign * floor_depth, 'profile': rest, 'problems': [('not_a_pocket', 'the insert sits in a hole that is not a %s pocket' % kname,
                  fmt_expected(kinds[kname]), 'recut the hole as a pocket of the table (insert_pockets.convert() or cut())')] + problems,

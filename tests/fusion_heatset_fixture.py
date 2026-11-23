@@ -6,6 +6,7 @@ The block is 200 x 60 x 20 mm, top face at z = 20; most pockets open upwards fro
 from the y = 0 face. The document is left open for the gate to read; the test closes it without saving."""
 import adsk.core, adsk.fusion
 
+OFFSET = (130.0, -40.0, 25.0)                    # mm, the Assembly occurrence's place
 CASES = [
     # name,            mouth (x, y),  profile from the mouth: [(d, depth)], insert: (variant, top below the mouth) or None
     ('good',            (10, 15), 'std', ('golden', 0.54)),
@@ -65,7 +66,6 @@ def job(JOB):
     app = adsk.core.Application.get()
     doc = app.documents.add(adsk.core.DocumentTypes.FusionDesignDocumentType)
     des = adsk.fusion.Design.cast(doc.products.itemByProductType('DesignProductType'))
-    des.designType = adsk.fusion.DesignTypes.DirectDesignType
     tbm = adsk.fusion.TemporaryBRepManager.get()
     block = tbm.createBox(adsk.core.OrientedBoundingBox3D.create(adsk.core.Point3D.create(10.0, 3.0, 1.0), adsk.core.Vector3D.create(1, 0, 0),
                                                                   adsk.core.Vector3D.create(0, 1, 0), 20.0, 6.0, 2.0))
@@ -86,11 +86,22 @@ def job(JOB):
     inserts.append(('insert_in_solid', _insert(tbm, g, 'golden', [117.5, 45.0, 12.0], [0, 0, 1])))
     cases['insert_in_solid'] = [117.5, 45.0, 12.0]
     root = des.rootComponent
+
+    def add(comp, named):
+        bf = comp.features.baseFeatures.add(); bf.startEdit()
+        try:
+            for name, b in named:
+                comp.bRepBodies.add(b, bf).name = name      # named inside the edit: the object goes stale after finishEdit
+        finally:
+            bf.finishEdit()
+    # everything sits one level down, in an occurrence moved away from the origin: a tool that reads a nested part in
+    # its parent's frame instead of the assembly's gets every position wrong here
+    m = adsk.core.Matrix3D.create(); m.translation = adsk.core.Vector3D.create(OFFSET[0] / 10, OFFSET[1] / 10, OFFSET[2] / 10)
+    asm = root.occurrences.addNewComponent(m); asm.component.name = 'Assembly'
+    root = asm.component
     occ = root.occurrences.addNewComponent(adsk.core.Matrix3D.create()); occ.component.name = 'Block'
-    pb = occ.component.bRepBodies.add(block); pb.name = 'Block'
+    add(occ.component, [('Block', block)])
     hw = root.occurrences.addNewComponent(adsk.core.Matrix3D.create()); hw.component.name = 'HW (ref)'
-    for name, b in inserts:
-        nb = hw.component.bRepBodies.add(b)
-        nb.name = g['name'] if name not in ('old_straight', 'old_insert') else 'insert M3x4x5 (%s)' % name
-    return {'doc': doc.name, 'cases': cases}
+    add(hw.component, [(g['name'] if name not in ('old_straight', 'old_insert') else 'insert M3x4x5 (%s)' % name, b) for name, b in inserts])
+    return {'doc': doc.name, 'cases': {k: [v[i] + OFFSET[i] for i in range(3)] for k, v in cases.items()}}
 

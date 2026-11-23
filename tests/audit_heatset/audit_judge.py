@@ -21,7 +21,7 @@ def runs(prof):
     """[(D, start, end, open)] from depth 0 on; D None = solid; D 'out' = no plastic in any direction."""
     out = []
     for s, ds, _ in prof:
-        if s < 0: continue
+        if s < 0.05: continue                           # the mouth plane itself (and the 0.03 next to it) is no depth of the pocket
         if ds == 'solid': D, op = 'solid', False
         else:
             got = [x for x in ds if x is not None]

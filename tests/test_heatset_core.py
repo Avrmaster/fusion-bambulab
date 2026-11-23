@@ -40,10 +40,11 @@ def golden_insert(floor, x=10.0, y=5.0, pilot_down=True, **over):
     return {'name': g['name'], 'path': 'HW:1/' + g['name'], 'host': 'demo', 'cylinders': c}
 
 
-def run(cyls, inserts, open_lo=False, open_hi=True):
+def run(cyls, inserts, open_lo=False, open_hi=True, beyond_lo=None):
     groups = H.group_holes(cyls, TOL)
     for g in groups:
         g['open_lo'], g['open_hi'] = open_lo, open_hi
+        if beyond_lo: g['beyond_lo'] = beyond_lo
     return H.check([{'name': 'demo', 'groups': groups}], inserts, RULES)
 
 
@@ -95,6 +96,10 @@ class Pocket(unittest.TestCase):
 
     def test_short_but_through_passes(self):
         self.assertEqual(codes(run(pocket(hole=(3.6, 5.0)), [golden_insert(10 - 0.54)], open_lo=True)), [])
+
+    def test_short_through_onto_a_neighbour(self):
+        res = run(pocket(hole=(3.6, 5.0)), [golden_insert(10 - 0.54)], open_lo=True, beyond_lo=['J3 idler 1 slider'])
+        self.assertEqual(codes(res), ['hole_short']); self.assertIn('J3 idler 1 slider', res['findings'][0]['measured'])
 
     def test_deep_screw_hole_after_full_depth_passes(self):
         self.assertEqual(codes(run(pocket(below=(3.2, 10.0)), [golden_insert(10 - 0.54)])), [])

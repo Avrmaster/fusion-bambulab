@@ -195,7 +195,7 @@ def fix_inserts(root, names, component=None, dry=False):
         print('place   %d golden %s insert(s): %s' % (len(items), kind, ', '.join(sorted({i['part'] for i in items}))))
     for kind, it in replace:
         print('replace %s (%s)' % (it['path'], ', '.join(it['why'])))
-    if dry or not (place or replace):
+    if dry or not (place or replace or any(len(p['inserts']) > 1 for p in res['pockets'] if p['part'] in names)):
         print('nothing to do' if not (place or replace) else '(dry run: nothing changed)'); return 0
     src = ''.join(text(os.path.join(HERE, f)) + '\n' for f in ('heatset_core.py', 'heatset_fusion.py', 'golden.py'))
     comp = component or 'Heat-set inserts (golden)'
@@ -209,19 +209,75 @@ def fix_inserts(root, names, component=None, dry=False):
     for kind, items in by_kind.items():
         r = fusion_rpc.run_job(src, {'action': 'replace', 'doc': pcfg.get('doc'), 'kind': merged['kinds'][kind], 'items': items}, write=True, timeout=300, name='golden')
         print('replaced %d' % len(r['replaced']))
+    extra = [s['ins']['path'] for p in res['pockets'] if p['part'] in names for s in p['inserts'][1:]]
+    if extra:
+        r = fusion_rpc.run_job(src, {'action': 'delete', 'doc': pcfg.get('doc'), 'kind': next(iter(merged['kinds'].values())), 'paths': extra},
+                               write=True, timeout=300, name='golden')
+        print('deleted %d extra insert(s) on a pocket that had two' % r['deleted'])
+    print('now run: gate.py check %s' % ' '.join(names))
+    return 0
+
+
+POCKET_CODES = ('relief_missing', 'relief_d', 'relief_depth', 'lead_in_missing', 'lead_in_d', 'lead_in_depth', 'hole_missing', 'hole_d',
+                'hole_short', 'open_wall', 'not_round', 'not_a_pocket')
+
+
+def fix_pockets(root, names, relief_wall=1.2, dry=False):
+    """Every pocket of the parts with a shape finding is put back to the table: its present steps are filled (a plug,
+    kept out of the part's wide bores) and the table's pocket is cut at the same mouth and axis. The relief keeps its
+    present diameter when that is a diameter of the table, else the widest of the table that leaves relief_wall mm of
+    plastic all round. One part per Fusion call."""
+    if not names:
+        print('name the parts to fix (gate.py fix-pockets PART ...)'); return 4
+    try:
+        facts, res, merged, pcfg = read(root, names)
+    except fusion_rpc.FusionError as e:
+        print('the gate could not run: %s' % e); return 4
+    bad = {}
+    for f in res['findings']:
+        if f['code'] in POCKET_CODES:
+            bad.setdefault((f['part'], tuple(f['at'])), set()).add(f['code'])
+    src = ''.join(text(os.path.join(HERE, f)) + '\n' for f in ('heatset_core.py', 'heatset_fusion.py', 'golden.py'))
+    tol = merged['tolerance']
+    for part in names:
+        items, kind = [], None
+        for p in res['pockets']:
+            cs = bad.get((p['part'], tuple(heatset_core._at(p))))
+            if p['part'] != part or not cs:
+                continue
+            kind = p['kind']; pos, plug = 0.0, []
+            for sg in p['profile']:
+                plug.append((sg['d'], pos, pos + sg['len'])); pos += sg['len']
+            first = p['profile'][0] if p['profile'] else None
+            keep = first and not first.get('intrudes') and first['span'] >= tol['full_circle_deg'] and \
+                any(abs(first['d'] - d) <= tol['d'] for d in merged['kinds'][kind]['pocket']['relief']['d']) and 'not_round' not in cs
+            rd = next((d for d in merged['kinds'][kind]['pocket']['relief']['d'] if abs(first['d'] - d) <= tol['d']), None) if keep else None
+            items.append({'mouth': heatset_core._at(p), 'inward': [x * p['sign'] for x in p['a']], 'plug': plug, 'relief_d': rd, 'codes': sorted(cs)})
+        if not items:
+            print('%s: no pocket to fix' % part); continue
+        for it in items:
+            print('%s  at (%s): %s -> %s' % (part, ', '.join('%.2f' % x for x in it['mouth']), ', '.join(it['codes']),
+                                             'relief D%.1f kept' % it['relief_d'] if it['relief_d'] else 'relief chosen by wall'))
+        if dry:
+            continue
+        r = fusion_rpc.run_job(src, {'action': 'pockets', 'doc': pcfg.get('doc'), 'part': {k: v for k, v in pcfg['parts'][part].items() if k in ('component', 'path', 'body')},
+                                     'kind': merged['kinds'][kind], 'items': items, 'relief_wall': relief_wall}, write=True, timeout=300, name='pockets')
+        print('%s: %d pocket(s) recut: %s' % (part, len(r['fixed']), ', '.join('D%.1f relief' % x['relief_d'] for x in r['fixed'])))
     print('now run: gate.py check %s' % ' '.join(names))
     return 0
 
 
 def main():
     a = argparse.ArgumentParser(description='the print gate')
-    a.add_argument('cmd', choices=['check', 'rules', 'fix-inserts']); a.add_argument('parts', nargs='*'); a.add_argument('--project')
+    a.add_argument('cmd', choices=['check', 'rules', 'fix-inserts', 'fix-pockets']); a.add_argument('parts', nargs='*'); a.add_argument('--project')
     a.add_argument('--json', action='store_true'); a.add_argument('--component'); a.add_argument('--dry-run', action='store_true')
     a = a.parse_args()
     root = os.path.abspath(a.project) if a.project else find_project(os.getcwd())
     if a.cmd == 'rules':
         rules, settings, merged, _ = load(root)
         print(json.dumps(merged, indent=1, ensure_ascii=False)); return 0
+    if a.cmd == 'fix-pockets':
+        return fix_pockets(root, a.parts, dry=a.dry_run)
     if a.cmd == 'fix-inserts':
         return fix_inserts(root, a.parts, a.component, a.dry_run)
     return check(root, a.parts, a.json)
