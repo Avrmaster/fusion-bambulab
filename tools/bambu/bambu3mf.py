@@ -22,22 +22,11 @@ def load(proj):
 
 def save(proj, files, order, compress=zipfile.ZIP_DEFLATED):
     """order: zip infos or names, written in that order.
-    In a gated project (a gate/project.json above proj) the gate's guard sees the meshes first: in enforce mode it raises
-    gate_guard.GuardRefusal for a new mesh without a valid stamp and nothing is written. The guard also compares the fit
-    settings (hole compensation, layer height, ...: global values and per-object overrides) of `files` with the file on
-    disk: a change this process did not name with note_setting() is refused in enforce mode and is one loud line in
-    observe mode. set_project(), set_settings(), set_filament() and build() name what they are asked to set.
-    A note lives for ONE guarded save: whatever the guard says, the notes are gone afterwards, so a setting named for
-    one write never excuses a change in a later one. A note made for a project file (note_setting(..., project=))
-    counts only at a save of that file.
-    After the write the meshes go to the print ledger (when a bambulab/ledger/ folder is above proj), with the gate's
-    mode and the objects the guard let through unchecked. With neither above proj nothing of the ledger runs; the guard
-    still runs when _gate_root() finds a gated project for a file outside it (a scratch copy of a gated project's parts).
-    The guard may mark plates: in enforce mode the name of every plate that holds a mesh without a stamp gets the prefix
-    "[unchecked] " in what is written (gate_guard: "mark")."""
+    The print gate does not see the save (it was reset on 2026-11-23 and checks Fusion, not the .3mf). After the write
+    the meshes go to the print ledger when a bambulab/ledger/ folder is above proj."""
     try: state = _before_save(proj, files)
     finally:
-        if _gate_root(proj)[0]: del _SETTING_NOTES[:]      # asked for this save, not for the next one
+        del _SETTING_NOTES[:]      # asked for this save, not for the next one
     fd, tmp = tempfile.mkstemp(suffix='.tmp', dir=os.path.dirname(os.path.abspath(proj))); os.close(fd)   # same folder: the rename is atomic
     with zipfile.ZipFile(tmp, 'w', compress) as zo:
         for i in order: zo.writestr(i, files[i if isinstance(i, str) else i.filename])
@@ -49,15 +38,14 @@ def save(proj, files, order, compress=zipfile.ZIP_DEFLATED):
             except Exception: pass
         record_writes(proj, state['meshes'], state['stamps'], _caller(), mode=state.get('mode'), unchecked=state.get('unchecked'))
 
-# ---- the gate and the print ledger: nothing below runs unless gate/project.json or bambulab/ledger/ lies above the .3mf ----
+# ---- the print ledger: nothing below runs unless bambulab/ledger/ lies above the .3mf ----
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 _NOTES = {}        # object name -> the STLs this process read for it, newest last (note_stl)
 _SETTING_NOTES = []        # the slicer settings this process means to change (note_setting)
 
 class GuardRefusal(Exception):
-    """Raised by save() in a gated project in enforce mode when the gate's guard cannot be loaded at all: what was not
-    checked has not passed. (A refusal of the guard itself is gate_guard.GuardRefusal.)"""
+    """Kept so that scripts that catch it still import; nothing raises it since the gate reset (2026-11-23)."""
 
 def note_setting(key, value=None, scope='global', tool=None, project=None):
     """Tell the gate's guard that this process MEANS to change a slicer setting, so that the next save() does not take
@@ -76,13 +64,6 @@ def note_setting(key, value=None, scope='global', tool=None, project=None):
         del _SETTING_NOTES[:-4000]
     except Exception: pass
 
-def _enforce_by_text(gate):
-    """Does gate/project.json say "mode": "enforce"? Read from its text: this runs when the gate tools cannot be loaded."""
-    try:
-        with open(os.path.join(gate, 'gate', 'project.json'), encoding='utf-8', errors='replace') as f:
-            return re.search(r'"mode"\s*:\s*"enforce"', f.read()) is not None
-    except Exception: return False
-
 def note_stl(name, stl, orient=None, model_stl=None, tool=None):
     """Remember which STL the mesh of an object is made from, so that the gate's guard can find its stamp and the ledger
     its model: the path, the orientation the library applied to it (False = as it lies in the file) and, when the STL is
@@ -94,81 +75,6 @@ def note_stl(name, stl, orient=None, model_stl=None, tool=None):
         notes.append({'stl': os.path.abspath(stl), 'orient': orient, 'model_stl': os.path.abspath(model_stl) if model_stl else None, 'tool': tool})
         del notes[:-8]
     except Exception: pass
-
-def _gated_above(path):
-    """The nearest folder at or above `path` with gate/project.json, or None."""
-    try:
-        d = os.path.abspath(path)
-        if not os.path.isdir(d): d = os.path.dirname(d)
-        while True:
-            if os.path.isfile(os.path.join(d, 'gate', 'project.json')): return d
-            up = os.path.dirname(d)
-            if up == d: return None
-            d = up
-    except Exception: return None
-
-def _gate_root(proj):
-    """(gated root, how it was found) for a save of proj: the nearest folder above proj with gate/project.json ("tree");
-    for a file outside every gated tree (a scratch folder, /tmp, a download folder) the gated project of the source STL
-    of a mesh this process placed ("stl", note_stl), else of the working folder ("cwd"), else of CLAUDE_PROJECT_DIR
-    ("env"), else of the gated root on the hooks' list whose STL folders hold a file with the bytes of a source STL of
-    this process (a copy of a project's STL in a scratch folder: "content", _root_by_content). (None, None) when none of
-    them is gated: the file is no gated project's business."""
-    g = _roots(proj)[0]
-    if g: return g, 'tree'
-    for notes in list(_NOTES.values()):
-        for n in notes:
-            for p in (n.get('model_stl'), n.get('stl')):
-                g = _gated_above(p) if p else None
-                if g: return g, 'stl'
-    try: g = _gated_above(os.getcwd())
-    except Exception: g = None
-    if g: return g, 'cwd'
-    env = os.environ.get('CLAUDE_PROJECT_DIR')
-    g = _gated_above(env) if env else None
-    if g: return g, 'env'
-    g = _root_by_content()
-    return (g, 'content') if g else (None, None)
-
-def _index_path():
-    """The list of gated roots the hooks of the gate keep (gate_watch.index_path), or None."""
-    if os.environ.get('FUSION_BAMBULAB_GATE_INDEX'): return os.environ['FUSION_BAMBULAB_GATE_INDEX']
-    home = os.environ.get('HOME')
-    return os.path.join(home, '.claude', 'plugins', 'data', 'fusion-bambulab-gate', 'roots.json') if home else None
-
-def _root_by_content():
-    """The gated root (from the hooks' list) one of whose STL folders holds a file with the same bytes as a source STL
-    this process placed: same size first, then sha256. None when there is no list or no such file. Never raises."""
-    import hashlib
-    try:
-        p = _index_path()
-        if not p or not os.path.isfile(p): return None
-        with open(p, encoding='utf-8') as f: roots = [r for r in (json.load(f).get('roots') or []) if isinstance(r, str)]
-        stls = {os.path.abspath(x) for notes in _NOTES.values() for n in notes for x in (n.get('stl'), n.get('model_stl')) if x}
-        mine = {}
-        for x in stls:
-            try: mine.setdefault(os.path.getsize(x), []).append(x)
-            except OSError: pass
-        if not mine: return None
-        def sha(x):
-            with open(x, 'rb') as f: return hashlib.sha256(f.read()).hexdigest()
-        for root in roots:
-            lay = os.path.join(root, 'gate', 'layout.json')
-            if not os.path.isfile(lay): continue
-            with open(lay, encoding='utf-8') as f: layout = json.load(f)
-            dirs = {e.get('stl_dir') for k in ('documents', 'projects') for e in layout.get(k) or [] if isinstance(e, dict) and e.get('stl_dir')}
-            for d in sorted(dirs):
-                full = os.path.join(root, d)
-                if not os.path.isdir(full): continue
-                for name in os.listdir(full):
-                    q = os.path.join(full, name)
-                    if not name.lower().endswith('.stl'): continue
-                    try: size = os.path.getsize(q)
-                    except OSError: continue
-                    if size in mine and any(sha(q) == sha(x) for x in mine[size]): return root
-    except Exception:
-        return None
-    return None
 
 def _roots(proj):
     """(folder with gate/project.json, folder with bambulab/ledger/): the nearest ones above proj, or None."""
@@ -239,41 +145,11 @@ def _before_save(proj, files):
     here (the guard's own, or the one of this file when the guard cannot be loaded in enforce mode): any other trouble
     is one printed line and the save goes on."""
     ledger = _roots(proj)[1]
-    gate, via = _gate_root(proj)
-    if not gate and not ledger: return None
-    meshes, result, guard = None, {}, None
+    gate = guard = None      # the print gate is off (reset 2026-11-23): only the ledger sees the meshes
+    if not ledger: return None
+    meshes, result = None, {}
     try: meshes = project_meshes(files)
     except Exception as e: print('gate: the meshes of %s could not be read (%s: %s)' % (os.path.basename(proj), type(e).__name__, e))
-    if gate:
-        guard = None
-        try: guard = _tool('gate_guard', os.path.join(gate, 'gate', 'tools', 'gate_guard.py'), os.path.join(_HERE, '..', 'gate', 'gate_guard.py'))
-        except BaseException as e:                      # the guard cannot be loaded: a broken or half-copied gate/tools
-            if isinstance(e, KeyboardInterrupt): raise
-            why = 'gate/tools/gate_guard.py cannot be loaded (%s: %s)' % (type(e).__name__, e)
-        else: why = 'gate/project.json is there but gate_guard.py is not (gate/tools)'
-        if guard is None:
-            if _enforce_by_text(gate):
-                raise GuardRefusal('gate: %s and gate/project.json says "mode": "enforce": nothing was written. What was not checked has not '
-                                   'passed; repair the gate tools (setup_project.py --update-tools)' % why)
-            print('gate: %s: this save is not checked' % why)
-            return {'meshes': meshes, 'stamps': None}
-        try:
-            here = os.path.realpath(proj)
-            asked = [n for n in _SETTING_NOTES if n.get('project') in (None, here)]
-            try: params = inspect.signature(guard.check).parameters
-            except (TypeError, ValueError): params = {}
-            if 'files' in params:
-                more = {'via': via} if 'via' in params and via != 'tree' else {}
-                result = guard.check(proj, meshes, gate, files=files, asked=asked, **more) or {}
-            else:
-                print('gate: gate/tools/gate_guard.py is older than this bambu3mf.py: the fit settings of this save are NOT compared (setup_project.py --update-tools)')
-                result = guard.check(proj, meshes, gate) or {}
-        except Exception as e:
-            if type(e).__name__ == 'GuardRefusal': raise
-            print('gate guard: %s: %s (the save goes on)' % (type(e).__name__, e))
-        if isinstance(result, dict) and isinstance(result.get('mark'), list):
-            try: mark_plates(files, result['mark'])
-            except Exception as e: print('gate: the plates without a stamp could not be marked (%s: %s)' % (type(e).__name__, e))
     r = result if isinstance(result, dict) else {}
     return {'meshes': meshes, 'stamps': r.get('stamps'), 'mode': r.get('mode'), 'unchecked': r.get('unchecked'), 'guard': guard, 'gate': gate, 'result': r}
 

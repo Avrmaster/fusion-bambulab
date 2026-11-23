@@ -2,6 +2,16 @@
 
 What each version of the plugin changes. Skills update with the plugin; the tools copied into a project do not. Read the section of a version before you refresh a project with `python3 <plugin>/tools/setup_project.py <dir> --update-tools`, and review `git diff` afterwards.
 
+## 0.4.0
+
+The print gate starts again from step 0 [owner, 2026-11-23: the gates had become too many and out of date].
+
+- The gate of 0.3.x is gone from `main`: `tools/gate/` (about 24 thousand lines), the rule registry and tables (`rules/`), `templates/gate/`, the `gate` skill and its 46 test files. All of it is kept on the branch `archive/gate-0.3.x`, together with the 0.3.3 work that was not committed.
+- No hooks: `hooks/hooks.json` is empty. Nothing runs at session start, before or after a tool call, or at the end of a turn.
+- `bambu3mf.save()` no longer asks a guard: it writes what it is given. The print ledger still records each save when `bambulab/ledger/` is above the project. `GuardRefusal` stays importable and is never raised.
+- `setup_project.py` has no `--gate` and vendors no gate. The generated rule blocks of the `print-design` skill are removed; the hand-written advice stays.
+- For a project that had the gate: its `gate/` folder is no longer used by anything in the plugin. Remove it, or keep only what the new gate asks for.
+
 ## 0.3.3
 
 Speed without a weaker check, and visibility out of the gate. Three complaints from a real project: one changed part re-measured all the probes of eight neighbours (about 10 min); a session that hid most parts for a screenshot made every unit stale (about 25 min), and facts measured with neighbours hidden could miss collisions; and a heat-set pocket that only reaches its wall on a local boss passed as a wall. Every speed change below is either exact by construction or proven against a full measurement before it decides anything.

@@ -71,6 +71,6 @@ After a plugin update, in an existing project:
 python3 ${CLAUDE_PLUGIN_ROOT}/tools/setup_project.py <dir> --update-tools
 ```
 
-This overwrites the vendored copies, `cnc/` scripts and the gate included when the project has them, and adds the print ledger tools to `bambulab/tools/` (they do nothing until `bambulab/ledger/` exists). Check `git diff` first if the project has local fixes. The skills describe the tools of the installed plugin: when `fusion/tools/VERSION` is older than the plugin, refresh before trusting a `wall()` or `relief()` result.
+This overwrites the vendored copies, `cnc/` scripts included when the project has them, and adds the print ledger tools to `bambulab/tools/` (they do nothing until `bambulab/ledger/` exists). Check `git diff` first if the project has local fixes. The skills describe the tools of the installed plugin: when `fusion/tools/VERSION` is older than the plugin, refresh before trusting a `wall()` or `relief()` result.
 
 After 0.1.x -> 0.2.0: `wall()` lists every pocket under 4.0 (it listed under 3.8), so a part that passed can get new rows; `CHANGELOG.md` of the plugin has every changed default.

@@ -13,18 +13,3 @@ Use the plugin's skills: `fusion-modeling` before any Fusion script, `fusion-exp
 
 Never write a .3mf while Bambu Studio has it open. `bambulab/tools/` and `fusion/tools/` are vendored from the plugin: fix them there, or note the local change here.
 <!-- fusion-bambulab:end -->
-<!-- fusion-bambulab:gate:start -->
-## Print gate
-
-This project has a print gate in `gate/` (fusion-bambulab plugin). Use the `gate` skill. A part is checked only when its stamp exists: a report or a printed table is not a pass.
-
-- Before changing a part: `python3 gate/tools/gate.py status`, and read the rules with this project's numbers in `gate/RULES.md`.
-- After changing a part: `python3 gate/tools/gate.py run --changed` until it exits 0. Exit 3 means call it again; 1 means open findings or checks that could not decide (`NOT_RUN`: do what the row says, it is never a pass); 2 means questions to answer; 4 means the gate itself could not run.
-- Export only with `python3 gate/tools/gate.py export <part>`. It writes the STL and its stamp together.
-- Before and after a `.3mf` write: `python3 gate/tools/gate.py verify`. After a mesh is swapped into a `.3mf`, or a part is turned on its plate: `python3 gate/tools/gate.py slice <project> --changed` (in the background), then `verify` again. The owner accepts the support a part gets with `gate.py owner baseline` (never a typed number).
-- When the session's turn is held at its end ("parts changed in Fusion and are not checked"), run the command it names until it no longer exits 3, then report every open row.
-- `gate/owner/` and `gate/project.json` belong to the owner. Only the owner waives a finding, loosens a number or switches the mode. Put a proposal in `gate/proposals/` and ask.
-- A coupon print, a stock list or a measured bearing goes into `gate/owner/tables.json` only through `python3 gate/tools/gate.py owner table ... --quote "<his words>"` (`--dry-run` first shows the change).
-- An object of a `.3mf` that no registered document makes (a part of a document the gate does not cover yet) can never get a stamp. Only the owner declares it outside the gate: `python3 gate/tools/gate.py owner outside <project key> "<object>" ... --reason "..." --dry-run`, show him the output, then the same with `--quote "<his words>"` instead of `--dry-run`. It then passes a save only while its mesh is the one declared; a part of a registered document is never declared, it is exported. `status`, `verify` and the session start list what is declared.
-- `gate/tools/` and `gate/rules/` are vendored from the plugin: change them there, then `setup_project.py <dir> --update-tools`.
-<!-- fusion-bambulab:gate:end -->

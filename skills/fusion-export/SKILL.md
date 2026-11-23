@@ -7,8 +7,6 @@ description: Export printed parts from Autodesk Fusion to STL with checks, and f
 
 Everything here is `fusion/tools/fusion_parts.py`, run inside Fusion. If the project lacks it, run the `setup-project` skill.
 
-**In a project with a print gate** (`gate/project.json` exists), export through it: `python3 gate/tools/gate.py export <part>` checks the part and writes the STL and its stamp together. An STL written around the gate has no stamp and counts as unchecked, whatever this page's checks printed. Use the `gate` skill; what follows is for a project without a gate.
-
 ## List the parts
 
 `fusion/parts.json` maps each STL name to a body. Keep the names plain ASCII.

@@ -32,7 +32,7 @@ A project is a zip. These facts were found by breaking it.
 - **Prime tower on a two-filament plate:** "gcode unprintable error_code 4" with fixed placement means the tower is off the bed. Set `wipe_tower_x` and `wipe_tower_y`.
 - **Height:** objects slice at the height they sit, so a mesh must start at z = 0.
 - **Global-only keys** set on an object are ignored without a warning.
-- **A setting lives in two places:** its global value in `project_settings.config` (JSON; a list holds one value per nozzle or filament), and an override per object or per part as `<metadata key="…" value="…"/>` under `<object>` or `<part>` in `model_settings.config`. Copying a template's `project_settings.config` over a project replaces every global value at once and says nothing: one project lost its X-Y hole compensation that way, and every hole printed about 0.25 mm smaller. In a gated project `bambu3mf.save()` compares the fit settings of both places with the file on disk.
+- **A setting lives in two places:** its global value in `project_settings.config` (JSON; a list holds one value per nozzle or filament), and an override per object or per part as `<metadata key="…" value="…"/>` under `<object>` or `<part>` in `model_settings.config`. Copying a template's `project_settings.config` over a project replaces every global value at once and says nothing: one project lost its X-Y hole compensation that way, and every hole printed about 0.25 mm smaller.
 - **CLI-written projects:** a project exported by the CLI from unflattened profiles falls back to defaults (500 mm/s² acceleration, filament density 0, Cool Plate, a 200 mm bed). Starting from a GUI-saved template avoids this.
 - **`T65535` in a P2S log** is normal. Look for the real failure elsewhere.
 

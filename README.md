@@ -82,7 +82,7 @@ The plugin connects Claude Code to Fusion's built-in MCP server, so every sessio
 | `fusion-export` | Checked STL export, stamped with the Fusion version, plus stale-part and thin-feature checks |
 | `bambu-project` | Builds and updates `.3mf` projects from code, keeping what you changed by hand |
 | `print-design` | Orientation, tolerances, inserts, test prints, and what to do with a flawed print |
-| `gate` | The print gate: registered rules, one check command, stamps tied to the geometry, a guard in the `.3mf` writer |
+| `gate` | The print gate: deterministic checks of Fusion parts (today: heat-set pockets) |
 | `print-ledger` | What was written into each `.3mf` and what is already printed, before a printed part's interface moves; the owner's words are committed word for word, and the optional reader of the slicer's job cache is off until the owner switches it on |
 | `fusion-cam` | CNC from Fusion Manufacture: stock that matches the part, helical holes, facing, GRBL-safe posting, `cam_refresh` and `nc_check` |
 | `cnc-station` | A laptop with gSender next to the machine, fed from the Mac: job pages with steps, sync, read-only GRBL queries |
@@ -107,7 +107,7 @@ my-project/
 ├── DESIGN_RULES.md      fits and decisions, tagged measured or not
 ├── fusion/parts.json    which Fusion bodies are printed parts
 ├── stl/                 checked exports
-├── gate/                optional: the print gate (rules, stamps, the owner's numbers)
+├── gate/                optional: the project's gate settings and run results
 └── bambulab/
     ├── build_3mf.py     plates, orientation and settings, as code
     ├── template.3mf     your printer's presets
@@ -118,30 +118,10 @@ Tools are copied into each project, so it keeps building without the plugin and 
 
 ## The print gate
 
-A design rule that lives only in prose gets forgotten, and a print pays for it: a thin wall round an insert, a bearing held by nothing, a hole closed by a later part. The gate keeps the rules in a registry (`rules/registry/`), each with the incident behind it, a number a project can set, and where possible a check. One command finds the parts, runs the checks and sums the verdict:
-
-```bash
-python3 <plugin>/tools/setup_project.py my-project --gate   # add the gate to a project
-python3 gate/tools/gate.py run --changed                    # check what changed in Fusion
-python3 gate/tools/gate.py export demo/bracket              # checked STL plus its stamp
-python3 gate/tools/gate.py verify                           # every mesh of the .3mf has a valid stamp
-```
-
-A part counts as checked only when its stamp exists, and the stamp dies when the geometry changes. A project starts in `observe` mode, where the `.3mf` writer only reports unstamped meshes; `enforce` refuses them. The writer also compares the slicer settings every fit depends on (hole compensation, layer height and the like) with the file on disk at each save, and `verify` holds them against what the project declares: a change no tool was asked to make is refused in `enforce` mode and is one loud line in `observe` mode. Waivers and looser numbers are the owner's: the project's permission rules put a prompt in front of them. Without `gate/project.json` the guard, the stamps and the checks do not run. The `gate` skill has the workflow.
-
-The plugin ships hooks (`hooks/hooks.json`). Each one is a direct `python3` command on `tools/gate/gate_hook.py` of the plugin copy, reads only local files, calls neither Fusion nor the network and never runs code from the project. In a folder without `gate/project.json` (and for paths outside every gated project) they print nothing and stop nothing.
-
-| Event | When | What it does | What it writes |
-| --- | --- | --- | --- |
-| SessionStart | a session starts | prints the gate digest of the gated project | the git-ignored cache of STL hashes (`gate/run/stl_hashes.json`) |
-| SubagentStart | a subagent starts | gives it the digest and the command to run after a change | nothing |
-| PreToolUse | before Bash, Write, Edit, MultiEdit, NotebookEdit and the Fusion MCP write tools | denies a write of the gate's own state (owner files, stamps, the vendored gate, the print ledger, the hook settings and plugin files), an owner command whose `--quote` is not the owner's own words, and in `enforce` mode an STL or .3mf written past the gate (a warning in `observe` mode); marks a call that can change the model in Fusion | `gate/run/dirty.jsonl`, `hook_state.json`, `owner_tickets.json`; the list of gated roots it has seen in `~/.claude/plugins/data/fusion-bambulab-gate/roots.json` |
-| PostToolUse, PostToolUseFailure | after Bash and the Fusion MCP write tools | the mark when the pre-tool hook left none, and the line that says what to run | `gate/run/dirty.jsonl` |
-| Stop, SubagentStop | a turn ends | holds the end of the turn (at most three times in a row) while a change made in Fusion has no `gate.py run --changed` after it | `gate/run/hook_state.json` |
-
-Measured on a Mac: about 35 ms per hook call with Python 3.14 and about 80 ms with the system Python 3.9, so a Bash call costs two of them (pre and post). The hooks fail open on their own errors, except a PreToolUse call that touches the gate's files, which is denied with "call it again". Turn them off for one project by asking its owner to set `"hooks": {"stop": false}` or `"hooks": {"pre_tool": "warn"}` in `gate/project.json`; for every project by disabling the plugin, or with Claude Code's `disableAllHooks` setting (which also drops the SessionStart digest). They need `python3` on the PATH for every event: where it is missing (the Windows Store alias, the macOS stub without the command line tools) each tool call shows a hook error. On Windows the Bash write detection does not parse Windows paths.
-
-A blocking verdict needs a measurement. What the gate could not measure (a mesh body in a path, a screw it did not recognise, facts of an older check) is listed as `NOT_RUN` with the one thing to do about it, never as a failure and never as a pass. Hardware is found by name and confirmed by shape, so a screw drawn as a head body and a shank body, or a bearing inside a bought assembly, is still a screw and a bearing; the name patterns are parameters of the project. Equal findings on a patterned feature are one line in the report. For a model that already exists, `gate.py run --audit` records what is there as inherited findings for the owner to decide, and asks nothing about parts that did not change. After the owner has adopted that list, a later audit only proposes: a new part is never inherited by itself. A question the facts of a part prove pointless is answered by the gate; a name alone never proves that, and an answer that the facts contradict is refused and asked again.
+The gate is being rebuilt from step 0 (2026-11-23): rules are defined in this plugin only, a project keeps only its own
+settings and the results of runs on its parts, and every check is deterministic and fast. The model only decides how to
+fix a finding, never how to find it. The first and only check today is heat-set insert pockets: see the `gate` skill.
+The gate of 0.3.x (24 thousand lines, 214 rules, hooks on every tool call) is kept on the branch `archive/gate-0.3.x`.
 
 ## Good to know
 
