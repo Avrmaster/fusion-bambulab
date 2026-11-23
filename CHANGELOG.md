@@ -2,6 +2,10 @@
 
 What each version of the plugin changes. Skills update with the plugin; the tools copied into a project do not. Read the section of a version before you refresh a project with `python3 <plugin>/tools/setup_project.py <dir> --update-tools`, and review `git diff` afterwards.
 
+## 0.4.4 - 2026-11-24
+
+- New description: "Engineering skills for 3D-printed parts: tested recipes for Autodesk Fusion and Bambu Studio." (plugin.json, marketplace.json, README).
+
 ## 0.4.3
 
 The heat-set gate fixes Robot Arm V2 to zero open findings but four that need a design decision, and every verdict is

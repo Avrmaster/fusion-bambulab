@@ -3,7 +3,7 @@
 </p>
 <h1 align="center">fusion-bambulab</h1>
 <p align="center">
-  <strong>Claude Code designs in Autodesk Fusion and builds your Bambu Studio project.</strong>
+  <strong>Engineering skills for 3D-printed parts: tested recipes for Autodesk Fusion and Bambu Studio.</strong>
 </p>
 <p align="center">
   <a href="https://github.com/Avrmaster/fusion-bambulab/actions/workflows/ci.yml"><img src="https://github.com/Avrmaster/fusion-bambulab/actions/workflows/ci.yml/badge.svg" alt="CI"></a>

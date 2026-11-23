@@ -1,7 +1,7 @@
 {
   "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
   "name": "fusion-bambulab",
-  "description": "Claude Code plugin for designing in Autodesk Fusion and building Bambu Studio projects: safe Fusion scripting, checked STL export, and .3mf builds that keep your manual edits.",
+  "description": "Engineering skills for 3D-printed parts: tested recipes for Autodesk Fusion and Bambu Studio.",
   "owner": {
     "name": "Oleksandr Leskiv"
   },
@@ -9,7 +9,7 @@
     {
       "name": "fusion-bambulab",
       "source": "./",
-      "description": "Claude Code plugin for designing in Autodesk Fusion and building Bambu Studio projects: safe Fusion scripting, checked STL export, and .3mf builds that keep your manual edits.",
+      "description": "Engineering skills for 3D-printed parts: tested recipes for Autodesk Fusion and Bambu Studio.",
       "category": "design"
     }
   ]

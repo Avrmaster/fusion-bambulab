@@ -1,7 +1,7 @@
 {
   "name": "fusion-bambulab",
-  "version": "0.4.3",
-  "description": "Claude Code plugin for designing in Autodesk Fusion and building Bambu Studio projects: safe Fusion scripting, checked STL export, and .3mf builds that keep your manual edits.",
+  "version": "0.4.4",
+  "description": "Engineering skills for 3D-printed parts: tested recipes for Autodesk Fusion and Bambu Studio.",
   "author": {
     "name": "Oleksandr Leskiv",
     "url": "https://github.com/Avrmaster"
