@@ -5,6 +5,21 @@ description: Export printed parts from Autodesk Fusion to STL with checks, and f
 
 # Fusion to STL
 
+## Fast path: everything as it is in Fusion
+
+```bash
+python3 ~/.claude/plugins/marketplaces/fusion-bambulab/tools/export.py [PART ...]     # STLs + swap into the .3mf projects
+python3 ~/.claude/plugins/marketplaces/fusion-bambulab/tools/export.py --stl-only     # STLs only
+python3 ~/.claude/plugins/marketplaces/fusion-bambulab/tools/export.py --3mf-only     # swap the STLs on disk into the .3mf
+python3 ~/.claude/plugins/marketplaces/fusion-bambulab/tools/export.py --list
+```
+
+No checks: what Fusion has goes to Bambu. One Fusion call meshes all parts (seconds for a whole project), the .3mf
+keeps positions, plates, settings and materials. `fusion/parts.json` lists each part with `"3mf": [{"file", "object",
+"face"}]`, the bed face as in `bambu3mf.ORIENT`. Run the `gate` before you call a part ready to print.
+
+The older tools below (`fusion_parts.py`: thin features, stale parts, checked export) still work.
+
 Everything here is `fusion/tools/fusion_parts.py`, run inside Fusion. If the project lacks it, run the `setup-project` skill.
 
 ## List the parts

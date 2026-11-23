@@ -12,6 +12,29 @@ The print gate starts again from step 0 [owner, 2026-11-23: the gates had become
 - `setup_project.py` has no `--gate` and vendors no gate. The generated rule blocks of the `print-design` skill are removed; the hand-written advice stays.
 - For a project that had the gate: its `gate/` folder is no longer used by anything in the plugin. Remove it, or keep only what the new gate asks for.
 
+### Fast export with no checks
+
+- `tools/export.py`: Fusion -> STL -> the .3mf projects, as Fusion has it. One Fusion call per document meshes every
+  part (MeshCalculator High on a temporary copy), one load and one save per .3mf swaps the changed meshes (position,
+  plate, settings and materials kept). The parts, their objects and bed faces are in the project's `fusion/parts.json`
+  (`{"doc", "stl_dir", "parts": {name: {"component" | "path", "body", "3mf": [{"file", "object", "face"}]}}}`). An STL is
+  rewritten only when its triangles changed. With Bambu Studio running the .3mf step runs under `with_bambu_closed.py`.
+  Measured on Robot Arm V2: 39 parts in 2.5 s, both .3mf projects in 2.2 s.
+- `tools/fusion/fusion_rpc.py`: runs a job in Fusion from the host (MCP over HTTP), in a private namespace, result
+  through a file, with an NSProcessInfo activity so an idle Fusion is not in App Nap.
+
+### The heat-set gate, the first gate of the new start
+
+- `rules/heatset.json` (the only place of its numbers): the M3x4x5 pocket measured on the cycloidal drive coupon
+  (relief D7.5/6.5/5.9 x 0.54, lead-in D4.4 x 1.5, hole D3.6 to 6.5 below the relief floor) and the golden insert
+  (pilot D4.2 x 1.0, knurl D5.0 to 4.0, bore D3.0).
+- `tools/gate/gate.py check`: reads every concave cylinder of the printed bodies and every insert body, judges in
+  Python (`heatset_core.py`), writes `gate/results/heatset/<part>.json` in the project. A project keeps only
+  `gate/settings.json` (overrides) and those results; nothing is vendored. Robot Arm V2: 39 parts, 200 inserts, 3 s.
+- `gate.py fix-inserts PART`: places or replaces golden inserts on the relief floor of each pocket.
+- Tests: `tests/test_heatset_core.py` (29 cases on hand-made facts) and `tests/test_heatset_fusion.py` (a Fusion
+  document with 16 known cases, built and closed by the test; skipped without Fusion).
+
 ## 0.3.3
 
 Speed without a weaker check, and visibility out of the gate. Three complaints from a real project: one changed part re-measured all the probes of eight neighbours (about 10 min); a session that hid most parts for a screenshot made every unit stale (about 25 min), and facts measured with neighbours hidden could miss collisions; and a heat-set pocket that only reaches its wall on a local boss passed as a wall. Every speed change below is either exact by construction or proven against a full measurement before it decides anything.

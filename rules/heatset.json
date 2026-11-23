@@ -1,0 +1,36 @@
+{
+ "gate": "heatset",
+ "about": "Heat-set insert pockets. The pocket is read from the B-rep of the printed body, from its mouth inwards: melt relief, lead-in, hole. Every insert in the model is the golden model of its kind, sits on the axis of a pocket of that kind and ends flush with the relief floor. All lengths in mm. A project changes a number only in its gate/settings.json (\"heatset\": {...}, merged over this file).",
+ "tolerance": {
+  "d": 0.05,
+  "depth": 0.06,
+  "axis_mm": 0.05,
+  "flush_mm": 0.06,
+  "full_circle_deg": 300
+ },
+ "insert_name": "(?i)\\binsert\\b",
+ "kinds": {
+  "M3x4x5": {
+   "about": "brass M3 insert, 4.0 long, spiral knurl D5.0, smooth pilot band D4.2 (Printec TBSK style)",
+   "golden": {
+    "name": "Heat-set insert M3x4x5 (golden)",
+    "length": 4.0,
+    "knurl_d": 5.0,
+    "pilot_d": 4.2,
+    "pilot_len": 1.0,
+    "bore_d": 3.0,
+    "source": "decided 2026-11-23 from the table numbers (length 4.0, knurl D5.0, pilot band D4.2); the pilot length and the bore are drawn, not measured. The pilot band is the end that goes in first, so it points to the bottom of the pocket"
+   },
+   "pocket": {
+    "relief": {"d": [7.5, 6.5, 5.9], "depth": 0.54},
+    "lead_in": {"d": 4.4, "depth": 1.5},
+    "hole": {"d": 3.6, "min_depth_below_relief": 6.5}
+   },
+   "source": "measured: coupon in PETG-CF on a Bambu P2S, X-Y hole compensation 0.125, cycloidal drive project, 2026-11-12 (D4.4 x 1.5 lead-in + D3.6 grips and goes in straight; straight D4.4 pulled out by hand; D3.4 too tight). Relief D7.5 x 0.54 (3 layers of 0.18) is an owner decision; D6.5 and D5.9 are the smaller reliefs where D7.5 does not fit"
+  }
+ },
+ "pocket_signature": {
+  "about": "A hole is read as an insert pocket when, from an open end inwards (past a wider recess), it has a lead-in diameter of a kind within 2 mm of the mouth, or a relief diameter of a kind followed by any segment. A hole with such a shape and no insert in it is a finding.",
+  "lead_in_within_mm": 2.0
+ }
+}
