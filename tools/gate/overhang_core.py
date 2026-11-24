@@ -231,7 +231,8 @@ def judge_part(part, rules, pockets=()):
                 continue
             if f['h'][1] - bed_h <= bed:                      # on the bed, or within the first layer
                 continue
-            if s <= flat and f.get('annulus') and f['h'][1] - bed_h > bed:
+            if s <= flat and f.get('annulus') and f['h'][1] - bed_h > bed and f['annulus']['d_in'] <= val(rules, 'screw_hole_max_d_mm') + 1e-6 \
+                    and f['annulus']['d_out'] <= val(rules, 'screw_seat_max_d_mm') + 1e-6:
                 # a flat ring round a hole: the seat of a screw head (or washer); support there is allowed, the head closes it
                 a = f['annulus']
                 out.append(_region(part, 'screw_seat', [p for lp in f['loops'] for p in lp['pts']], f['area'], s, f['i'],

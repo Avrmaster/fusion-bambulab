@@ -228,6 +228,9 @@ class ScrewSeat(unittest.TestCase):
         # owner 2026-11-24: support under the seat of a screw head is ok, the head closes it
         self.assertEqual(codes(part([self.ring(4.5)])), ['screw_seat'])
         self.assertIn('screw_seat', RULES['allowed'])
+        res = oc.check([part([self.ring(4.5)])], RULES)            # the whole path: finding text, allowed list
+        self.assertEqual([x['code'] for x in res['allowed']], ['screw_seat'])
+        self.assertEqual(res['findings'], [])
 
     def test_the_same_ring_without_a_hole_ring_is_a_bridge(self):
         f = self.ring(4.5); f.pop('annulus')

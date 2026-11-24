@@ -2,6 +2,12 @@
 
 What each version of the plugin changes. Skills update with the plugin; the tools copied into a project do not. Read the section of a version before you refresh a project with `python3 <plugin>/tools/setup_project.py <dir> --update-tools`, and review `git diff` afterwards.
 
+## 0.8.6 - 2026-11-24
+
+- `screw_seat` read right: a flat downward face round ONE round hole of at most `screw_hole_max_d_mm` (7), lying within
+  `screw_seat_max_d_mm` (16) of it; its outer edge may be any shape (a recess cut by a neighbouring cone). 0.8.5 failed
+  on such a seat (no text for the code) and took a D52 bearing step for a seat.
+
 ## 0.8.5 - 2026-11-24
 
 - **A screw head seat is an allowed support place** (`screw_seat`), like a heat-set pocket ceiling: a flat downward

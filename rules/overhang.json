@@ -48,7 +48,8 @@
   "heatset_ceiling": "ALLOWED: the ceiling of a heat-set pocket that opens sideways or downwards: the insert needs the round pocket, a support or a sacrificial layer is fine (owner 2026-11-24)",
   "exception_without_reason": "a project exception in gate/settings.json covers this overhang but gives no reason: write why it is really needed, or redesign it",
   "exception_unused": "a project exception in gate/settings.json matches no finding: remove it",
-  "slicer_bridge": "a flat ceiling the geometry passes as a bridge, but Bambu Studio puts support under it whatever the bridge settings (bridge_no_support, max_bridge_length: it does not take it for a bridge, e.g. a ceiling over tooth gaps open on one side): give it a 45 degree roof, close its open side with a wall, or lay the part on another side"
+  "slicer_bridge": "a flat ceiling the geometry passes as a bridge, but Bambu Studio puts support under it whatever the bridge settings (bridge_no_support, max_bridge_length: it does not take it for a bridge, e.g. a ceiling over tooth gaps open on one side): give it a 45 degree roof, close its open side with a wall, or lay the part on another side",
+  "screw_seat": "a flat ring round a screw hole: the seat of the head; support there is allowed (the head closes it)"
  },
  "allowed": [
   "heatset_ceiling",
@@ -62,5 +63,13 @@
   "bridge_contact_mm2": 2.0
  },
  "exceptions": [],
- "allowed_source": "owner 2026-11-24: \"отвір під heat-set/гвинт - там треба пласка поверхня, але це насправді не критично, бо там все одно воно буде закриватись самим heatset/гвинтом\"; again 2026-11-24: \"підтримки під стелі отворів під гвинтів - ок\". A screw seat = a flat downward ring whose two edges are concentric circles."
+ "allowed_source": "owner 2026-11-24: \"отвір під heat-set/гвинт - там треба пласка поверхня, але це насправді не критично, бо там все одно воно буде закриватись самим heatset/гвинтом\"; again 2026-11-24: \"підтримки під стелі отворів під гвинтів - ок\". A screw seat = a flat downward ring whose two edges are concentric circles.",
+ "screw_hole_max_d_mm": {
+  "value": 7.0,
+  "source": "gate author's choice 2026-11-24: a screw seat is a ceiling round a hole no wider than D7 (M3 clearance 3.4, heat-set relief 5.9..7.5, M3 head channel 6.5)"
+ },
+ "screw_seat_max_d_mm": {
+  "value": 16.0,
+  "source": "gate author's choice 2026-11-24: the whole ceiling lies within D16 of the hole (M3 head 5.5, washer 7, the D13.2 recesses of the J3 elbow tongue); a wider one, a bearing step, is no seat"
+ }
 }
