@@ -49,7 +49,8 @@
   "exception_without_reason": "a project exception in gate/settings.json covers this overhang but gives no reason: write why it is really needed, or redesign it",
   "exception_unused": "a project exception in gate/settings.json matches no finding: remove it",
   "slicer_bridge": "a flat ceiling the geometry passes as a bridge, but Bambu Studio puts support under it whatever the bridge settings (bridge_no_support, max_bridge_length: it does not take it for a bridge, e.g. a ceiling over tooth gaps open on one side): give it a 45 degree roof, close its open side with a wall, or lay the part on another side",
-  "screw_seat": "a flat ring round a screw hole: the seat of the head; support there is allowed (the head closes it)"
+  "screw_seat": "a flat ring round a screw hole: the seat of the head; support there is allowed (the head closes it)",
+  "slicer_support": "Bambu Studio supports a place the gate has no region for (a corner where a 45 deg face meets a wall at an angle, the top of an opening in an outer wall, a crumb support_remove_small_overhang = 0 keeps): one finding per tree, at its highest tip; reshape it, or a named exception with the reason"
  },
  "allowed": [
   "heatset_ceiling",

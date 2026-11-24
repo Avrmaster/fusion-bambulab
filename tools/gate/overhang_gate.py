@@ -145,8 +145,13 @@ def slicer_findings(rec, merged):
     """The findings of the last overhang-slice of this part: a bridge the geometry allows but Bambu Studio supports
     (slicer_bridge), as finding lines with a redesign."""
     out = []
-    for r in (rec.get('slicer') or {}).get('bridge_findings') or []:
-        out.append(overhang_core.finding(dict(r, part=rec.get('part', r.get('part'))), merged))
+    exc = [e for e in (merged.get('exceptions') or []) if e.get('part') == rec.get('part') and (e.get('reason') or '').strip()]
+    for r in ((rec.get('slicer') or {}).get('bridge_findings') or []) + ((rec.get('slicer') or {}).get('support_findings') or []):
+        f = overhang_core.finding(dict(r, part=rec.get('part', r.get('part'))), merged)
+        if any(e.get('whole_part') is True or (e.get('at') and all(abs(e['at'][i] - f['at'][i]) <= 2.0 for i in range(3)))
+               for e in exc if not e.get('code') or e['code'] == f['code']):
+            continue                                       # a named exception with its reason covers it (listed under slicer)
+        out.append(f)
     return out
 
 

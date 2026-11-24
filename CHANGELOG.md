@@ -2,6 +2,15 @@
 
 What each version of the plugin changes. Skills update with the plugin; the tools copied into a project do not. Read the section of a version before you refresh a project with `python3 <plugin>/tools/setup_project.py <dir> --update-tools`, and review `git diff` afterwards.
 
+## 0.8.8 - 2026-11-24
+
+- **Support the gate has no place for is a finding** (`slicer_support`, from `overhang-slice`): Bambu Studio's support
+  that touches the part where the geometry check sees no overhang (a corner where a 45 deg face meets a wall at an
+  angle, the top of an opening in an outer wall, a crumb that `support_remove_small_overhang = 0` keeps). One finding
+  per tree: the tips of one trunk stand within 3 mm of each other in plan, the highest is the place it holds up (a
+  trunk used to show as a dozen "slicer only" tips). Kept, like `slicer_bridge`, while the body is unchanged; a named
+  overhang exception with a reason covers it (also `whole_part`).
+
 ## 0.8.7 - 2026-11-24
 
 - **A hip of two passing faces is no `shallow_ridge`**: the edge where two downward faces meet that each pass the 45 deg

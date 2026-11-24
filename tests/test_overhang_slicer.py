@@ -152,6 +152,14 @@ class Compare(unittest.TestCase):
         self.assertEqual(r['bridge_findings'], [])
         self.assertEqual(r['slicer_on_allowed']['bridge']['contact_mm2'], 3.0)
 
+    def test_a_tree_the_gate_has_no_place_for_is_one_finding(self):
+        # a trunk: tips at many heights within 1 mm in plan, the highest at 30; and a lone 1-cell crumb elsewhere
+        tips = {(60, 60): 10.0, (61, 60): 10.0, (60, 61): 20.0, (61, 61): 20.0, (61, 62): 30.0, (62, 62): 30.0, (100, 100): 8.0}
+        r = sl.compare([], [], tips, 1.0, 2.0, self.Ident(), 0.3, 30.0, True, 20.0, 500.0, bridge_contact=2.0)
+        self.assertEqual(len(r['support_findings']), 1)
+        f = r['support_findings'][0]
+        self.assertEqual(f['code'], 'slicer_support'); self.assertEqual(f['h'], 30.0); self.assertGreaterEqual(f['contact_mm2'], 6.0)
+
     def test_quiet_part_agrees(self):
         r = sl.compare([], [], {}, 1.0, 2.0, self.Ident(), 0.3, 30.0, True, 20.0, 0.0)
         self.assertTrue(r['agree'])

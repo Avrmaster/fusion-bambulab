@@ -370,7 +370,9 @@ def finding(r, rules):
             'heatset_ceiling': 'heat-set pocket ceiling %.1f mm2' % r['area_mm2'],
             'screw_seat': 'screw head seat (ring round a hole) %.1f mm2' % r['area_mm2'],
             'slicer_bridge': '%.1f mm2 flat ceiling %.1f mm above the bed: the gate takes it for a bridge, Bambu Studio puts %.0f mm2 of '
-                             'support contact under it' % (r['area_mm2'], r['h'], r.get('contact_mm2', 0))}.get(r['code'], r['code'])
+                             'support contact under it' % (r['area_mm2'], r['h'], r.get('contact_mm2', 0)),
+            'slicer_support': 'Bambu Studio grows a support (a tree from the bed or the part) to %.1f mm above the bed, %.0f mm2 of contact, '
+                              'where the gate sees no overhang' % (r['h'], r.get('contact_mm2', 0))}.get(r['code'], r['code'])
     return dict(r, measured=what, expected='no downward face steeper than %g deg from the vertical, bridges up to %g mm' % (
         lim, val(rules, 'bridge_max_mm')), fix=rules['codes'][r['code']], redesign=redesign(r, rules))
 
@@ -393,6 +395,9 @@ def redesign(r, rules):
     if code == 'slicer_bridge':
         return {'kind': 'roof_45', 'text': 'the ceiling at %s (h %.1f, open edge %.1f mm): a %g deg roof up into it, or a wall down under its open '
                 'side so it is held all round, or lay the part on another side' % (_xyz(r['at']), h, r.get('open_mm', 0), lim)}
+    if code == 'slicer_support':
+        return {'kind': 'look', 'text': 'look at the slice at %s (h %.1f): a corner or the top of an opening the slicer holds up; reshape it, '
+                'or a named exception with the reason' % (_xyz(r['at']), h)}
     if code == 'shallow_ridge':
         return {'kind': 'level_ridge', 'text': 'the edge at %s rises %.0f deg: give the two faces the same tilt so the edge runs level, or a %g deg '
                 'chamfer along it' % (_xyz(r['at']), r['slope_deg'], lim)}
