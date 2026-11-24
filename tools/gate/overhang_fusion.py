@@ -138,12 +138,16 @@ def _overhang_facts(body, spec, rules):
                 continue
             rec.update(type='plane', n=[round(x, 6) for x in n], c=_pmm(f.pointOnFace))
             rec['loops'] = _loops(body, f, down, s <= flat)
-            inner = [lp for lp in f.loops if not lp.isOuter]
-            if len(inner) == 1 and inner[0].edges.count == 1 and inner[0].edges.item(0).geometry is not None \
-                    and inner[0].edges.item(0).geometry.objectType == adsk.core.Circle3D.classType():
-                ci = inner[0].edges.item(0).geometry                                       # a flat face round one round hole
-                c = _pmm(ci.center)
-                far = max(math.sqrt(sum((p[k] - c[k]) ** 2 for k in range(3))) for lp in rec['loops'] for p in lp['pts'])
+            holes_ = [e.geometry for e in f.edges if e.geometry is not None and e.geometry.objectType in
+                      (adsk.core.Circle3D.classType(), adsk.core.Arc3D.classType()) and e.geometry.radius * 2 * _CM <= 7.0 + 1e-6]
+            if holes_:                                                          # a flat face next to a small round hole: a seat?
+                best_ = None
+                for ci in holes_:
+                    c = _pmm(ci.center)
+                    far = max(math.sqrt(sum((p[k] - c[k]) ** 2 for k in range(3))) for lp in rec['loops'] for p in lp['pts'])
+                    if best_ is None or far < best_[1]:
+                        best_ = (ci, far, c)
+                ci, far, c = best_
                 rec['annulus'] = {'c': c, 'd_in': round(ci.radius * 2 * _CM, 3), 'd_out': round(2 * far, 3)}
             hs = [-_dot(p, down) for lp in rec['loops'] for p in lp['pts']] or [-_dot(rec['c'], down)]
             rec['h'] = [round(min(hs), 4), round(max(hs), 4)]

@@ -2,6 +2,17 @@
 
 What each version of the plugin changes. Skills update with the plugin; the tools copied into a project do not. Read the section of a version before you refresh a project with `python3 <plugin>/tools/setup_project.py <dir> --update-tools`, and review `git diff` afterwards.
 
+## 0.9.0 - 2026-11-24
+
+- **`overhang-slice` slices the parts as Fusion has them now**: the STLs on disk (`export.py --stl-only` writes them even
+  with Bambu Studio open) are swapped into the copy before slicing, turned to their bed face. The project itself need
+  not be written to check a change.
+- **Per-object slicer settings for the gated parts**: `gate/settings.json` `"overhang": {"slicer_object_settings":
+  {...}}` is applied in the copy to every object of `fusion/parts.json` (what the project should carry for them, e.g.
+  `support_remove_small_overhang` = 1 once the gate keeps crescents and 45 deg breaks out of the geometry).
+- **A screw seat is any flat downward face beside a round hole up to D7, lying within D16 of it** (the sacrificial
+  bridge steps of a counterbore, a ring cut by a cone), not only a ring of two circles.
+
 ## 0.8.11 - 2026-11-24
 
 - **`overhang-slice PART` slices only the plates that hold the named parts** (`bambu-studio --slice <plate>` per plate):

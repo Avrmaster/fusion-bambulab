@@ -101,7 +101,7 @@ def read_3mf(path):
     return out, {k: ps.get(k) for k in keys}
 
 
-def slice_copy(src, out_dir, timeout=3600, plate=0):
+def slice_copy(src, out_dir, timeout=3600, plate=0, object_settings=None, prepare=None):
     """Slice a copy of src into out_dir: plate_<n>.gcode, sliced.3mf (its slice_info names the objects of each label).
     plate: 0 = every plate, n = that plate only (seconds instead of minutes on a big project)."""
     exe = bambu3mf.studio_path()
@@ -119,6 +119,10 @@ def slice_copy(src, out_dir, timeout=3600, plate=0):
                 cfg['enable_prime_tower'] = '0'
                 data = json.dumps(cfg, indent=4).encode('utf-8')
             zo.writestr(info, data)
+    if prepare:
+        prepare(copy)                                         # the meshes as Fusion has them now (the STLs on disk)
+    for name, kvs in (object_settings or {}).items():          # gate/settings.json overhang.slicer_object_settings
+        bambu3mf.set_settings(copy, name, sorted(kvs.items()))
     r = subprocess.run([exe, '--slice', str(plate), '--outputdir', out_dir, '--export-3mf', 'sliced.3mf', copy], cwd=out_dir,
                        capture_output=True, text=True, timeout=timeout)
     res = os.path.join(out_dir, 'result.json')
@@ -126,6 +130,34 @@ def slice_copy(src, out_dir, timeout=3600, plate=0):
     if r.returncode or data.get('return_code', 0):
         raise RuntimeError('slicing %s failed: %s' % (os.path.basename(src), (r.stdout + r.stderr)[-800:]))
     return data
+
+
+def fresh_meshes(root, stl_dir, rows):
+    """prepare() for slice_copy: swap the STLs on disk (exported from Fusion, model frame) into the copy, turned to their
+    bed face, so the slice is of the parts as they are now even when the project itself could not be written (Bambu
+    Studio open with unsaved changes)."""
+    def run_(copy):
+        tmp = tempfile.mkdtemp(prefix='fresh_')
+        try:
+            sources = {}
+            for n, t in rows:
+                p = os.path.join(root, stl_dir, n + '.stl')
+                if not os.path.exists(p):
+                    continue
+                V, F = bambu3mf.read_stl(p)
+                turn = bambu3mf.ORIENT[t.get('face', '-z')]
+                V = [turn(*v) for v in V]
+                import struct
+                with open(os.path.join(tmp, t['object'] + '.stl'), 'wb') as fh:
+                    fh.write(('%s, bed face %s' % (n, t.get('face', '-z'))).encode().ljust(80, b' ')); fh.write(struct.pack('<I', len(F)))
+                    for a, b, c in F:
+                        fh.write(struct.pack('<12fH', 0, 0, 0, *V[a], *V[b], *V[c], 0))
+                sources[t['object']] = p
+            if sources:
+                bambu3mf.update_meshes(copy, tmp, sources=sources)
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+    return run_
 
 
 def plates_of(src, objects):
@@ -395,6 +427,10 @@ def run(root, names, keep=None):
     sc = merged['slicer']; cell, near = sc['cell_mm'], sc['near_mm']
     res_dir = os.path.join(root, 'gate', 'results', 'overhang')
     todo = [n for n in (names or list(pcfg['parts'])) if n not in set(settings.get('skip') or [])]
+    by_file_all = {}
+    for n in pcfg['parts']:
+        for t in pcfg['parts'][n].get('3mf') or []:
+            by_file_all.setdefault(t['file'], []).append((n, t))
     by_file = {}
     for n in todo:
         for t in pcfg['parts'][n].get('3mf') or []:
@@ -409,18 +445,22 @@ def run(root, names, keep=None):
         try:
             done = os.path.join(od, 'result.json')
             only = plates_of(src, {t['object'] for _, t in rows}) if names else []
+            osx = (settings.get('overhang') or {}).get('slicer_object_settings') or {}
+            ob = {t['object']: osx for _, t in by_file_all.get(f, [])} if osx else None
+            prep = fresh_meshes(root, pcfg.get('stl_dir', 'stl'), by_file_all.get(f, []))
             if keep and not only and os.path.exists(done) and os.path.getmtime(done) > os.path.getmtime(src) and \
                     json.load(open(done)).get('return_code', 1) == 0 and os.path.exists(os.path.join(od, 'sliced.3mf')):
                 print('  (the slice of the same project in %s is newer: reused)' % od)
             elif only:
                 print('  plates %s only' % ', '.join(map(str, only)), flush=True)
                 for pl in only:
-                    slice_copy(src, os.path.join(od, 'p%d' % pl), plate=pl)
+                    slice_copy(src, os.path.join(od, 'p%d' % pl), plate=pl, object_settings=ob, prepare=prep)
             else:
-                slice_copy(src, od)
+                slice_copy(src, od, object_settings=ob, prepare=prep)
         except Exception as e:
             print('ERROR %s' % e); summary['projects'][f] = {'error': str(e)}; continue
-        objs3, settings3 = read_3mf(src)
+        cp_ = os.path.join(os.path.join(od, 'p%d' % only[0]) if only else od, 'in.3mf')      # the copy as sliced (fresh meshes)
+        objs3, settings3 = read_3mf(cp_ if os.path.exists(cp_) else src)
         layer = float(settings3.get('layer_height') or 0.2)
         thr = float(settings3.get('support_threshold_angle') or 0) or None
         dirs = [os.path.join(od, 'p%d' % pl) for pl in only] if only else [od]
