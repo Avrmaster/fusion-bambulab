@@ -47,7 +47,8 @@
   "bed_face_conflict": "the part's 3mf entries name different bed faces: one part, one print orientation",
   "heatset_ceiling": "ALLOWED: the ceiling of a heat-set pocket that opens sideways or downwards: the insert needs the round pocket, a support or a sacrificial layer is fine (owner 2026-11-24)",
   "exception_without_reason": "a project exception in gate/settings.json covers this overhang but gives no reason: write why it is really needed, or redesign it",
-  "exception_unused": "a project exception in gate/settings.json matches no finding: remove it"
+  "exception_unused": "a project exception in gate/settings.json matches no finding: remove it",
+  "slicer_bridge": "a flat ceiling the geometry passes as a bridge, but Bambu Studio puts support under it whatever the bridge settings (bridge_no_support, max_bridge_length: it does not take it for a bridge, e.g. a ceiling over tooth gaps open on one side): give it a 45 degree roof, close its open side with a wall, or lay the part on another side"
  },
  "allowed": [
   "heatset_ceiling"
@@ -56,7 +57,8 @@
   "cell_mm": 1.0,
   "near_mm": 2.0,
   "min_support_mm": 20.0,
-  "source": "gate author's choice 2026-11-24: support moves are binned in 1 mm cells; a support cell and a gate region match within 2 mm; a part with less than 20 mm of support line and no gate region agrees (the old support gate's noise floor: 20 mm)"
+  "source": "gate author's choice 2026-11-24: support moves are binned in 1 mm cells; a support cell and a gate region match within 2 mm; a part with less than 20 mm of support line and no gate region agrees (the old support gate's noise floor: 20 mm); a bridge the gate allows with at least bridge_contact_mm2 of support contact on it (each contact cell counted once, for the nearest region, within one cell of its box) is the finding slicer_bridge: gate author's choice 2026-11-24, after a copy of robotarm-v2-04.3mf sliced with bridge_no_support = 1 kept the support under the 216T tooth-gap ceilings unchanged",
+  "bridge_contact_mm2": 2.0
  },
  "exceptions": []
 }

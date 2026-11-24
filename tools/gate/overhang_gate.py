@@ -91,12 +91,16 @@ def check(root, names, as_json=False):
     failed = 0
     for p in facts['parts']:
         fs = by.get(p['name'], [])
-        failed += bool(fs)
         path = os.path.join(out_dir, p['name'] + '.json')
         old = {}
         if os.path.exists(path):
             with open(path, encoding='utf-8') as fh:
                 old = json.load(fh)
+        body = {'faces': p.get('n_faces'), 'volume_mm3': p.get('volume'), 'area_mm2': p.get('area')} if p.get('faces') is not None else None
+        if old.get('slicer') and old.get('body') == body:      # the slicer's findings of the same body stay (overhang-slice)
+            sf = slicer_findings(old, merged)
+            fs = fs + sf; res['findings'].extend(sf)
+        failed += bool(fs)
         rec = dict(stamp, part=p['name'], bed_face=p.get('face'), down=p.get('down'), box=p.get('box'),
                    body={'faces': p.get('n_faces'), 'volume_mm3': p.get('volume'), 'area_mm2': p.get('area')} if p.get('faces') is not None else None,
                    verdict='fail' if fs else 'pass', findings=fs, allowed=alw.get(p['name'], []), excepted=exc.get(p['name'], []),
@@ -135,6 +139,15 @@ def check(root, names, as_json=False):
     if facts['errors']:
         return 4
     return 1 if res['findings'] else 0
+
+
+def slicer_findings(rec, merged):
+    """The findings of the last overhang-slice of this part: a bridge the geometry allows but Bambu Studio supports
+    (slicer_bridge), as finding lines with a redesign."""
+    out = []
+    for r in (rec.get('slicer') or {}).get('bridge_findings') or []:
+        out.append(overhang_core.finding(dict(r, part=rec.get('part', r.get('part'))), merged))
+    return out
 
 
 def slice_cmd(root, names, keep=None):

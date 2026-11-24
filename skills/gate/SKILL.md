@@ -131,6 +131,14 @@ as reasons. The slicer leaves a bridge without support when `bridge_no_support` 
 (`_slicer.json` names a project where they differ, `bridge_note`). Robot Arm V2: both projects `max_bridge_length` = 6,
 `bridge_no_support` = 0 since 2026-11-24; before that the slicer put support under hundreds of bridges the gate allows.
 
+Some ceilings the geometry passes as bridges Bambu supports **whatever the bridge settings** (a copy sliced with
+`bridge_no_support` = 1 kept the same support): flat ceilings over tooth gaps under a pulley flange, the sacrificial
+bridges of some screw counterbores. So a bridge with at least `slicer.bridge_contact_mm2` of support contact on it
+becomes the finding **`slicer_bridge`** (fails the part, with a redesign: a 45 deg roof up into it, a wall under its
+open side, or another bed face). Each contact cell counts once, for the nearest allowed region within one cell of it.
+These findings come from `overhang-slice` and stay in the part's result while the body is unchanged (`overhang` keeps
+them); a changed body drops them until the next slice.
+
 ## The thin-wall gate
 
 One Fusion call reads the display mesh of every face of each printed body (with the face's exact plane, cylinder, cone

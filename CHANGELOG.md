@@ -2,6 +2,17 @@
 
 What each version of the plugin changes. Skills update with the plugin; the tools copied into a project do not. Read the section of a version before you refresh a project with `python3 <plugin>/tools/setup_project.py <dir> --update-tools`, and review `git diff` afterwards.
 
+## 0.7.1 - 2026-11-24
+
+- **A bridge the slicer supports is a finding** (`slicer_bridge`). Bambu Studio puts support under some ceilings the
+  geometry passes as bridges whatever the bridge settings: a copy of robotarm-v2-04.3mf sliced with
+  `bridge_no_support` = 1 kept the support under the 216T tooth-gap ceilings to the millimetre. `overhang-slice` now
+  turns a bridge with at least `slicer.bridge_contact_mm2` (2) of contact on it into a finding with a redesign, and
+  `overhang` keeps those findings while the body is unchanged.
+- The count of allowed places the slicer supports was inflated: one contact cell counted for every region within 2 mm
+  (four overlapping regions per screw counterbore). Each cell now counts once, for the nearest region within one cell.
+- Bridge regions carry `open_mm`, the length of their edges with no wall under them.
+
 ## 0.7.0 - 2026-11-24
 
 The thin-wall gate: `gate.py check --gate thinwall [PART ...]` (`check` alone still runs the heat-set gate).

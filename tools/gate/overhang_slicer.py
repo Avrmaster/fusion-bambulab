@@ -275,7 +275,7 @@ def region_box(frame, r):
 
 
 def compare(regions, info, tips, cell, near, frame, layer, threshold, support_on, min_line, line_mm, allowed=('heatset_ceiling',),
-            blockers=(), gap=0.2):
+            blockers=(), gap=0.2, bridge_contact=2.0):
     """The comparison of one part (see the module doc)."""
     boxes = [(r, region_box(frame, r)) for r in regions + info]
     def hits(c, z, lo, hi):
@@ -283,13 +283,38 @@ def compare(regions, info, tips, cell, near, frame, layer, threshold, support_on
         return lo[0] - near <= x <= hi[0] + near and lo[1] - near <= y <= hi[1] + near and lo[2] - 1.5 - 2 * layer <= z <= hi[2] + layer
     used, rows, on_info = set(), [], {}
     for r, (lo, hi) in boxes:
-        got = [c for c, z in tips.items() if hits(c, z, lo, hi)]
-        used.update(got)
-        if r in info:
-            if got:                                   # the slicer supports a place the gate allows (a bridge, a small patch)
-                k = on_info.setdefault(r['code'], {'n': 0, 'area_mm2': 0.0, 'contact_mm2': 0.0})
-                k['n'] += 1; k['area_mm2'] = round(k['area_mm2'] + r['area_mm2'], 1); k['contact_mm2'] = round(k['contact_mm2'] + len(got) * cell * cell, 1)
+        if r not in info:
+            used.update(c for c, z in tips.items() if hits(c, z, lo, hi))
+    # the places the gate allows (a bridge, a small patch): each contact cell counts once, for the nearest of them, and only
+    # within one cell of its box (the regions of one screw counterbore overlap: a 2 mm window counted one tip four times)
+    own = {}
+    for c, z in tips.items():
+        if c in used:
             continue
+        x, y = (c[0] + 0.5) * cell, (c[1] + 0.5) * cell
+        best = None
+        for k, (r, (lo, hi)) in enumerate(boxes):
+            if r not in info or not (lo[2] - 1.5 - 2 * layer <= z <= hi[2] + layer):
+                continue
+            d = math.hypot(max(lo[0] - x, 0, x - hi[0]), max(lo[1] - y, 0, y - hi[1]))
+            if d <= cell and (best is None or d < best[0]):
+                best = (d, k)
+        if best:
+            own.setdefault(best[1], []).append(c)
+    supported = []
+    for k, got in sorted(own.items()):
+        r = boxes[k][0]
+        e = on_info.setdefault(r['code'], {'n': 0, 'area_mm2': 0.0, 'contact_mm2': 0.0})
+        e['n'] += 1; e['area_mm2'] = round(e['area_mm2'] + r['area_mm2'], 1); e['contact_mm2'] = round(e['contact_mm2'] + len(got) * cell * cell, 1)
+        if r['code'] == 'bridge' and len(got) * cell * cell >= bridge_contact - 1e-9:
+            supported.append(dict(r, code='slicer_bridge', contact_mm2=round(len(got) * cell * cell, 1)))
+    for r, (lo, hi) in boxes:                       # near an allowed place, not support the gate missed
+        if r in info:
+            used.update(c for c, z in tips.items() if hits(c, z, lo, hi))
+    for r, (lo, hi) in boxes:
+        if r in info:
+            continue
+        got = [c for c, z in tips.items() if hits(c, z, lo, hi)]
         row = {'code': r['code'], 'at': r['at'], 'area_mm2': r['area_mm2'], 'slope_deg': r['slope_deg'], 'contact_mm2': round(len(got) * cell * cell, 1)}
         if got:
             row['slicer'] = 'supports'
@@ -323,7 +348,8 @@ def compare(regions, info, tips, cell, near, frame, layer, threshold, support_on
     return {'support_mm': round(line_mm, 1), 'contact_mm2': round(len(tips) * cell * cell, 1),
             'expected_mm2': round(sum(r['area_mm2'] for r in regions if r['code'] != 'shallow_ridge'), 1),
             'regions': rows, 'slicer_only': sig_extra, 'slicer_on_allowed': on_info, 'slicer_only_small': len(extra) - len(sig_extra),
-            'explained': len([r for r in rows if r['slicer'] == 'no support' and r.get('why')]), 'agree': agree}
+            'explained': len([r for r in rows if r['slicer'] == 'no support' and r.get('why')]), 'agree': agree,
+            'bridge_findings': supported}
 
 
 # ---------------------------------------------------------------- the command
@@ -389,11 +415,15 @@ def run(root, names, keep=None):
                     bl = [[[b[0][i] + fr.t[i] for i in range(3)], [b[1][i] + fr.t[i] for i in range(3)]] for b in o3['blockers']]
                     rec['slicer'] = dict(compare(rec['findings'] + rec['allowed'] + rec.get('excepted', []), rec.get('info') or [], tips, cell, near, fr, layer, thr,
                                                  o3['support'], sc['min_support_mm'], g['support_mm'], blockers=bl,
-                                                 gap=float(settings3.get('support_top_z_distance') or 0.2)),
+                                                 gap=float(settings3.get('support_top_z_distance') or 0.2),
+                                                 bridge_contact=sc.get('bridge_contact_mm2', 2.0)),
                                          blockers=len(bl),
                                          project=f, object=tcfg['object'], threshold_deg=thr, object_support=o3['support'],
                                          printable_in_project=o3['printable'],
                                          sliced_at=time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()))
+            sf = overhang_gate.slicer_findings(rec, merged)
+            rec['findings'] = [f for f in rec['findings'] if f['code'] != 'slicer_bridge'] + sf
+            rec['verdict'] = 'fail' if rec['findings'] else 'pass'
             with open(rp, 'w', encoding='utf-8') as fh:
                 json.dump(rec, fh, indent=1, ensure_ascii=False); fh.write('\n')
             s = rec['slicer']
@@ -402,6 +432,7 @@ def run(root, names, keep=None):
             summary['parts'][n]['explained'] = s.get('explained', 0)
             summary['parts'][n]['on_allowed'] = s.get('slicer_on_allowed') or {}
             summary['parts'][n]['slicer_only'] = len(s.get('slicer_only', []))
+            summary['parts'][n]['slicer_bridge'] = len(s.get('bridge_findings') or [])
     summary['total_s'] = round(time.time() - t0, 1)
     with open(os.path.join(res_dir, '_slicer.json'), 'w', encoding='utf-8') as fh:
         json.dump(summary, fh, indent=1, ensure_ascii=False); fh.write('\n')
@@ -414,7 +445,8 @@ def run(root, names, keep=None):
         oa = ', '.join('%d %s' % (v['n'], k) for k, v in sorted(s['on_allowed'].items()))
         print('%s  %s  support %.0f mm, contact %.0f mm2, gate expects %.0f mm2; gate only %d (+%d explained), slicer only %d%s' % (
             n, 'agree   ' if ok else 'DISAGREE', s['support_mm'], s['contact_mm2'], s['expected_mm2'], s['gate_only'], s['explained'],
-            s['slicer_only'], ('; the slicer also supports ' + oa + ' the gate allows') if oa else ''))
+            s['slicer_only'], ('; the slicer also supports ' + oa + ' the gate allows') if oa else '')
+              + ('; %d slicer_bridge finding(s)' % s['slicer_bridge'] if s.get('slicer_bridge') else ''))
     print('%d of %d parts: the slicer and the gate agree. %s' % (len(summary['parts']) - bad, len(summary['parts']),
                                                                 ('slices kept in ' + work) if keep else ''))
     if not keep:

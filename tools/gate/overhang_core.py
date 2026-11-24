@@ -144,7 +144,7 @@ def ceiling(loops, down, bridge_max, grid, ledge=0.0):
     e1, e2 = basis(down)
     segs = _segments(loops, e1, e2)
     if not segs:
-        return {'n': 0, 'bridged': 0, 'ledge': 0, 'long': 0, 'free': [], 'step': grid}
+        return {'n': 0, 'bridged': 0, 'ledge': 0, 'long': 0, 'free': [], 'step': grid, 'open_mm': 0.0}
     xs = [s[0] for s in segs] + [s[2] for s in segs]; ys = [s[1] for s in segs] + [s[3] for s in segs]
     x0, x1, y0, y1 = min(xs), max(xs), min(ys), max(ys)
     step = max(grid, math.sqrt((x1 - x0) * (y1 - y0) / MAX_PTS) if (x1 - x0) * (y1 - y0) > 0 else grid)
@@ -201,7 +201,8 @@ def ceiling(loops, down, bridge_max, grid, ledge=0.0):
                     free.append((_add(_add(_mul(e1, x), _mul(e2, y)), _mul(down, -h)), long_))
             x += step
         y += step
-    return {'n': n, 'bridged': bridged, 'ledge': on_ledge, 'long': held, 'free': free, 'step': step}
+    open_mm = sum(math.hypot(s[2] - s[0], s[3] - s[1]) for s in segs if not s[4])
+    return {'n': n, 'bridged': bridged, 'ledge': on_ledge, 'long': held, 'free': free, 'step': step, 'open_mm': open_mm}
 
 
 # ---------------------------------------------------------------- one part
@@ -240,7 +241,7 @@ def judge_part(part, rules, pockets=()):
                 c = ceiling(f['loops'], down, bmax, grid, val(rules, 'ledge_mm'))
                 if c['n'] and c['bridged']:
                     pts_b = [p for lp in f['loops'] for p in lp['pts']]
-                    info.append(_region(part, 'bridge', pts_b, f['area'] * c['bridged'] / c['n'], s, f['i']))
+                    info.append(_region(part, 'bridge', pts_b, f['area'] * c['bridged'] / c['n'], s, f['i'], open_mm=round(c['open_mm'], 2)))
                 if not c['n'] or not c['free']:
                     continue
                 groups = {}                                     # the free points by the pocket they are in (None: none)
@@ -353,7 +354,9 @@ def finding(r, rules):
             'long_bridge': '%.1f mm2 of flat ceiling held on both sides by a span longer than %g mm, %.1f mm above the bed' % (
                 r['area_mm2'], val(rules, 'bridge_max_mm'), r['h']),
             'shallow_ridge': 'ridge %.1f mm long rising %.0f deg, between two downward faces' % (r.get('length_mm', 0), r['slope_deg']),
-            'heatset_ceiling': 'heat-set pocket ceiling %.1f mm2' % r['area_mm2']}.get(r['code'], r['code'])
+            'heatset_ceiling': 'heat-set pocket ceiling %.1f mm2' % r['area_mm2'],
+            'slicer_bridge': '%.1f mm2 flat ceiling %.1f mm above the bed: the gate takes it for a bridge, Bambu Studio puts %.0f mm2 of '
+                             'support contact under it' % (r['area_mm2'], r['h'], r.get('contact_mm2', 0))}.get(r['code'], r['code'])
     return dict(r, measured=what, expected='no downward face steeper than %g deg from the vertical, bridges up to %g mm' % (
         lim, val(rules, 'bridge_max_mm')), fix=rules['codes'][r['code']], redesign=redesign(r, rules))
 
@@ -373,6 +376,9 @@ def redesign(r, rules):
     if code == 'long_bridge':
         return {'kind': 'split_bridge', 'text': 'the ceiling at %s (h %.1f) spans more than %g mm: a %g deg roof over it, or ribs down to the '
                 'floor so no span is over %g mm, or narrow the opening' % (_xyz(r['at']), h, bmax, lim, bmax)}
+    if code == 'slicer_bridge':
+        return {'kind': 'roof_45', 'text': 'the ceiling at %s (h %.1f, open edge %.1f mm): a %g deg roof up into it, or a wall down under its open '
+                'side so it is held all round, or lay the part on another side' % (_xyz(r['at']), h, r.get('open_mm', 0), lim)}
     if code == 'shallow_ridge':
         return {'kind': 'level_ridge', 'text': 'the edge at %s rises %.0f deg: give the two faces the same tilt so the edge runs level, or a %g deg '
                 'chamfer along it' % (_xyz(r['at']), r['slope_deg'], lim)}

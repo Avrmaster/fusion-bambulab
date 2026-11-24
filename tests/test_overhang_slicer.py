@@ -133,6 +133,17 @@ class Compare(unittest.TestCase):
         self.assertEqual(r['slicer_on_allowed']['bridge']['n'], 1)
         self.assertFalse(r['agree'])
 
+    def test_supported_bridge_is_a_finding_each_tip_counted_once(self):
+        # four overlapping bridge regions of one counterbore and one tooth-gap ceiling with 3 contact cells on it
+        info = [self.region('bridge', 20, 20, 5) for _ in range(4)] + [self.region('bridge', 50, 50, 5)]
+        tips = {(20, 20): 4.7, (50, 50): 4.7, (51, 50): 4.7, (50, 51): 4.7}
+        r = sl.compare([], info, tips, 1.0, 2.0, self.Ident(), 0.3, 30.0, True, 20.0, 500.0, bridge_contact=2.0)
+        self.assertEqual(r['slicer_on_allowed']['bridge']['n'], 2)                     # not 5: a tip belongs to one region
+        self.assertEqual(r['slicer_on_allowed']['bridge']['contact_mm2'], 4.0)
+        self.assertEqual([b['code'] for b in r['bridge_findings']], ['slicer_bridge'])   # 1 mm2 under the counterbore: below 2
+        self.assertEqual(r['bridge_findings'][0]['contact_mm2'], 3.0)
+        self.assertTrue(r['agree'])
+
     def test_quiet_part_agrees(self):
         r = sl.compare([], [], {}, 1.0, 2.0, self.Ident(), 0.3, 30.0, True, 20.0, 0.0)
         self.assertTrue(r['agree'])
