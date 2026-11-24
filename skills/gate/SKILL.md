@@ -123,8 +123,10 @@ switched off explains it), and `slicer_only` clusters (support where the gate se
 the slicer supports anyway). Disagreement both ways is reported; neither side alone is the truth. A part whose sliced
 outline differs from the body (a stale mesh) is an error, not a comparison: export first. In the copy every object is
 printable and the prime tower is off; a support blocker of the project, the bed gap and the threshold angle are named
-as reasons. On Robot Arm V2 (2026-11-24) 38 of 39 parts agreed; the slicer also put support under hundreds of bridges
-the gate allows (the projects have `bridge_no_support` = 0).
+as reasons. The slicer leaves a bridge without support when `bridge_no_support` = 1 (every bridge) or when it is no longer than
+`max_bridge_length`; set `max_bridge_length` to the gate's `bridge_max_mm` so the two judge bridges alike
+(`_slicer.json` names a project where they differ, `bridge_note`). Robot Arm V2: both projects `max_bridge_length` = 6,
+`bridge_no_support` = 0 since 2026-11-24; before that the slicer put support under hundreds of bridges the gate allows.
 
 ## Adding a gate
 

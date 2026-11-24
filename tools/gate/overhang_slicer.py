@@ -96,7 +96,7 @@ def read_3mf(path):
                               'glo': [min(g[i] for g in G) for i in range(3)], 'ghi': [max(g[i] for g in G) for i in range(3)]}
     ps = json.loads(z.read('Metadata/project_settings.config').decode('utf-8', 'ignore'))
     keys = ('enable_support', 'support_type', 'support_threshold_angle', 'support_remove_small_overhang', 'bridge_no_support',
-            'support_on_build_plate_only', 'support_top_z_distance', 'layer_height')
+            'max_bridge_length', 'support_on_build_plate_only', 'support_top_z_distance', 'layer_height')
     return out, {k: ps.get(k) for k in keys}
 
 
@@ -367,6 +367,10 @@ def run(root, names, keep=None):
             for lab, name in m.items():
                 where.setdefault(name, g.get(lab) or (g.get(None) if len(m) == 1 else None))
         summary['projects'][f] = {'slice_s': round(time.time() - t, 1), 'settings': settings3, 'plates': len(labs)}
+        mb, rb = settings3.get('max_bridge_length'), merged.get('bridge_max_mm', {}).get('value') if isinstance(merged.get('bridge_max_mm'), dict) else merged.get('bridge_max_mm')
+        if settings3.get('bridge_no_support') != '1' and mb is not None and rb is not None and abs(float(mb) - float(rb)) > 1e-6:
+            summary['projects'][f]['bridge_note'] = ('the slicer bridges up to max_bridge_length %s mm without support, the gate '
+                                                     'allows %s mm: they disagree on bridges in between' % (mb, rb))
         for n, tcfg in rows:
             rp = os.path.join(res_dir, n + '.json')
             if not os.path.exists(rp):

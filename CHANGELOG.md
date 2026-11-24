@@ -2,6 +2,13 @@
 
 What each version of the plugin changes. Skills update with the plugin; the tools copied into a project do not. Read the section of a version before you refresh a project with `python3 <plugin>/tools/setup_project.py <dir> --update-tools`, and review `git diff` afterwards.
 
+## 0.6.3 - 2026-11-24
+
+- `overhang-slice` records the project's `max_bridge_length` and, when `bridge_no_support` is off and it differs from
+  `bridge_max_mm`, writes a `bridge_note` for that project in `_slicer.json`. The `gate` skill says to set
+  `max_bridge_length` to the gate's bridge limit (Robot Arm V2: 6 mm in both projects since 2026-11-24, total support
+  266.5 m -> 233.0 m).
+
 ## 0.6.2 - 2026-11-24
 
 - **Questions about a part come with a picture** (owner: hundreds of parts, a name says nothing). New
