@@ -2,6 +2,12 @@
 
 What each version of the plugin changes. Skills update with the plugin; the tools copied into a project do not. Read the section of a version before you refresh a project with `python3 <plugin>/tools/setup_project.py <dir> --update-tools`, and review `git diff` afterwards.
 
+## 0.8.1 - 2026-11-24
+
+- The overhang gate read failed on a body with a cone tip ("'NoneType' object has no attribute 'objectType'"): a cone
+  apex has a point edge with no geometry. Faces and edges with no geometry are now skipped as such (the face is read
+  from its mesh), so a part with a 90 deg cone at a blind hole end is checked.
+
 ## 0.8.0 - 2026-11-24
 
 - **Export goes through the gates.** `tools/export.py` runs the gates the project requires on the parts it exports

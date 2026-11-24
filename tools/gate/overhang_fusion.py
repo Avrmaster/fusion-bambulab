@@ -127,7 +127,8 @@ def _overhang_facts(body, spec, rules):
     faces, normals = [], {}
     plane_t, cyl_t, cone_t = adsk.core.Plane.classType(), adsk.core.Cylinder.classType(), adsk.core.Cone.classType()
     for i, f in enumerate(body.faces):
-        gt = f.geometry.objectType
+        g0 = f.geometry
+        gt = g0.objectType if g0 is not None else None
         rec = {'i': i, 'area': round(f.area * 100, 4)}
         if gt == plane_t:
             n = _normal(f)
@@ -156,7 +157,7 @@ def _overhang_facts(body, spec, rules):
     ridges = []
     face_index = {f.tempId: i for i, f in enumerate(body.faces)}
     for e in body.edges:
-        if e.geometry.objectType != adsk.core.Line3D.classType() or e.faces.count != 2:
+        if e.geometry is None or e.geometry.objectType != adsk.core.Line3D.classType() or e.faces.count != 2:   # a cone apex has a point edge
             continue
         f1, f2 = e.faces.item(0), e.faces.item(1)
         p0, p1 = _pmm(e.startVertex.geometry), _pmm(e.endVertex.geometry)
