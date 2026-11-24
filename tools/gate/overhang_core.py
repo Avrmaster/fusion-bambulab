@@ -402,7 +402,8 @@ def redesign(r, rules):
 
 def apply_exceptions(res, exceptions, near=2.0):
     """Move each finding a project names in gate/settings.json "overhang": {"exceptions": [{"part", "at": [x, y, z] or
-    "face": index, "code" (optional), "reason"}]} from the findings to res["excepted"] (with its reason). An exception
+    "face": index, or "whole_part": true, "code" (optional), "reason"}]} from the findings to res["excepted"] (with its
+    reason). "whole_part" covers every finding of the part (the owner calls the part itself an exception). An exception
     with no written reason, or one that matches no finding any more, is a finding itself."""
     res.setdefault('excepted', [])
     keep = []
@@ -410,6 +411,8 @@ def apply_exceptions(res, exceptions, near=2.0):
     def hit(e, f):
         if e.get('part') != f.get('part') or (e.get('code') and e['code'] != f.get('code')):
             return False
+        if e.get('whole_part') is True:
+            return True
         if e.get('face') is not None:
             fc = f.get('face')
             return e['face'] == fc or (isinstance(fc, list) and e['face'] in fc)

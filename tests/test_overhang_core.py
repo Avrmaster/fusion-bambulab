@@ -214,5 +214,21 @@ class Rules(unittest.TestCase):
         self.assertIn('source', RULES['slicer'])
 
 
+
+class WholePartException(unittest.TestCase):
+    def test_whole_part_covers_every_finding_of_that_part(self):
+        res = {'findings': [{'part': 'a', 'code': 'overhang', 'box': [[0, 0, 0], [1, 1, 1]]},
+                            {'part': 'a', 'code': 'long_bridge', 'box': [[9, 9, 9], [10, 10, 10]]},
+                            {'part': 'b', 'code': 'overhang', 'box': [[0, 0, 0], [1, 1, 1]]}]}
+        r = oc.apply_exceptions(res, [{'part': 'a', 'whole_part': True, 'reason': 'thread part'}])
+        self.assertEqual([f['part'] for f in r['findings']], ['b'])
+        self.assertEqual(len(r['excepted']), 2)
+
+    def test_whole_part_without_reason_is_a_finding(self):
+        res = {'findings': [{'part': 'a', 'code': 'overhang', 'box': [[0, 0, 0], [1, 1, 1]]}]}
+        r = oc.apply_exceptions(res, [{'part': 'a', 'whole_part': True}])
+        self.assertEqual(r['findings'][0]['code'], 'exception_without_reason')
+
+
 if __name__ == '__main__':
     unittest.main()

@@ -116,7 +116,7 @@ exception the owner decides, in the project's `gate/settings.json`:
 {"overhang": {"exceptions": [{"part": "j1_magnet_carrier_test_ring", "at": [12.0, 0.0, 4.8], "reason": "standard 60 deg thread flank"}]}}
 ```
 
-(`face` = the face index instead of `at`; `code` narrows it.) It shows under `excepted` with its reason; no reason, or
+(`face` = the face index instead of `at`; `"whole_part": true` instead of both when the owner calls the part itself an exception; `code` narrows it.) It shows under `excepted` with its reason; no reason, or
 no finding left at the place, is a finding. Never add an exception yourself: list the finding, its redesign, and why a
 redesign is impossible if it is. Every finding you put before the owner goes with a picture of its place:
 `tools/fusion/show_part.py PART --gate overhang` (see "Asking the engineer about a part" in the `fusion-modeling` skill).

@@ -2,6 +2,11 @@
 
 What each version of the plugin changes. Skills update with the plugin; the tools copied into a project do not. Read the section of a version before you refresh a project with `python3 <plugin>/tools/setup_project.py <dir> --update-tools`, and review `git diff` afterwards.
 
+## 0.8.3 - 2026-11-24
+
+- Overhang exceptions can name a whole part: `{"part": ..., "whole_part": true, "reason": ...}` covers every finding of
+  that part (the owner calls the part itself an exception, e.g. a standard thread part). The reason stays mandatory.
+
 ## 0.8.2 - 2026-11-24
 
 - **Support inside a heat-set pocket is allowed**, also where the slicer supports a ceiling the gate takes for a bridge
