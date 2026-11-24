@@ -430,7 +430,7 @@ def run(root, names, keep=None):
                 else:
                     tips = contacts(g['tops'], layer)
                     bl = [[[b[0][i] + fr.t[i] for i in range(3)], [b[1][i] + fr.t[i] for i in range(3)]] for b in o3['blockers']]
-                    rec['slicer'] = dict(compare(rec['findings'] + rec['allowed'] + rec.get('excepted', []), rec.get('info') or [], tips, cell, near, fr, layer, thr,
+                    rec['slicer'] = dict(compare([x for x in rec['findings'] if x['code'] not in ('slicer_bridge', 'slicer_support')] + rec['allowed'] + rec.get('excepted', []), rec.get('info') or [], tips, cell, near, fr, layer, thr,
                                                  o3['support'], sc['min_support_mm'], g['support_mm'], blockers=bl,
                                                  gap=float(settings3.get('support_top_z_distance') or 0.2),
                                                  bridge_contact=sc.get('bridge_contact_mm2', 2.0)),
