@@ -138,6 +138,12 @@ def _overhang_facts(body, spec, rules):
                 continue
             rec.update(type='plane', n=[round(x, 6) for x in n], c=_pmm(f.pointOnFace))
             rec['loops'] = _loops(body, f, down, s <= flat)
+            if f.loops.count == 2 and all(lp.edges.count == 1 and lp.edges.item(0).geometry is not None
+                                          and lp.edges.item(0).geometry.objectType == adsk.core.Circle3D.classType() for lp in f.loops):
+                c1, c2 = (lp.edges.item(0).geometry for lp in f.loops)                       # a ring: the seat round a hole
+                if c1.center.distanceTo(c2.center) < 0.005:
+                    rec['annulus'] = {'c': _pmm(c1.center), 'd_in': round(min(c1.radius, c2.radius) * 2 * _CM, 3),
+                                      'd_out': round(max(c1.radius, c2.radius) * 2 * _CM, 3)}
             hs = [-_dot(p, down) for lp in rec['loops'] for p in lp['pts']] or [-_dot(rec['c'], down)]
             rec['h'] = [round(min(hs), 4), round(max(hs), 4)]
             faces.append(rec)

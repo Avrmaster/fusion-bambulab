@@ -231,6 +231,13 @@ def judge_part(part, rules, pockets=()):
                 continue
             if f['h'][1] - bed_h <= bed:                      # on the bed, or within the first layer
                 continue
+            if s <= flat and f.get('annulus') and f['h'][1] - bed_h > bed:
+                # a flat ring round a hole: the seat of a screw head (or washer); support there is allowed, the head closes it
+                a = f['annulus']
+                out.append(_region(part, 'screw_seat', [p for lp in f['loops'] for p in lp['pts']], f['area'], s, f['i'],
+                                   d_in=a['d_in'], d_out=a['d_out']))
+                over.add(f['i'])
+                continue
             if s <= flat and f.get('loops'):
                 per = sum(math.sqrt(_dot(_sub(lp['pts'][k + 1], lp['pts'][k]), _sub(lp['pts'][k + 1], lp['pts'][k])))
                           for lp in f['loops'] for k in range(len(lp['pts']) - 1))
@@ -358,6 +365,7 @@ def finding(r, rules):
                 r['area_mm2'], val(rules, 'bridge_max_mm'), r['h']),
             'shallow_ridge': 'ridge %.1f mm long rising %.0f deg, between two downward faces' % (r.get('length_mm', 0), r['slope_deg']),
             'heatset_ceiling': 'heat-set pocket ceiling %.1f mm2' % r['area_mm2'],
+            'screw_seat': 'screw head seat (ring round a hole) %.1f mm2' % r['area_mm2'],
             'slicer_bridge': '%.1f mm2 flat ceiling %.1f mm above the bed: the gate takes it for a bridge, Bambu Studio puts %.0f mm2 of '
                              'support contact under it' % (r['area_mm2'], r['h'], r.get('contact_mm2', 0))}.get(r['code'], r['code'])
     return dict(r, measured=what, expected='no downward face steeper than %g deg from the vertical, bridges up to %g mm' % (

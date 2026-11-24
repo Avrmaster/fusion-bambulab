@@ -274,7 +274,7 @@ def region_box(frame, r):
     return [min(p[i] for p in pts) for i in range(3)], [max(p[i] for p in pts) for i in range(3)]
 
 
-def compare(regions, info, tips, cell, near, frame, layer, threshold, support_on, min_line, line_mm, allowed=('heatset_ceiling',),
+def compare(regions, info, tips, cell, near, frame, layer, threshold, support_on, min_line, line_mm, allowed=('heatset_ceiling', 'screw_seat'),
             blockers=(), gap=0.2, bridge_contact=2.0):
     """The comparison of one part (see the module doc)."""
     boxes = [(r, region_box(frame, r)) for r in regions + info]

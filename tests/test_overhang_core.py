@@ -215,6 +215,25 @@ class Rules(unittest.TestCase):
 
 
 
+class ScrewSeat(unittest.TestCase):
+    def ring(self, z):
+        loops = []
+        for r in (5.5, 2.95):
+            pts = [[r * math.cos(2 * math.pi * k / 24), r * math.sin(2 * math.pi * k / 24), z] for k in range(25)]
+            loops.append({'pts': pts, 'anch': [False] * 24})
+        return {'i': 0, 'type': 'plane', 'n': DOWN, 'area': math.pi * (5.5 ** 2 - 2.95 ** 2), 'h': [z, z], 'loops': loops,
+                'annulus': {'c': [0, 0, z], 'd_in': 5.9, 'd_out': 11.0}}
+
+    def test_a_screw_head_seat_is_allowed(self):
+        # owner 2026-11-24: support under the seat of a screw head is ok, the head closes it
+        self.assertEqual(codes(part([self.ring(4.5)])), ['screw_seat'])
+        self.assertIn('screw_seat', RULES['allowed'])
+
+    def test_the_same_ring_without_a_hole_ring_is_a_bridge(self):
+        f = self.ring(4.5); f.pop('annulus')
+        self.assertNotIn('screw_seat', codes(part([f])))
+
+
 class WholePartException(unittest.TestCase):
     def test_whole_part_covers_every_finding_of_that_part(self):
         res = {'findings': [{'part': 'a', 'code': 'overhang', 'box': [[0, 0, 0], [1, 1, 1]]},

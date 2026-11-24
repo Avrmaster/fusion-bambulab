@@ -2,6 +2,12 @@
 
 What each version of the plugin changes. Skills update with the plugin; the tools copied into a project do not. Read the section of a version before you refresh a project with `python3 <plugin>/tools/setup_project.py <dir> --update-tools`, and review `git diff` afterwards.
 
+## 0.8.5 - 2026-11-24
+
+- **A screw head seat is an allowed support place** (`screw_seat`), like a heat-set pocket ceiling: a flat downward
+  ring whose edges are two concentric circles (the floor of a counterbore round a screw hole). Owner, 2026-11-24:
+  support under a screw hole ceiling is fine, the head closes it. `rules/overhang.json` `allowed` names both.
+
 ## 0.8.4 - 2026-11-24
 
 - **Windows: the print ledger lost lines and broke plate pictures** (CI had failed on windows-latest since 0.4.x).
