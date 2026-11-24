@@ -32,7 +32,7 @@ python3 ~/.claude/plugins/marketplaces/print-engineering/tools/gate/gate.py chec
 python3 ~/.claude/plugins/marketplaces/print-engineering/tools/gate/gate.py fix-inserts PART ... [--component NAME] [--dry-run]
 python3 ~/.claude/plugins/marketplaces/print-engineering/tools/gate/gate.py rules
 python3 ~/.claude/plugins/marketplaces/print-engineering/tools/gate/gate.py overhang [PART ...]
-python3 ~/.claude/plugins/marketplaces/print-engineering/tools/gate/gate.py overhang-slice [PART ...]   # minutes: run in the background
+python3 ~/.claude/plugins/marketplaces/print-engineering/tools/gate/gate.py overhang-slice [PART ...]   # named parts: only their plates, seconds; no part: every plate, minutes
 python3 ~/.claude/plugins/marketplaces/print-engineering/tools/gate/gate.py overhang-faces [PART ...]   # every bed face of the failing parts
 python3 ~/.claude/plugins/marketplaces/print-engineering/tools/gate/gate.py check --gate thinwall [PART ...]
 python3 ~/.claude/plugins/marketplaces/print-engineering/tools/gate/gate.py rules --gate thinwall

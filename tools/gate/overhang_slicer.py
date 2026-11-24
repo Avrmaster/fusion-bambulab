@@ -1,7 +1,8 @@
 """The overhang gate's second opinion: where Bambu Studio really puts support (gate.py overhang-slice).
 
 Each .3mf the parts go to (fusion/parts.json "3mf") is COPIED to a scratch folder and sliced there with the Bambu Studio
-CLI (all plates; minutes, so run it in the background). The original is only read: safe while Bambu Studio has it open.
+CLI: only the plates that hold the named parts (seconds per plate), every plate when no part is named (minutes, so run
+that in the background). The original is only read: safe while Bambu Studio has it open.
 In the copy every object is printable (a part already printed is often switched off) and the prime tower is off.
 From the G-code, per object (its "start printing object" block, or the whole plate when it holds one object): the support
 line (mm of extrusion moves of the Support features) and the support's contact cells: the tops of the support columns,
@@ -100,8 +101,9 @@ def read_3mf(path):
     return out, {k: ps.get(k) for k in keys}
 
 
-def slice_copy(src, out_dir, timeout=3600):
-    """Slice a copy of src into out_dir: plate_<n>.gcode, sliced.3mf (its slice_info names the objects of each label)."""
+def slice_copy(src, out_dir, timeout=3600, plate=0):
+    """Slice a copy of src into out_dir: plate_<n>.gcode, sliced.3mf (its slice_info names the objects of each label).
+    plate: 0 = every plate, n = that plate only (seconds instead of minutes on a big project)."""
     exe = bambu3mf.studio_path()
     if not exe:
         raise RuntimeError('Bambu Studio not found: set BAMBU_STUDIO to its executable')
@@ -117,13 +119,29 @@ def slice_copy(src, out_dir, timeout=3600):
                 cfg['enable_prime_tower'] = '0'
                 data = json.dumps(cfg, indent=4).encode('utf-8')
             zo.writestr(info, data)
-    r = subprocess.run([exe, '--slice', '0', '--outputdir', out_dir, '--export-3mf', 'sliced.3mf', copy], cwd=out_dir,
+    r = subprocess.run([exe, '--slice', str(plate), '--outputdir', out_dir, '--export-3mf', 'sliced.3mf', copy], cwd=out_dir,
                        capture_output=True, text=True, timeout=timeout)
     res = os.path.join(out_dir, 'result.json')
     data = json.load(open(res)) if os.path.exists(res) else {}
     if r.returncode or data.get('return_code', 0):
         raise RuntimeError('slicing %s failed: %s' % (os.path.basename(src), (r.stdout + r.stderr)[-800:]))
     return data
+
+
+def plates_of(src, objects):
+    """The plate numbers (plater_id) that hold any of the named objects in the .3mf src."""
+    cfg = zipfile.ZipFile(src).read('Metadata/model_settings.config').decode('utf-8', 'ignore')
+    ids = set()
+    for m in re.finditer(r'<object id="(\d+)">(.*?)</object>', cfg, re.S):
+        nm = re.search(r'<metadata key="name" value="([^"]*)"', m.group(2))
+        if nm and nm.group(1) in objects:
+            ids.add(m.group(1))
+    out = set()
+    for m in re.finditer(r'<plate>(.*?)</plate>', cfg, re.S):
+        pid = re.search(r'key="plater_id" value="(\d+)"', m.group(1))
+        if pid and ids & set(re.findall(r'key="object_id" value="(\d+)"', m.group(1))):
+            out.add(int(pid.group(1)))
+    return sorted(out)
 
 
 def labels(out_dir):
@@ -390,9 +408,14 @@ def run(root, names, keep=None):
         t = time.time()
         try:
             done = os.path.join(od, 'result.json')
-            if keep and os.path.exists(done) and os.path.getmtime(done) > os.path.getmtime(src) and \
+            only = plates_of(src, {t['object'] for _, t in rows}) if names else []
+            if keep and not only and os.path.exists(done) and os.path.getmtime(done) > os.path.getmtime(src) and \
                     json.load(open(done)).get('return_code', 1) == 0 and os.path.exists(os.path.join(od, 'sliced.3mf')):
                 print('  (the slice of the same project in %s is newer: reused)' % od)
+            elif only:
+                print('  plates %s only' % ', '.join(map(str, only)), flush=True)
+                for pl in only:
+                    slice_copy(src, os.path.join(od, 'p%d' % pl), plate=pl)
             else:
                 slice_copy(src, od)
         except Exception as e:
@@ -400,10 +423,14 @@ def run(root, names, keep=None):
         objs3, settings3 = read_3mf(src)
         layer = float(settings3.get('layer_height') or 0.2)
         thr = float(settings3.get('support_threshold_angle') or 0) or None
-        labs = labels(od)
+        dirs = [os.path.join(od, 'p%d' % pl) for pl in only] if only else [od]
+        labs = {}
+        for dd in dirs:
+            for pl, m in labels(dd).items():
+                labs[pl] = (dd, m)
         where = {}
-        for pl, m in labs.items():
-            gp = os.path.join(od, 'plate_%d.gcode' % pl)
+        for pl, (dd, m) in labs.items():
+            gp = os.path.join(dd, 'plate_%d.gcode' % pl)
             if not os.path.exists(gp):
                 continue
             g = read_gcode(gp, cell)

@@ -2,6 +2,12 @@
 
 What each version of the plugin changes. Skills update with the plugin; the tools copied into a project do not. Read the section of a version before you refresh a project with `python3 <plugin>/tools/setup_project.py <dir> --update-tools`, and review `git diff` afterwards.
 
+## 0.8.11 - 2026-11-24
+
+- **`overhang-slice PART` slices only the plates that hold the named parts** (`bambu-studio --slice <plate>` per plate):
+  the J3 elbow tongue in 5 s instead of about 4 minutes for all 24 plates of robotarm-v2.3mf, same result. With no
+  part named every plate is sliced as before.
+
 ## 0.8.10 - 2026-11-24
 
 - `overhang-slice` compares against the geometry's regions only: the slicer findings of the last slice (kept in the

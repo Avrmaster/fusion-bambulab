@@ -165,6 +165,17 @@ class Compare(unittest.TestCase):
         r = sl.compare([], [], tips, 1.0, 2.0, self.Ident(), 0.3, 30.0, True, 20.0, 500.0, bridge_contact=2.0)
         self.assertEqual(len(r['support_findings']), 1); self.assertEqual(r['support_findings'][0]['h'], 30.0)
 
+    def test_only_the_plates_of_the_named_objects_are_sliced(self):
+        import tempfile, zipfile, os
+        cfg = ('<config>\n<object id="5">\n<metadata key="name" value="tongue"/>\n</object>\n<object id="7">\n<metadata key="name" value="base"/>\n</object>\n'
+               '<plate>\n<metadata key="plater_id" value="1"/>\n<model_instance>\n<metadata key="object_id" value="7"/>\n</model_instance>\n</plate>\n'
+               '<plate>\n<metadata key="plater_id" value="9"/>\n<model_instance>\n<metadata key="object_id" value="5"/>\n</model_instance>\n</plate>\n</config>')
+        p = os.path.join(tempfile.mkdtemp(), 'p.3mf')
+        with zipfile.ZipFile(p, 'w') as z:
+            z.writestr('Metadata/model_settings.config', cfg)
+        self.assertEqual(sl.plates_of(p, {'tongue'}), [9])
+        self.assertEqual(sl.plates_of(p, {'tongue', 'base'}), [1, 9])
+
     def test_quiet_part_agrees(self):
         r = sl.compare([], [], {}, 1.0, 2.0, self.Ident(), 0.3, 30.0, True, 20.0, 0.0)
         self.assertTrue(r['agree'])
