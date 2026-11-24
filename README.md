@@ -82,7 +82,7 @@ The plugin connects Claude Code to Fusion's built-in MCP server, so every sessio
 | `fusion-export` | Checked STL export, stamped with the Fusion version, plus stale-part and thin-feature checks |
 | `bambu-project` | Builds and updates `.3mf` projects from code, keeping what you changed by hand |
 | `print-design` | Orientation, tolerances, inserts, test prints, and what to do with a flawed print |
-| `gate` | The print gate: deterministic checks of Fusion parts (today: heat-set pockets) |
+| `gate` | The print gate: deterministic checks of Fusion parts (heat-set pockets; overhangs / supports with a Bambu Studio cross-check) |
 | `print-ledger` | What was written into each `.3mf` and what is already printed, before a printed part's interface moves; the owner's words are committed word for word, and the optional reader of the slicer's job cache is off until the owner switches it on |
 | `fusion-cam` | CNC from Fusion Manufacture: stock that matches the part, helical holes, facing, GRBL-safe posting, `cam_refresh` and `nc_check` |
 | `cnc-station` | A laptop with gSender next to the machine, fed from the Mac: job pages with steps, sync, read-only GRBL queries |
@@ -120,7 +120,8 @@ Tools are copied into each project, so it keeps building without the plugin and 
 
 The gate is being rebuilt from step 0 (2026-11-23): rules are defined in this plugin only, a project keeps only its own
 settings and the results of runs on its parts, and every check is deterministic and fast. The model only decides how to
-fix a finding, never how to find it. The first and only check today is heat-set insert pockets: see the `gate` skill.
+fix a finding, never how to find it. Two checks today: heat-set insert pockets, and overhangs / supports (every part
+prints on its named bed face; a Bambu Studio slice of a copy is the second opinion): see the `gate` skill.
 The gate of 0.3.x (24 thousand lines, 214 rules, hooks on every tool call) is kept on the branch `archive/gate-0.3.x`.
 
 ## Good to know

@@ -1,0 +1,59 @@
+{
+ "gate": "overhang",
+ "about": "Overhangs and supports. Every printed part has one bed face (the face of its 3mf entries in fusion/parts.json): the part is checked turned with that face down. A downward face steeper than the limit needs a support and is a finding, unless it is a bridge short enough, rests on the bed, or is a heat-set pocket ceiling (the one allowed support, listed, not failed). A horizontal round hole is a finding of its own: it is a teardrop. Lengths mm, angles degrees. A project changes a number only in its gate/settings.json (\"overhang\": {...}, merged over this file).",
+ "limit_deg": {
+  "value": 45.0,
+  "tolerance": 0.5,
+  "source": "owner 2026-11-24: \"45 degree rises\"; fusion/DESIGN_RULES.md section 5 (planar 45 degree chamfers). Measured from the vertical: a face at 45 degrees passes, a 50 degree cone fails. The tolerance takes the facets of a tessellated curve"
+ },
+ "bridge_max_mm": {
+  "value": 6.0,
+  "source": "fusion/DESIGN_RULES.md section 5: \"Bridges <= 6 mm (for example M3 head channels)\""
+ },
+ "bridge_flat_deg": {
+  "value": 1.0,
+  "source": "gate author's choice 2026-11-24: a ceiling within 1 degree of flat is printed as a bridge, steeper ones as an overhang"
+ },
+ "ledge_mm": {
+  "value": 0.4,
+  "source": "gate author's choice 2026-11-24: a flat ceiling no further than this from an edge held from below is a ledge, not an overhang: the wall line (0.62 on the 0.6 nozzle, 0.42 on the 0.4) still sits on the layer below. Bambu Studio did not support the 0.38 mm ledges of J3 forearm link A and the 0.4 mm ones of the switch cradles"
+ },
+ "bed_mm": {
+  "value": 0.3,
+  "source": "gate author's choice 2026-11-24: one first layer of the 0.6 nozzle projects (0.3); a downward face no higher than that above the bed prints on the bed"
+ },
+ "min_area_mm2": {
+  "value": 1.0,
+  "source": "gate author's choice 2026-11-24: smaller downward patches (tooth-end corners, 0.3-0.8 mm2 ceilings) are counted per part, not listed; at 0.25 the gate and the independent mesh audit split on them by how each samples a sub-millimetre bridge"
+ },
+ "sliver_mm": {
+  "value": 0.2,
+  "source": "gate author's choice 2026-11-24: a flat downward face whose mean width (2 x area / perimeter) is under this is a modelling sliver (two faces 0.05 mm apart), not an overhang: listed in info as sliver"
+ },
+ "grid_mm": {
+  "value": 0.5,
+  "source": "gate author's choice 2026-11-24: the step of the points a flat ceiling is sampled at to find its bridged part"
+ },
+ "ridge_min_mm": {
+  "value": 1.0,
+  "source": "gate author's choice 2026-11-24: a shallow ridge shorter than this is not listed"
+ },
+ "codes": {
+  "overhang": "downward face steeper than the limit, not a bridge: give it a 45 degree rise from below, or lay the part on another side",
+  "round_hole": "horizontal round hole: its top needs a support; give it a teardrop top (45 degree roof, flat top no wider than the bridge)",
+  "long_bridge": "flat ceiling held on both sides but longer than bridge_max_mm: narrow it, or a 45 degree roof",
+  "shallow_ridge": "two downward faces meet in an edge that rises less than the limit (fusion/DESIGN_RULES.md section 5: two 45 degree faces that slope different ways meet in a shallower edge): give the faces the same tilt so the ridge runs level, or 45 degrees along the ridge",
+  "no_bed_face": "the part has no bed face in fusion/parts.json (3mf entries with \"face\"): name the face it prints on",
+  "bed_face_conflict": "the part's 3mf entries name different bed faces: one part, one print orientation",
+  "heatset_ceiling": "ALLOWED: the ceiling of a heat-set pocket that opens sideways or downwards: the insert needs the round pocket, a support or a sacrificial layer is fine (owner 2026-11-24)"
+ },
+ "allowed": [
+  "heatset_ceiling"
+ ],
+ "slicer": {
+  "cell_mm": 1.0,
+  "near_mm": 2.0,
+  "min_support_mm": 20.0,
+  "source": "gate author's choice 2026-11-24: support moves are binned in 1 mm cells; a support cell and a gate region match within 2 mm; a part with less than 20 mm of support line and no gate region agrees (the old support gate's noise floor: 20 mm)"
+ }
+}

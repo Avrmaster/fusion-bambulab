@@ -2,6 +2,26 @@
 
 What each version of the plugin changes. Skills update with the plugin; the tools copied into a project do not. Read the section of a version before you refresh a project with `python3 <plugin>/tools/setup_project.py <dir> --update-tools`, and review `git diff` afterwards.
 
+## 0.6.0 - 2026-11-24
+
+- **The overhang gate** (`gate.py overhang`, `rules/overhang.json`, `tools/gate/overhang_*.py`, the `gate` skill). Every
+  printed part prints on one named bed face: the `face` of its `3mf` entries in `fusion/parts.json`; no face, or two,
+  is a finding. With that face down, one read-only Fusion call (about a minute for 39 parts; the heat-set facts in the
+  same call) and a pure-Python judge find: downward faces steeper than 45 deg from the vertical (`overhang`), round
+  holes with a horizontal axis (`round_hole`: a teardrop), flat ceilings held on both sides by a span over 6 mm
+  (`long_bridge`), convex edges of two downward faces rising less than 45 deg (`shallow_ridge`). Bridges up to 6 mm,
+  ledges up to 0.4 mm, the first 0.3 mm above the bed and modelling slivers pass; heat-set pocket ceilings are allowed
+  and listed (`heatset_ceiling`). Normals come from the surface, not the facets (a 45 deg cone is 45). Results in
+  `gate/results/overhang/<part>.json`: place, box, area, angle, height above the bed.
+- **The slicer's opinion** (`gate.py overhang-slice`, minutes): slices COPIES of the projects with the Bambu Studio CLI
+  (every object printable, no prime tower), reads the tips of the support per object from the G-code, carries them
+  back into the model frame (bed face, the object's turn, its mesh, the plate) and compares with the regions: support
+  where the gate expects none, forbidden places the slicer leaves bare (with the reason when the threshold angle, a
+  support blocker, the bed gap or an unsupported bridge explains it), support on places the gate allows.
+- Tests: `test_overhang_core` (hand-made facts), `test_overhang_slicer` (G-code, frames both ways), `test_overhang_fusion`
+  (a document with a 50 deg cone, a 45 deg chamfer, a round and a teardrop hole, a sideways heat-set pocket, a 4 and a
+  10 mm bridge, a ledge, a part with no bed face).
+
 ## 0.5.0 - 2026-11-24
 
 - **The plugin is now `print-engineering`** (was `fusion-bambulab`): plugin and marketplace name, GitHub repository
