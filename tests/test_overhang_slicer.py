@@ -160,6 +160,11 @@ class Compare(unittest.TestCase):
         f = r['support_findings'][0]
         self.assertEqual(f['code'], 'slicer_support'); self.assertEqual(f['h'], 30.0); self.assertGreaterEqual(f['contact_mm2'], 6.0)
 
+    def test_a_leaning_trunk_is_one_tree(self):
+        tips = {(60 + 2 * k, 60): 5.0 + 5 * k for k in range(6)}          # tips 2 mm apart, 10 mm from end to end
+        r = sl.compare([], [], tips, 1.0, 2.0, self.Ident(), 0.3, 30.0, True, 20.0, 500.0, bridge_contact=2.0)
+        self.assertEqual(len(r['support_findings']), 1); self.assertEqual(r['support_findings'][0]['h'], 30.0)
+
     def test_quiet_part_agrees(self):
         r = sl.compare([], [], {}, 1.0, 2.0, self.Ident(), 0.3, 30.0, True, 20.0, 0.0)
         self.assertTrue(r['agree'])

@@ -2,6 +2,11 @@
 
 What each version of the plugin changes. Skills update with the plugin; the tools copied into a project do not. Read the section of a version before you refresh a project with `python3 <plugin>/tools/setup_project.py <dir> --update-tools`, and review `git diff` afterwards.
 
+## 0.8.9 - 2026-11-24
+
+- `slicer_support`: the tips of one tree are chained (single link, 3 mm in plan), so a leaning trunk is one finding
+  (0.8.8 split the trunk of the J3 elbow tongue into five).
+
 ## 0.8.8 - 2026-11-24
 
 - **Support the gate has no place for is a finding** (`slicer_support`, from `overhang-slice`): Bambu Studio's support

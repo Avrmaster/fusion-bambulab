@@ -347,13 +347,15 @@ def compare(regions, info, tips, cell, near, frame, layer, threshold, support_on
     extra.sort(key=lambda e: -e['contact_mm2'])
     # support the gate has no place for: one finding per tree (the tips of one trunk stand within tree_mm of each other in
     # plan; its highest tip is what the tree holds up)
+    groups = []                                                   # single link: a leaning trunk is a chain of tips
+    for e in extra:
+        near_ = [g for g in groups if any(math.hypot(e['xy'][0] - q['xy'][0], e['xy'][1] - q['xy'][1]) <= tree_mm for q in g)]
+        merged_ = [e] + [q for g in near_ for q in g]
+        groups = [g for g in groups if g not in near_] + [merged_]
     trees = []
-    for e in sorted(extra, key=lambda e: -e['h']):
-        t = next((t for t in trees if math.hypot(e['xy'][0] - t['xy'][0], e['xy'][1] - t['xy'][1]) <= tree_mm), None)
-        if t is None:
-            trees.append(dict(e, tips=1))
-        else:
-            t['contact_mm2'] = round(t['contact_mm2'] + e['contact_mm2'], 1); t['tips'] += 1
+    for g in groups:
+        top = max(g, key=lambda q: q['h'])
+        trees.append(dict(top, contact_mm2=round(sum(q['contact_mm2'] for q in g), 1), tips=len(g)))
     unplaced = [{'code': 'slicer_support', 'at': t['at'], 'box': [t['at'], t['at']], 'area_mm2': t['contact_mm2'], 'slope_deg': 0.0,
                  'h': t['h'], 'contact_mm2': t['contact_mm2'], 'tips': t['tips']}
                 for t in trees if t['contact_mm2'] >= bridge_contact - 1e-9] if line_mm >= min_line else []
