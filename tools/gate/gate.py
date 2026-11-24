@@ -7,6 +7,7 @@ The model only decides how to fix a finding, never how to find it.
     python3 <plugin>/tools/gate/gate.py rules [--project DIR]                 the rules in force here (plugin + settings)
     python3 <plugin>/tools/gate/gate.py overhang [PART ...]                   overhangs / supports (overhang_gate.py)
     python3 <plugin>/tools/gate/gate.py overhang-slice [PART ...]             the same against Bambu Studio slices (minutes)
+    python3 <plugin>/tools/gate/gate.py overhang-faces [PART ...]             every bed face of the failing parts: findings per face
 
 DIR: the current folder or the nearest one above it with fusion/parts.json (the parts and the Fusion document, as for
 tools/export.py). gate/settings.json (optional):
@@ -271,16 +272,17 @@ def fix_pockets(root, names, relief_wall=1.2, dry=False):
 
 def main():
     a = argparse.ArgumentParser(description='the print gate')
-    a.add_argument('cmd', choices=['check', 'rules', 'fix-inserts', 'fix-pockets', 'overhang', 'overhang-slice']); a.add_argument('parts', nargs='*'); a.add_argument('--project')
+    a.add_argument('cmd', choices=['check', 'rules', 'fix-inserts', 'fix-pockets', 'overhang', 'overhang-slice', 'overhang-faces']); a.add_argument('parts', nargs='*'); a.add_argument('--project')
     a.add_argument('--json', action='store_true'); a.add_argument('--component'); a.add_argument('--dry-run', action='store_true')
     a = a.parse_args()
     root = os.path.abspath(a.project) if a.project else find_project(os.getcwd())
     if a.cmd == 'rules':
         rules, settings, merged, _ = load(root)
         print(json.dumps(merged, indent=1, ensure_ascii=False)); return 0
-    if a.cmd in ('overhang', 'overhang-slice'):                     # the overhang gate: overhang_gate.py
+    if a.cmd.startswith('overhang'):                                 # the overhang gate: overhang_gate.py
         import overhang_gate
-        return overhang_gate.check(root, a.parts, a.json) if a.cmd == 'overhang' else overhang_gate.slice_cmd(root, a.parts)
+        return {'overhang': lambda: overhang_gate.check(root, a.parts, a.json), 'overhang-slice': lambda: overhang_gate.slice_cmd(root, a.parts),
+                'overhang-faces': lambda: overhang_gate.faces(root, a.parts)}[a.cmd]()
     if a.cmd == 'fix-pockets':
         return fix_pockets(root, a.parts, dry=a.dry_run)
     if a.cmd == 'fix-inserts':

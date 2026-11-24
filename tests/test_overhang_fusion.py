@@ -43,7 +43,14 @@ class OverhangInFusion(unittest.TestCase):
 
     @classmethod
     def tearDownClass(cls):
-        fusion_rpc.run_job(CLOSE, {'doc': cls.doc}, write=True, timeout=30, name='close')
+        # Fusion can raise "count > 0" on close and still close, or answer late when another session keeps it busy:
+        # try again until no unsaved document of ours is left, so the next fixture does not collide on "Untitled"
+        for _ in range(3):
+            try:
+                if not fusion_rpc.run_job(CLOSE, {'doc': cls.doc}, write=True, timeout=120, name='close')['closed']:
+                    break
+            except fusion_rpc.FusionError:
+                pass
         shutil.rmtree(cls.root, ignore_errors=True)
 
     def res(self, case):

@@ -293,7 +293,7 @@ def compare(regions, info, tips, cell, near, frame, layer, threshold, support_on
         row = {'code': r['code'], 'at': r['at'], 'area_mm2': r['area_mm2'], 'slope_deg': r['slope_deg'], 'contact_mm2': round(len(got) * cell * cell, 1)}
         if got:
             row['slicer'] = 'supports'
-        elif r['code'] in allowed:
+        elif r['code'] in allowed or r.get('exception'):
             row['slicer'] = 'no support (allowed place)'
         else:
             row['slicer'] = 'no support'
@@ -383,7 +383,7 @@ def run(root, names, keep=None):
                 else:
                     tips = contacts(g['tops'], layer)
                     bl = [[[b[0][i] + fr.t[i] for i in range(3)], [b[1][i] + fr.t[i] for i in range(3)]] for b in o3['blockers']]
-                    rec['slicer'] = dict(compare(rec['findings'] + rec['allowed'], rec.get('info') or [], tips, cell, near, fr, layer, thr,
+                    rec['slicer'] = dict(compare(rec['findings'] + rec['allowed'] + rec.get('excepted', []), rec.get('info') or [], tips, cell, near, fr, layer, thr,
                                                  o3['support'], sc['min_support_mm'], g['support_mm'], blockers=bl,
                                                  gap=float(settings3.get('support_top_z_distance') or 0.2)),
                                          blockers=len(bl),

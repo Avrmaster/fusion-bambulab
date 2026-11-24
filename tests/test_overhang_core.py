@@ -165,6 +165,47 @@ class BedFace(unittest.TestCase):
             self.assertEqual([round(x, 9) for x in bambu3mf.ORIENT[face](*d)], [0, 0, -1], face)
 
 
+class Exceptions(unittest.TestCase):
+    def res(self, exceptions):
+        rules = dict(RULES, exceptions=exceptions)
+        return oc.check([part([tilted(40.0)], name='p')], rules)
+
+    def test_no_exception_is_a_finding(self):
+        r = self.res([])
+        self.assertEqual([f['code'] for f in r['findings']], ['overhang']); self.assertEqual(r['excepted'], [])
+
+    def test_named_exception_with_reason_passes(self):
+        r = self.res([{'part': 'p', 'at': [5, 2, 12], 'reason': 'the neighbour fills the chamfer space'}])
+        self.assertEqual(r['findings'], [])
+        self.assertEqual([(f['code'], f['exception']) for f in r['excepted']], [('overhang', 'the neighbour fills the chamfer space')])
+
+    def test_by_face_index(self):
+        self.assertEqual(self.res([{'part': 'p', 'face': 0, 'reason': 'x'}])['findings'], [])
+
+    def test_exception_without_reason_is_a_finding(self):
+        r = self.res([{'part': 'p', 'at': [5, 2, 12], 'reason': '  '}])
+        self.assertEqual([f['code'] for f in r['findings']], ['exception_without_reason'])
+
+    def test_exception_elsewhere_is_unused(self):
+        r = self.res([{'part': 'p', 'at': [90, 90, 90], 'reason': 'x'}])
+        self.assertEqual(sorted(f['code'] for f in r['findings']), ['exception_unused', 'overhang'])
+
+
+class Redesign(unittest.TestCase):
+    def kinds(self, faces):
+        return sorted(f['redesign']['kind'] for f in oc.check([part(faces)], RULES)['findings'])
+
+    def test_each_finding_gets_one(self):
+        hole = {'i': 1, 'type': 'cylinder', 'axis': [1.0, 0.0, 0.0], 'concave': True, 'd': 4.0, 'area': 60.0, 'tris': hole_tris()}
+        self.assertEqual(self.kinds([tilted(40.0)]), ['steepen'])
+        self.assertEqual(self.kinds([hole]), ['teardrop'])
+        self.assertEqual(self.kinds([rect(0, 0, 20, 4, 10, [True, False, False, False])]), ['chamfer_45'])
+        self.assertEqual(self.kinds([rect(0, 0, 20, 4, 1.2, [True, False, False, False])]), ['drop_to_bed'])
+        self.assertEqual(self.kinds([rect(0, 0, 20, 10, 10, [True, False, True, False])]), ['split_bridge'])
+        fillet = {'i': 2, 'type': 'torus', 'concave': False, 'area': 5.0, 'tris': [[0, 0, 0.5, 0.5, 0, -0.866, 3.0]]}
+        self.assertEqual(self.kinds([fillet]), ['bottom_chamfer'])
+
+
 class Rules(unittest.TestCase):
     def test_every_number_has_a_source(self):
         for k, v in RULES.items():

@@ -2,6 +2,18 @@
 
 What each version of the plugin changes. Skills update with the plugin; the tools copied into a project do not. Read the section of a version before you refresh a project with `python3 <plugin>/tools/setup_project.py <dir> --update-tools`, and review `git diff` afterwards.
 
+## 0.6.1 - 2026-11-24
+
+- **Overhangs only when really needed** (owner: "якщо це прям дуже треба"): an overhang passes only as a named exception of
+  the project, `gate/settings.json` `"overhang": {"exceptions": [{"part", "at": [x, y, z] | "face": index, "code"?, "reason"}]}`.
+  It is listed under `excepted` with its reason; an exception with no reason (`exception_without_reason`) or one that
+  matches no finding any more (`exception_unused`) is a finding. Heat-set pocket ceilings stay allowed by rule.
+- **Every finding carries a redesign** (`redesign`: `kind` + text with the place): teardrop, 45 deg chamfer or rib from
+  below, steepen to 45, chamfer instead of a rounded bottom edge, take a low ceiling down to the bed, split a long bridge
+  or roof it, level a ridge. `check` prints it as the fix.
+- **`gate.py overhang-faces [PART ...]`**: all six bed faces of the failing parts in one read-only Fusion call; per face
+  the findings by code, the forbidden area and the flat contact with the bed (`bed_faces` in the part's result).
+
 ## 0.6.0 - 2026-11-24
 
 - **The overhang gate** (`gate.py overhang`, `rules/overhang.json`, `tools/gate/overhang_*.py`, the `gate` skill). Every

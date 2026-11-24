@@ -83,9 +83,11 @@ def check(root, names, as_json=False):
     by = {}
     for f in res['findings']:
         by.setdefault(f['part'], []).append(f)
-    alw = {}
+    alw, exc = {}, {}
     for f in res['allowed']:
         alw.setdefault(f['part'], []).append(f)
+    for f in res['excepted']:
+        exc.setdefault(f['part'], []).append(f)
     failed = 0
     for p in facts['parts']:
         fs = by.get(p['name'], [])
@@ -97,15 +99,17 @@ def check(root, names, as_json=False):
                 old = json.load(fh)
         rec = dict(stamp, part=p['name'], bed_face=p.get('face'), down=p.get('down'), box=p.get('box'),
                    body={'faces': p.get('n_faces'), 'volume_mm3': p.get('volume'), 'area_mm2': p.get('area')} if p.get('faces') is not None else None,
-                   verdict='fail' if fs else 'pass', findings=fs, allowed=alw.get(p['name'], []), small_regions=res['small'].get(p['name'], 0),
+                   verdict='fail' if fs else 'pass', findings=fs, allowed=alw.get(p['name'], []), excepted=exc.get(p['name'], []),
+                   small_regions=res['small'].get(p['name'], 0),
                    heatset_pockets=len(pockets.get(p['name'], [])), fusion_s=p.get('s'), info=res['info'].get(p['name'], []))
-        if old.get('slicer') and old.get('body') == rec['body']:
-            rec['slicer'] = old['slicer']                       # the slicer comparison of the same body stays
+        for k in ('slicer', 'bed_faces'):                       # the slicer comparison and the face trial of the same body stay
+            if old.get(k) and old.get('body') == rec['body']:
+                rec[k] = old[k]
         with open(path, 'w', encoding='utf-8') as fh:
             json.dump(rec, fh, indent=1, ensure_ascii=False); fh.write('\n')
     counts = {}
-    for f in res['findings'] + res['allowed']:
-        counts[f['code']] = counts.get(f['code'], 0) + 1
+    for f in res['findings'] + res['allowed'] + res['excepted']:
+        counts[f['code'] if f not in res['excepted'] else 'excepted'] = counts.get(f['code'] if f not in res['excepted'] else 'excepted', 0) + 1
     summary = dict(stamp, parts=len(facts['parts']), failed=failed, counts=counts, errors=facts['errors'],
                    fusion_s=round(t_f, 2), judge_s=round(time.time() - t0 - t_f, 2))
     with open(os.path.join(out_dir, '_summary.json'), 'w', encoding='utf-8') as fh:
@@ -120,9 +124,12 @@ def check(root, names, as_json=False):
             print('ERROR %s: %s' % (e['part'], e['error']))
         for f in sorted(res['findings'], key=lambda f: (f['part'], f['code'], -f.get('area_mm2', 0))):
             print('%s  %-15s %s%s\n      fix: %s' % (f['part'], f['code'], f['measured'],
-                                                   ('  at (%s)' % ', '.join('%.1f' % x for x in f['at'])) if f.get('at') else '', f['fix']))
+                                                   ('  at (%s)' % ', '.join('%.1f' % x for x in f['at'])) if f.get('at') else '',
+                                                   (f.get('redesign') or {}).get('text') or f['fix']))
         for part, fs in sorted(alw.items()):
             print('%s  allowed: %d heat-set pocket ceiling(s), %.1f mm2' % (part, len(fs), sum(f['area_mm2'] for f in fs)))
+        for f in res['excepted']:
+            print('%s  excepted %s at (%s): %s' % (f['part'], f['code'], ', '.join('%.1f' % x for x in f['at']), f['exception']))
         print('PASS %d, FAIL %d of %d parts; %d findings, %d allowed. Results: %s' % (
             len(facts['parts']) - failed, failed, len(facts['parts']), len(res['findings']), len(res['allowed']), os.path.relpath(out_dir, root)))
     if facts['errors']:
@@ -133,3 +140,62 @@ def check(root, names, as_json=False):
 def slice_cmd(root, names, keep=None):
     import overhang_slicer
     return overhang_slicer.run(root, names, keep)
+
+
+def faces(root, names):
+    """For each named part (default: every part whose last result fails) judge all six bed faces in one read-only
+    Fusion call and store per face: findings by code, forbidden mm2 and the flat contact with the bed (mm2; a part needs a
+    real flat face to lie on). Written into gate/results/overhang/<part>.json "bed_faces"; nothing else changes."""
+    import gate
+    rules, settings, merged, hs_merged, pcfg = load(root)
+    out_dir = os.path.join(root, 'gate', 'results', 'overhang')
+    if not names:
+        names = []
+        for n in pcfg['parts']:
+            pth = os.path.join(out_dir, n + '.json')
+            if os.path.exists(pth) and json.load(open(pth, encoding='utf-8')).get('verdict') == 'fail':
+                names.append(n)
+    specs = []
+    for n in names:
+        e = pcfg['parts'][n]
+        base = {k: v for k, v in e.items() if k in ('component', 'path', 'body')}
+        for face, down in overhang_core.AXES.items():
+            specs.append(dict(base, name='%s@%s' % (n, face), face=face, down=down))
+    src = ''.join(gate.text(os.path.join(HERE, f)) + '\n' for f in ('heatset_core.py', 'heatset_fusion.py', 'overhang_core.py', 'overhang_fusion.py'))
+    t0 = time.time()
+    try:
+        facts = fusion_rpc.run_job(src, {'doc': pcfg.get('doc'), 'parts': specs, 'rules': merged, 'heatset_rules': hs_merged},
+                                   write=False, timeout=3600, name='overhang_faces')
+    except fusion_rpc.FusionError as e:
+        print('the gate could not run: %s' % e); return 4
+    hs = heatset_core.check(facts['heatset']['parts'], facts['heatset']['inserts'], hs_merged)
+    pockets = {}
+    for p in hs['pockets']:
+        pockets.setdefault(p['part'], []).append(p)
+    table = {}
+    for p in facts['parts']:
+        n, face = p['name'].rsplit('@', 1)
+        r = overhang_core.judge_part(p, merged, pockets.get(p['name'], ()))
+        bad = [x for x in r['regions'] if x['code'] not in merged.get('allowed', ())]
+        bed = sum(f['area'] for f in p['faces'] if f['type'] == 'plane' and overhang_core.slope(f['n'], p['down']) < 0.5
+                  and f['h'][1] - p['bed_h'] < 0.05)
+        codes = {}
+        for x in bad:
+            codes[x['code']] = codes.get(x['code'], 0) + 1
+        table.setdefault(n, {})[face] = {'findings': len(bad), 'by_code': codes, 'bed_mm2': round(bed, 1),
+                                         'forbidden_mm2': round(sum(x['area_mm2'] for x in bad), 1)}
+    for n, t in sorted(table.items()):
+        pth = os.path.join(out_dir, n + '.json')
+        if os.path.exists(pth):
+            rec = json.load(open(pth, encoding='utf-8'))
+            rec['bed_faces'] = t
+            with open(pth, 'w', encoding='utf-8') as fh:
+                json.dump(rec, fh, indent=1, ensure_ascii=False); fh.write('\n')
+        now = pcfg['parts'][n]['3mf'][0].get('face') if pcfg['parts'][n].get('3mf') else None
+        line = '  '.join('%s%s %d (bed %.0f mm2)' % ('*' if f == now else '', f, v['findings'], v['bed_mm2'])
+                         for f, v in sorted(t.items(), key=lambda kv: kv[1]['findings']))
+        print('%-28s %s' % (n, line))
+    print('(* = the face in fusion/parts.json; a face needs a real flat contact with the bed)  [Fusion %.0f s]' % (time.time() - t0))
+    for e in facts['errors']:
+        print('ERROR %s: %s' % (e['part'], e['error']))
+    return 0

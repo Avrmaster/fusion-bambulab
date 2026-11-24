@@ -304,6 +304,13 @@ def judge_part(part, rules, pockets=()):
         if max(-_dot(rg['p0'], down), -_dot(rg['p1'], down)) - bed_h <= bed:
             continue
         out.append(_region(part, 'shallow_ridge', [rg['p0'], rg['p1']], 0.0, rise, rg['faces'], length_mm=round(L, 2)))
+    by_i = {f['i']: f for f in part['faces']}
+    for r in out:                                         # the surface under each region: what the redesign works on
+        f = by_i.get(r.get('face')) if not isinstance(r.get('face'), list) else None
+        if f:
+            r['surface'] = f['type']
+            if f.get('concave') is not None:
+                r['concave'] = f['concave']
     out = merge_holes(out)
     return {'regions': out, 'small': small, 'info': info}
 
@@ -348,7 +355,77 @@ def finding(r, rules):
             'shallow_ridge': 'ridge %.1f mm long rising %.0f deg, between two downward faces' % (r.get('length_mm', 0), r['slope_deg']),
             'heatset_ceiling': 'heat-set pocket ceiling %.1f mm2' % r['area_mm2']}.get(r['code'], r['code'])
     return dict(r, measured=what, expected='no downward face steeper than %g deg from the vertical, bridges up to %g mm' % (
-        lim, val(rules, 'bridge_max_mm')), fix=rules['codes'][r['code']])
+        lim, val(rules, 'bridge_max_mm')), fix=rules['codes'][r['code']], redesign=redesign(r, rules))
+
+
+def _xyz(p):
+    return '(%s)' % ', '.join('%.1f' % x for x in p)
+
+
+def redesign(r, rules):
+    """A concrete redesign for one region: what to change, where. {"kind", "text"}; kind is one of chamfer_45, steepen,
+    bottom_chamfer, teardrop, split_bridge, roof_45, level_ridge, drop_to_bed, none."""
+    lim, bmax, code, h = val(rules, 'limit_deg'), val(rules, 'bridge_max_mm'), r['code'], r.get('h', 0)
+    surf, flat = r.get('surface'), r.get('slope_deg', 0) <= val(rules, 'bridge_flat_deg')
+    if code == 'round_hole':
+        return {'kind': 'teardrop', 'text': 'teardrop top on the D%.2f hole at %s: a %g deg roof over it, its flat top no wider than %g mm' % (
+            r.get('d', 0), _xyz(r['at']), lim, bmax)}
+    if code == 'long_bridge':
+        return {'kind': 'split_bridge', 'text': 'the ceiling at %s (h %.1f) spans more than %g mm: a %g deg roof over it, or ribs down to the '
+                'floor so no span is over %g mm, or narrow the opening' % (_xyz(r['at']), h, bmax, lim, bmax)}
+    if code == 'shallow_ridge':
+        return {'kind': 'level_ridge', 'text': 'the edge at %s rises %.0f deg: give the two faces the same tilt so the edge runs level, or a %g deg '
+                'chamfer along it' % (_xyz(r['at']), r['slope_deg'], lim)}
+    if code != 'overhang':
+        return {'kind': 'none', 'text': ''}
+    if surf in ('cylinder', 'torus', 'sphere', 'nurbs') and not r.get('concave') and h <= 2.0:
+        return {'kind': 'bottom_chamfer', 'text': 'the rounded edge at %s, %.1f mm above the bed: a %g deg chamfer instead of the round' % (
+            _xyz(r['at']), h, lim)}
+    if flat and h <= 2.0:
+        return {'kind': 'drop_to_bed', 'text': 'the ceiling at %s is only %.1f mm above the bed: take the face down to the bed, or a %g deg '
+                'chamfer under it' % (_xyz(r['at']), h, lim)}
+    if flat:
+        return {'kind': 'chamfer_45', 'text': 'a %g deg chamfer or a rib from below under the ceiling at %s (h %.1f, %.1f mm2)' % (
+            lim, _xyz(r['at']), h, r['area_mm2'])}
+    return {'kind': 'steepen', 'text': 'the %s at %s is %.0f deg from the vertical: make it %g deg (a %g deg cone or chamfer)' % (
+        'face' if surf == 'plane' else surf or 'surface', _xyz(r['at']), 90 - r['slope_deg'], lim, lim)}
+
+
+def apply_exceptions(res, exceptions, near=2.0):
+    """Move each finding a project names in gate/settings.json "overhang": {"exceptions": [{"part", "at": [x, y, z] or
+    "face": index, "code" (optional), "reason"}]} from the findings to res["excepted"] (with its reason). An exception
+    with no written reason, or one that matches no finding any more, is a finding itself."""
+    res.setdefault('excepted', [])
+    keep = []
+    used = [False] * len(exceptions or [])
+    def hit(e, f):
+        if e.get('part') != f.get('part') or (e.get('code') and e['code'] != f.get('code')):
+            return False
+        if e.get('face') is not None:
+            fc = f.get('face')
+            return e['face'] == fc or (isinstance(fc, list) and e['face'] in fc)
+        if e.get('at') and f.get('box'):
+            lo, hi = f['box']
+            return all(lo[i] - near <= e['at'][i] <= hi[i] + near for i in range(3))
+        return False
+    for f in res['findings']:
+        k = next((k for k, e in enumerate(exceptions or []) if hit(e, f)), None)
+        if k is None:
+            keep.append(f); continue
+        used[k] = True
+        e = exceptions[k]
+        if not (e.get('reason') or '').strip():
+            keep.append(dict(f, code='exception_without_reason', measured='an exception in gate/settings.json covers this %s but gives no reason' % f['code'],
+                             fix='write why this overhang is really needed ("reason"), or redesign it: %s' % f.get('redesign', {}).get('text', '')))
+            continue
+        res['excepted'].append(dict(f, exception=e['reason'].strip()))
+    for k, e in enumerate(exceptions or []):
+        if not used[k]:
+            keep.append({'part': e.get('part'), 'code': 'exception_unused', 'at': e.get('at'), 'face': e.get('face'),
+                         'measured': 'the exception in gate/settings.json matches no finding (fixed or moved?)', 'expected': 'only live exceptions',
+                         'fix': 'remove it from gate/settings.json, or point it at the place again'})
+    res['findings'] = keep
+    return res
 
 
 def check(parts, rules, pockets_by_part=None):
@@ -364,4 +441,5 @@ def check(parts, rules, pockets_by_part=None):
         regions[p['name']] = r['regions']; small[p['name']] = r['small']; info[p['name']] = r['info']
         for x in r['regions']:
             (allowed if x['code'] in rules.get('allowed', ()) else findings).append(finding(x, rules))
-    return {'findings': findings, 'allowed': allowed, 'small': small, 'regions': regions, 'info': info}
+    return apply_exceptions({'findings': findings, 'allowed': allowed, 'small': small, 'regions': regions, 'info': info},
+                            rules.get('exceptions') or [])

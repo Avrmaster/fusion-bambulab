@@ -28,6 +28,7 @@ python3 ~/.claude/plugins/marketplaces/print-engineering/tools/gate/gate.py fix-
 python3 ~/.claude/plugins/marketplaces/print-engineering/tools/gate/gate.py rules
 python3 ~/.claude/plugins/marketplaces/print-engineering/tools/gate/gate.py overhang [PART ...]
 python3 ~/.claude/plugins/marketplaces/print-engineering/tools/gate/gate.py overhang-slice [PART ...]   # minutes: run in the background
+python3 ~/.claude/plugins/marketplaces/print-engineering/tools/gate/gate.py overhang-faces [PART ...]   # every bed face of the failing parts
 ```
 
 Run them from the project folder (or pass `--project DIR`). Exit 0: every checked part passes; 1: findings; 4: the gate
@@ -87,6 +88,7 @@ call) turns each body with its bed face down and judges in `overhang_core.py`:
 | `long_bridge` | a flat ceiling held on both sides by a span longer than `bridge_max_mm` (6) | narrow it, or a 45 degree roof |
 | `shallow_ridge` | two downward faces that pass meet in a convex edge rising less than the limit (two 45 degree chamfers round a corner: 35 deg) | the same tilt on both faces so the ridge runs level, or 45 degrees along it |
 | `no_bed_face`, `bed_face_conflict` | `fusion/parts.json` does not name one print side | name it |
+| `exception_without_reason`, `exception_unused` | an exception in `gate/settings.json` with no reason, or at a place with no finding | write the reason, or remove it |
 | `heatset_ceiling` | **allowed**: the ceiling of a heat-set pocket that opens sideways or down (the insert needs the round pocket) | listed, not failed |
 
 A flat ceiling is a bridge where a straight chord through it, ending on both sides at an edge where the material goes on
@@ -96,6 +98,20 @@ sliver (info, not an overhang). Normals are the surface's own, not the mesh face
 is the heat-set gate's pocket (mouth to the end of its hole). Patches under `min_area_mm2` (1) are counted, not listed. Each region in
 `gate/results/overhang/<part>.json`: `at` (world mm), `box`, `area_mm2`, `slope_deg` (0 = flat ceiling, 90 = wall),
 `h` above the bed; bridges and small patches go to `info`.
+
+**Supports are a design failure by default.** Every finding carries a `redesign` (teardrop, 45 deg chamfer or rib from
+below, steepen, chamfer instead of a rounded bottom edge, take a low ceiling to the bed, split or roof a long bridge,
+level a ridge) with its place; report it with the finding. `overhang-faces` judges all six bed faces of the failing parts
+(findings and flat bed contact per face): say when another face clears findings. An overhang passes only as a named
+exception the owner decides, in the project's `gate/settings.json`:
+
+```json
+{"overhang": {"exceptions": [{"part": "j1_magnet_carrier_test_ring", "at": [12.0, 0.0, 4.8], "reason": "standard 60 deg thread flank"}]}}
+```
+
+(`face` = the face index instead of `at`; `code` narrows it.) It shows under `excepted` with its reason; no reason, or
+no finding left at the place, is a finding. Never add an exception yourself: list the finding, its redesign, and why a
+redesign is impossible if it is.
 
 **The slicer's opinion** (`overhang-slice`): copies of the parts' `.3mf` projects are sliced with the Bambu Studio CLI in
 a temp folder (the originals are only read: safe while Bambu Studio is open), the tips of the support columns are read

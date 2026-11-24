@@ -1,6 +1,6 @@
 {
  "gate": "overhang",
- "about": "Overhangs and supports. Every printed part has one bed face (the face of its 3mf entries in fusion/parts.json): the part is checked turned with that face down. A downward face steeper than the limit needs a support and is a finding, unless it is a bridge short enough, rests on the bed, or is a heat-set pocket ceiling (the one allowed support, listed, not failed). A horizontal round hole is a finding of its own: it is a teardrop. Lengths mm, angles degrees. A project changes a number only in its gate/settings.json (\"overhang\": {...}, merged over this file).",
+ "about": "Overhangs and supports. Every printed part has one bed face (the face of its 3mf entries in fusion/parts.json): the part is checked turned with that face down. A downward face steeper than the limit needs a support and is a finding, unless it is a bridge short enough, rests on the bed, or is a heat-set pocket ceiling (the one allowed support, listed, not failed). A horizontal round hole is a finding of its own: it is a teardrop. Lengths mm, angles degrees. A project changes a number only in its gate/settings.json (\"overhang\": {...}, merged over this file). An overhang that is really needed passes only as a named exception of the project: gate/settings.json \"overhang\": {\"exceptions\": [{\"part\", \"at\": [x, y, z] world mm, or \"face\": index, \"code\" (optional), \"reason\": why it cannot be redesigned}]}; it is listed under \"excepted\", never silently. Owner 2026-11-24: overhangs only \"якщо це прям дуже треба\".",
  "limit_deg": {
   "value": 45.0,
   "tolerance": 0.5,
@@ -45,7 +45,9 @@
   "shallow_ridge": "two downward faces meet in an edge that rises less than the limit (fusion/DESIGN_RULES.md section 5: two 45 degree faces that slope different ways meet in a shallower edge): give the faces the same tilt so the ridge runs level, or 45 degrees along the ridge",
   "no_bed_face": "the part has no bed face in fusion/parts.json (3mf entries with \"face\"): name the face it prints on",
   "bed_face_conflict": "the part's 3mf entries name different bed faces: one part, one print orientation",
-  "heatset_ceiling": "ALLOWED: the ceiling of a heat-set pocket that opens sideways or downwards: the insert needs the round pocket, a support or a sacrificial layer is fine (owner 2026-11-24)"
+  "heatset_ceiling": "ALLOWED: the ceiling of a heat-set pocket that opens sideways or downwards: the insert needs the round pocket, a support or a sacrificial layer is fine (owner 2026-11-24)",
+  "exception_without_reason": "a project exception in gate/settings.json covers this overhang but gives no reason: write why it is really needed, or redesign it",
+  "exception_unused": "a project exception in gate/settings.json matches no finding: remove it"
  },
  "allowed": [
   "heatset_ceiling"
@@ -55,5 +57,6 @@
   "near_mm": 2.0,
   "min_support_mm": 20.0,
   "source": "gate author's choice 2026-11-24: support moves are binned in 1 mm cells; a support cell and a gate region match within 2 mm; a part with less than 20 mm of support line and no gate region agrees (the old support gate's noise floor: 20 mm)"
- }
+ },
+ "exceptions": []
 }
