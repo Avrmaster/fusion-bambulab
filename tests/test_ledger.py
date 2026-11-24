@@ -1,5 +1,6 @@
 """The print ledger: the write journal, the folded view, the answers and the mesh tests behind them.
 Synthetic STLs and a synthetic journal built here; neither Fusion nor Bambu Studio, no network."""
+import stat
 import contextlib, datetime, io, json, os, shutil, struct, sys, tempfile, threading, unittest, zipfile
 for _k in ('CLAUDECODE', 'CLAUDE_CODE_ENTRYPOINT', 'CLAUDE_CODE_SESSION_ID'): os.environ.pop(_k, None)      # gate.py owner from an agent session needs the hook's ticket: a test is no agent session
 os.environ.pop('CLAUDE_PROJECT_DIR', None)      # bambu3mf finds a gated root for a file outside it from this: never the session's project
@@ -54,6 +55,17 @@ COVER_LOW = dict(size=(12.0, 30.0, 5.0), origin=(28.0, 0.0, 9.6))   # 0.4 into t
 KNOB = dict(size=(5.0, 5.0, 5.0), origin=(100.0, 100.0, 0.0))       # far from everything
 
 
+
+def _rmtree(path, ignore=False):
+    """shutil.rmtree that also removes read-only files (git objects on Windows)."""
+    def onerr(func, p, exc):
+        try:
+            os.chmod(p, stat.S_IWRITE); func(p)
+        except Exception:
+            if not ignore:
+                raise
+    shutil.rmtree(path, onerror=onerr)
+
 class Clock(object):
     """ledger._now(), one minute further at every call: the order of events is the order of the calls."""
     def __init__(self): self.t = datetime.datetime(2026, 3, 4, 10, 0, 0)
@@ -64,7 +76,7 @@ class Clock(object):
 
 class Base(unittest.TestCase):
     def setUp(self):
-        self.d = os.path.realpath(tempfile.mkdtemp()); self.addCleanup(shutil.rmtree, self.d)
+        self.d = os.path.realpath(tempfile.mkdtemp()); self.addCleanup(_rmtree, self.d)
         os.makedirs(os.path.join(self.d, 'bambulab', 'ledger')); os.makedirs(os.path.join(self.d, 'stl'))
         self.proj = os.path.join(self.d, 'bambulab', 'Demo.3mf')
         self.clock = Clock()
@@ -154,7 +166,7 @@ class Mesh(Base):
 
 class Journal(Base):
     def test_off_without_the_folder(self):
-        other = os.path.realpath(tempfile.mkdtemp()); self.addCleanup(shutil.rmtree, other)
+        other = os.path.realpath(tempfile.mkdtemp()); self.addCleanup(_rmtree, other)
         self.assertIsNone(ledger.find_root(other))
         self.assertEqual(ledger.find_root(self.proj), self.d); self.assertEqual(ledger.find_root(os.path.join(self.d, 'stl')), self.d)
         self.stl('bracket', **BRACKET)
@@ -196,7 +208,7 @@ class Journal(Base):
         self.assertIn('not recorded', out.getvalue()); self.assertEqual(self.events(), [])
 
     def test_an_stl_outside_the_project_leaves_no_path_in_the_journal(self):
-        other = os.path.realpath(tempfile.mkdtemp()); self.addCleanup(shutil.rmtree, other)
+        other = os.path.realpath(tempfile.mkdtemp()); self.addCleanup(_rmtree, other)
         path = write_stl(os.path.join(other, 'bracket.stl'), block(**BRACKET))
         e = self.write(self.mesh('bracket', stl=path))[0]
         self.assertEqual(e['stl'], 'bracket.stl')
@@ -572,7 +584,7 @@ class MayChange(Base):
 
 class CommandLine(Base):
     def test_off_here_is_exit_4(self):
-        other = os.path.realpath(tempfile.mkdtemp()); self.addCleanup(shutil.rmtree, other)
+        other = os.path.realpath(tempfile.mkdtemp()); self.addCleanup(_rmtree, other)
         err = io.StringIO()
         with contextlib.redirect_stderr(err), contextlib.redirect_stdout(io.StringIO()):
             code = ledger.main(['--root', other, 'status'])
@@ -618,12 +630,12 @@ class CommandLine(Base):
         r = run('may-change', 'bracket', '--stl', write_stl(os.path.join(self.d, 'new.stl'), block(**BRACKET_HOLE_MOVED)))
         self.assertEqual(r.returncode, 0); self.assertIn('FREE-REPRINT', r.stdout.decode())
         self.assertEqual(run('jobs').returncode, 0); self.assertEqual(run('doctor').returncode, 0)
-        other = os.path.realpath(tempfile.mkdtemp()); self.addCleanup(shutil.rmtree, other)
+        other = os.path.realpath(tempfile.mkdtemp()); self.addCleanup(_rmtree, other)
         r = run('status', cwd=other)
         self.assertEqual(r.returncode, 4); self.assertIn('the ledger is off here', r.stderr.decode())
 
     def test_init_turns_the_ledger_on_once(self):
-        other = os.path.realpath(tempfile.mkdtemp()); self.addCleanup(shutil.rmtree, other)
+        other = os.path.realpath(tempfile.mkdtemp()); self.addCleanup(_rmtree, other)
         with open(os.path.join(other, '.gitignore'), 'w') as f: f.write('__pycache__/')
         with contextlib.redirect_stdout(io.StringIO()) as out:
             self.assertEqual(ledger.main(['--root', other, 'init']), 0)

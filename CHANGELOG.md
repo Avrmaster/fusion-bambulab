@@ -2,6 +2,13 @@
 
 What each version of the plugin changes. Skills update with the plugin; the tools copied into a project do not. Read the section of a version before you refresh a project with `python3 <plugin>/tools/setup_project.py <dir> --update-tools`, and review `git diff` afterwards.
 
+## 0.8.4 - 2026-11-24
+
+- **Windows: the print ledger lost lines and broke plate pictures** (CI had failed on windows-latest since 0.4.x).
+  Files are now written in binary mode (`os.O_BINARY`: Windows turned `\n` into `\r\n` inside PNG thumbnails), and an
+  append to `events.jsonl` holds a byte lock on a side file in the temp folder (Windows O_APPEND writes are not atomic:
+  6 writers x 40 lines kept 187 of 240). Tests remove their temp git folders with the read-only bits cleared.
+
 ## 0.8.3 - 2026-11-24
 
 - Overhang exceptions can name a whole part: `{"part": ..., "whole_part": true, "reason": ...}` covers every finding of

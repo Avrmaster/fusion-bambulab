@@ -33,6 +33,17 @@ def signed(model, job, plate, n=0):
             '&X-Amz-Signature=%s%02d&access_code=%s&dev_id=%s' % (HOST, model, job, plate, CREDENTIAL, SIGNATURE, n, ACCESS_CODE, SERIAL))
 
 
+
+def _rmtree(path, ignore=False):
+    """shutil.rmtree that also removes read-only files (git objects on Windows)."""
+    def onerr(func, p, exc):
+        try:
+            os.chmod(p, stat.S_IWRITE); func(p)
+        except Exception:
+            if not ignore:
+                raise
+    shutil.rmtree(path, onerror=onerr)
+
 class Cache(object):
     """A synthetic URL cache database in the shape the real one has: three tables, a binary plist per response, the
     pictures in fsCachedData/."""
@@ -74,8 +85,8 @@ class Cache(object):
 
 class Base(unittest.TestCase):
     def setUp(self):
-        self.d = os.path.realpath(tempfile.mkdtemp()); self.addCleanup(shutil.rmtree, self.d)
-        self.machine = os.path.realpath(tempfile.mkdtemp()); self.addCleanup(shutil.rmtree, self.machine)       # stands for the slicer's cache folder
+        self.d = os.path.realpath(tempfile.mkdtemp()); self.addCleanup(_rmtree, self.d)
+        self.machine = os.path.realpath(tempfile.mkdtemp()); self.addCleanup(_rmtree, self.machine)       # stands for the slicer's cache folder
         os.makedirs(os.path.join(self.d, 'bambulab', 'ledger')); os.makedirs(os.path.join(self.d, 'stl'))
         self.proj = os.path.join(self.d, 'bambulab', 'Demo.3mf')
         self.clock = Clock()
@@ -226,8 +237,8 @@ class Reader(Base):
         self.assertIn('could not be read (DatabaseError: unable to open <link>)', shown); self.assert_clean()
 
     def test_a_copy_left_by_a_killed_run_is_swept(self):
-        old = tempfile.mkdtemp(prefix='ledger-cache-'); self.addCleanup(shutil.rmtree, old, True)
-        fresh = tempfile.mkdtemp(prefix='ledger-cache-'); self.addCleanup(shutil.rmtree, fresh, True)
+        old = tempfile.mkdtemp(prefix='ledger-cache-'); self.addCleanup(_rmtree, old, True)
+        fresh = tempfile.mkdtemp(prefix='ledger-cache-'); self.addCleanup(_rmtree, fresh, True)
         os.utime(old, (1, 1))
         ledger_cache.read_jobs(self.d, self.three_jobs())
         self.assertFalse(os.path.exists(old)); self.assertTrue(os.path.exists(fresh))                             # another run may be using the fresh one

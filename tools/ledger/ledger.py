@@ -195,12 +195,38 @@ def append_event(root, kind, by='tool', **fields):
     event.update(fields)
     line = (json.dumps(event, ensure_ascii=False, sort_keys=False) + '\n').encode('utf-8')
     os.makedirs(ledger_dir(root), exist_ok=True)
-    fd = os.open(events_file(root), os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o644)
-    try:
-        os.write(fd, line)                      # one write per line: two sessions appending at once lose nothing
-    finally:
-        os.close(fd)
+    _append_line(events_file(root), line)
     return event
+
+
+O_BINARY = getattr(os, 'O_BINARY', 0)          # Windows: without it os.write turns \n into \r\n
+
+
+def _append_line(path, line):
+    """One write per line: two sessions appending at once lose nothing. POSIX O_APPEND writes are atomic; on Windows
+    they are not, so the write holds a byte lock on a side file for its duration."""
+    lock = None
+    if os.name == 'nt':
+        import msvcrt, time, tempfile, hashlib
+        name = 'print-engineering-%s.lock' % hashlib.sha1(os.path.abspath(path).lower().encode()).hexdigest()[:16]
+        lock = os.open(os.path.join(tempfile.gettempdir(), name), os.O_RDWR | os.O_CREAT | O_BINARY, 0o644)   # outside the project
+        while True:
+            try:
+                msvcrt.locking(lock, msvcrt.LK_NBLCK, 1); break
+            except OSError:
+                time.sleep(0.005)
+    try:
+        fd = os.open(path, os.O_WRONLY | os.O_APPEND | os.O_CREAT | O_BINARY, 0o644)
+        try:
+            os.write(fd, line)
+        finally:
+            os.close(fd)
+    finally:
+        if lock is not None:
+            import msvcrt
+            os.lseek(lock, 0, 0)
+            msvcrt.locking(lock, msvcrt.LK_UNLCK, 1)
+            os.close(lock)
 
 
 # ---------------------------------------------------------------- identity of files

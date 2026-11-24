@@ -185,7 +185,7 @@ def _now():
 def _write_private(path, text):
     """Write a file that only this user can read."""
     tmp = '%s.tmp%d' % (path, os.getpid())
-    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | getattr(os, 'O_BINARY', 0), 0o600)
     try:
         os.write(fd, text if isinstance(text, bytes) else text.encode('utf-8'))
     finally:
@@ -194,7 +194,7 @@ def _write_private(path, text):
 
 
 def _private_copy(src, dst):
-    fd = os.open(dst, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    fd = os.open(dst, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, 'O_BINARY', 0), 0o600)
     with os.fdopen(fd, 'wb') as out, open(src, 'rb') as f:
         shutil.copyfileobj(f, out, 1024 * 1024)
 
@@ -408,7 +408,7 @@ def sync(root, db_path=None):
                                  'thumb_md5': j['thumb_md5'], 'thumb': thumb, 'seen': _now()}))
         n += 1
     if lines:
-        fd = os.open(jobs_file(root), os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o600)
+        fd = os.open(jobs_file(root), os.O_WRONLY | os.O_APPEND | os.O_CREAT | getattr(os, 'O_BINARY', 0), 0o600)
         try:
             os.write(fd, ('\n'.join(lines) + '\n').encode('utf-8'))
         finally:
