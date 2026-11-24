@@ -306,6 +306,8 @@ def compare(regions, info, tips, cell, near, frame, layer, threshold, support_on
         r = boxes[k][0]
         e = on_info.setdefault(r['code'], {'n': 0, 'area_mm2': 0.0, 'contact_mm2': 0.0})
         e['n'] += 1; e['area_mm2'] = round(e['area_mm2'] + r['area_mm2'], 1); e['contact_mm2'] = round(e['contact_mm2'] + len(got) * cell * cell, 1)
+        if r['code'] == 'bridge' and r.get('pocket') is not None:
+            continue                                         # support in a heat-set pocket is allowed (the insert closes it), as heatset_ceiling
         if r['code'] == 'bridge' and len(got) * cell * cell >= bridge_contact - 1e-9:
             supported.append(dict(r, code='slicer_bridge', contact_mm2=round(len(got) * cell * cell, 1)))
     for r, (lo, hi) in boxes:                       # near an allowed place, not support the gate missed

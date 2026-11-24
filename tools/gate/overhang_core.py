@@ -241,7 +241,10 @@ def judge_part(part, rules, pockets=()):
                 c = ceiling(f['loops'], down, bmax, grid, val(rules, 'ledge_mm'))
                 if c['n'] and c['bridged']:
                     pts_b = [p for lp in f['loops'] for p in lp['pts']]
-                    info.append(_region(part, 'bridge', pts_b, f['area'] * c['bridged'] / c['n'], s, f['i'], open_mm=round(c['open_mm'], 2)))
+                    pkb = in_pocket(pts_b[0], pockets) if pts_b else None
+                    pkb = pkb if pkb and all(in_pocket(p, pockets) for p in pts_b) else None     # a heat-set pocket's own ceiling (its blind end)
+                    info.append(_region(part, 'bridge', pts_b, f['area'] * c['bridged'] / c['n'], s, f['i'], open_mm=round(c['open_mm'], 2),
+                                        **({'pocket': pockets.index(pkb)} if pkb else {})))
                 if not c['n'] or not c['free']:
                     continue
                 groups = {}                                     # the free points by the pocket they are in (None: none)

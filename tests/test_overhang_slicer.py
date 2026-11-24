@@ -144,6 +144,14 @@ class Compare(unittest.TestCase):
         self.assertEqual(r['bridge_findings'][0]['contact_mm2'], 3.0)
         self.assertTrue(r['agree'])
 
+    def test_support_in_a_heatset_pocket_is_allowed(self):
+        # the blind end of a heat-set hole: a bridge the slicer supports, but in a pocket (Oleksandr 2026-11-24: heat-set -> support ok)
+        info = [dict(self.region('bridge', 50, 50, 5), pocket=0)]
+        tips = {(50, 50): 4.7, (51, 50): 4.7, (50, 51): 4.7}
+        r = sl.compare([], info, tips, 1.0, 2.0, self.Ident(), 0.3, 30.0, True, 20.0, 500.0, bridge_contact=2.0)
+        self.assertEqual(r['bridge_findings'], [])
+        self.assertEqual(r['slicer_on_allowed']['bridge']['contact_mm2'], 3.0)
+
     def test_quiet_part_agrees(self):
         r = sl.compare([], [], {}, 1.0, 2.0, self.Ident(), 0.3, 30.0, True, 20.0, 0.0)
         self.assertTrue(r['agree'])

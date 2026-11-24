@@ -2,6 +2,13 @@
 
 What each version of the plugin changes. Skills update with the plugin; the tools copied into a project do not. Read the section of a version before you refresh a project with `python3 <plugin>/tools/setup_project.py <dir> --update-tools`, and review `git diff` afterwards.
 
+## 0.8.2 - 2026-11-24
+
+- **Support inside a heat-set pocket is allowed**, also where the slicer supports a ceiling the gate takes for a bridge
+  (the blind end of the pocket's hole): such a bridge carries its pocket and is counted with the allowed places, not as
+  `slicer_bridge` (owner, 2026-11-24: "якщо heat set - support ок"). Prefer a 90 deg cone tip at a blind end where the
+  floor allows it: no support at all.
+
 ## 0.8.1 - 2026-11-24
 
 - The overhang gate read failed on a body with a cone tip ("'NoneType' object has no attribute 'objectType'"): a cone
