@@ -130,7 +130,7 @@ def check(root, names, gate, as_json=False, facts=None):
     summary = dict(stamp, parts=len(facts['parts']), failed=failed, findings=len(allf), codes=codes, exempt_samples=exempt,
                    samples=sum(results[p['name']]['counts']['samples'] for p in facts['parts']), errors=facts['errors'], problems=problems,
                    fusion_s=round(t_fusion, 2), judge_s=round(t_judge, 2))
-    with open(os.path.join(out_dir, '_summary.json'), 'w', encoding='utf-8') as fh:
+    with open(os.path.join(out_dir, '_last_run.json' if names else '_summary.json'), 'w', encoding='utf-8') as fh:   # a run on some parts is no project summary
         json.dump(summary, fh, indent=1, ensure_ascii=False); fh.write('\n')
     if as_json:
         print(json.dumps({'summary': summary, 'findings': allf}, indent=1))

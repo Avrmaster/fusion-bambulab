@@ -5,7 +5,7 @@ description: Export printed parts from Autodesk Fusion to STL with checks, and f
 
 # Fusion to STL
 
-## Fast path: everything as it is in Fusion
+## Fast path: through the gates
 
 ```bash
 python3 ~/.claude/plugins/marketplaces/print-engineering/tools/export.py [PART ...]     # STLs + swap into the .3mf projects
@@ -14,9 +14,13 @@ python3 ~/.claude/plugins/marketplaces/print-engineering/tools/export.py --3mf-o
 python3 ~/.claude/plugins/marketplaces/print-engineering/tools/export.py --list
 ```
 
-No checks: what Fusion has goes to Bambu. One Fusion call meshes all parts (seconds for a whole project), the .3mf
-keeps positions, plates, settings and materials. `fusion/parts.json` lists each part with `"3mf": [{"file", "object",
-"face"}]`, the bed face as in `bambu3mf.ORIENT`. Run the `gate` before you call a part ready to print.
+The gates the project requires run first, on the parts being exported (`gate/settings.json` `{"export": {"require":
+["heatset"]}}`; no `export` key = every gate: heatset, overhang, thinwall). A part that fails one is not exported: its
+STL and .3mf mesh stay as they were, the gate's report is printed (measured, expected, fix) and the exit code is 1.
+There is no switch to skip a gate: fix the model, or write a named exception with its reason where the gate takes them.
+A project brings its model to 0 findings of one gate, then adds that gate to `require`. One Fusion call meshes all
+parts (seconds for a whole project), the .3mf keeps positions, plates, settings and materials. `fusion/parts.json` lists each part with `"3mf": [{"file", "object",
+"face"}]`, the bed face as in `bambu3mf.ORIENT`.
 
 The older tools below (`fusion_parts.py`: thin features, stale parts, checked export) still work.
 

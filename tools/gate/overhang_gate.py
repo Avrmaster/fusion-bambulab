@@ -116,7 +116,7 @@ def check(root, names, as_json=False):
         counts[f['code'] if f not in res['excepted'] else 'excepted'] = counts.get(f['code'] if f not in res['excepted'] else 'excepted', 0) + 1
     summary = dict(stamp, parts=len(facts['parts']), failed=failed, counts=counts, errors=facts['errors'],
                    fusion_s=round(t_f, 2), judge_s=round(time.time() - t0 - t_f, 2))
-    with open(os.path.join(out_dir, '_summary.json'), 'w', encoding='utf-8') as fh:
+    with open(os.path.join(out_dir, '_last_run.json' if names else '_summary.json'), 'w', encoding='utf-8') as fh:   # a run on some parts is no project summary
         json.dump(summary, fh, indent=1, ensure_ascii=False); fh.write('\n')
     if as_json:
         print(json.dumps({'summary': summary, 'findings': res['findings'], 'allowed': res['allowed']}, indent=1))

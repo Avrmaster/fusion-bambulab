@@ -1,6 +1,14 @@
 #!/usr/bin/env python3
-"""Fusion -> STL -> Bambu, with no checks: what Fusion has goes into the .3mf projects as it is. Fast by design: one
-Fusion call per document (all parts meshed in it), one load and one save per .3mf.
+"""Fusion -> STL -> Bambu through the gates: a part goes out only when it passes every gate the project requires. Fast
+by design: one Fusion call per gate and one per document (all parts meshed in it), one load and one save per .3mf.
+
+The gates run first, on the parts being exported (tools/gate/gate.py: heatset, overhang, thinwall). A part that fails one
+of them is not exported: its STL and its .3mf mesh stay as they were, its findings are printed, and the exit code is 1.
+There is no switch to skip a gate: a finding is fixed in the model, or written down as a named exception with its reason
+where that gate takes them (gate/settings.json). Which gates are required is the project's choice, while its model is
+brought to them one gate at a time:
+
+    gate/settings.json  {"export": {"require": ["heatset"]}}        default (no "export" key): every gate
 
     python3 <plugin>/tools/export.py [--project DIR] [PART ...]      export these parts (default: all), then swap the
                                                                       changed meshes into their .3mf projects
@@ -31,6 +39,58 @@ sys.path.insert(0, os.path.join(HERE, 'fusion')); sys.path.insert(0, os.path.joi
 import fusion_rpc  # noqa: E402
 
 BUDGET_S = 50
+GATES = ('heatset', 'overhang', 'thinwall')
+GATE_ARGS = {'heatset': ['check'], 'overhang': ['overhang'], 'thinwall': ['check', '--gate', 'thinwall']}
+
+
+def required_gates(root):
+    sp = os.path.join(root, 'gate', 'settings.json')
+    settings = json.load(open(sp, encoding='utf-8')) if os.path.exists(sp) else {}
+    req = (settings.get('export') or {}).get('require')
+    req = list(GATES) if req is None else list(req)
+    bad = [g for g in req if g not in GATES]
+    if bad:
+        sys.exit('gate/settings.json export.require: unknown gate(s) %s (known: %s)' % (', '.join(bad), ', '.join(GATES)))
+    return req, settings
+
+
+def run_gates(root, cfg, names, all_parts):
+    """Run the required gates on `names`. Returns (passed names, {failed name: [gates]}, gates). Exits when a gate can
+    not run (Fusion does not answer, a part is not found): then nothing is exported."""
+    gates, settings = required_gates(root)
+    failed = {}
+    if not gates:
+        print('gates: none required (gate/settings.json export.require = [])')
+        return list(names), failed, gates
+    start = time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime(time.time() - 1))
+    gate_py = os.path.join(HERE, 'gate', 'gate.py')
+    for g in gates:
+        t0 = time.time()
+        cmd = [sys.executable, gate_py] + GATE_ARGS[g] + ['--project', root] + ([] if all_parts else list(names))
+        p = subprocess.run(cmd, capture_output=True, text=True)
+        if p.returncode not in (0, 1):
+            sys.stdout.write(p.stdout); sys.stderr.write(p.stderr)
+            sys.exit('gate %s could not run (exit %d): nothing exported' % (g, p.returncode))
+        skip = set((settings.get(g) or {}).get('skip') or []) | (set(settings.get('skip') or []) if g == 'heatset' else set())
+        bad = []
+        for n in names:
+            rp = os.path.join(root, 'gate', 'results', g, n + '.json')
+            rec = json.load(open(rp, encoding='utf-8')) if os.path.exists(rp) else None
+            if rec is None or rec.get('checked_at', '') < start:
+                if n in skip:
+                    continue
+                bad.append(n)                                    # no fresh result: not checked, not exported
+            elif rec.get('verdict') != 'pass':
+                bad.append(n)
+        for n in bad:
+            failed.setdefault(n, []).append(g)
+        print('gate %-8s %d of %d part(s) pass  (%.1f s)' % (g, len(names) - len(bad), len(names), time.time() - t0))
+        if bad:                                                  # the gate's own report: what was measured, expected, how to fix
+            for l in p.stdout.splitlines():
+                if l.strip() and not l.startswith('NOT CHECKED'):
+                    print('  | ' + l)
+    passed = [n for n in names if n not in failed]
+    return passed, failed, gates
 
 
 def find_project(start):
@@ -135,7 +195,7 @@ def swap_3mf(root, cfg, names):
 
 
 def main():
-    a = argparse.ArgumentParser(description='Fusion -> STL -> Bambu, no checks')
+    a = argparse.ArgumentParser(description='Fusion -> STL -> Bambu through the gates')
     a.add_argument('parts', nargs='*'); a.add_argument('--project')
     a.add_argument('--stl-only', action='store_true'); a.add_argument('--3mf-only', dest='only3mf', action='store_true')
     a.add_argument('--list', action='store_true')
@@ -153,6 +213,13 @@ def main():
             print('%-32s %-40s -> %s' % (n, p.get('component') or '/'.join(p.get('path') or []), where))
         return
     t0 = time.time()
+    gate_failed = {}
+    if not os.environ.get('PRINT_ENGINEERING_GATED'):                # the re-run under with_bambu_closed was gated already
+        names, gate_failed, gates = run_gates(root, cfg, names, not a.parts)
+        for n, gs in sorted(gate_failed.items()):
+            print('NOT EXPORTED %s: fails %s' % (n, ', '.join(gs)))
+        if not names:
+            sys.exit(1)
     swap = names
     if not a.only3mf:
         try:
@@ -167,7 +234,7 @@ def main():
         for n, e in failed:
             print('  FAILED   %s: %s' % (n, e))
         if a.stl_only:
-            sys.exit(1 if failed else 0)
+            sys.exit(1 if failed or gate_failed else 0)
         swap = [n for n in names if n not in dict(failed)]
     import bambu3mf
     projects = sorted({t['file'] for n in swap for t in cfg['parts'][n].get('3mf') or []})
@@ -175,13 +242,16 @@ def main():
         print('Bambu Studio is running: the .3mf step runs under with_bambu_closed.py (it quits Bambu and reopens the project)')
         cmd = [sys.executable, os.path.join(HERE, 'bambu', 'with_bambu_closed.py'), ','.join(os.path.join(root, p) for p in projects),
                sys.executable, os.path.abspath(__file__), '--project', root, '--3mf-only'] + swap
-        env = dict(os.environ, PRINT_ENGINEERING_BAMBU_CLOSED='1')
-        sys.exit(subprocess.call(cmd, env=env))
+        env = dict(os.environ, PRINT_ENGINEERING_BAMBU_CLOSED='1', PRINT_ENGINEERING_GATED='1')
+        rc = subprocess.call(cmd, env=env)
+        sys.exit(rc or (1 if gate_failed else 0))
     t1 = time.time()
     res = swap_3mf(root, cfg, swap)
     for proj, ch in res.items():
         print('%s: %s' % (proj, ('%d mesh(es) swapped: %s' % (len(ch), ', '.join(ch))) if ch else 'no mesh changed'))
     print('3MF done in %.1f s; total %.1f s' % (time.time() - t1, time.time() - t0))
+    if gate_failed:
+        sys.exit(1)
 
 
 if __name__ == '__main__':

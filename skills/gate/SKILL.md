@@ -16,8 +16,12 @@ or by your own script what the gate measures: run it.
   faces, volume and area, the plugin version, the hashes of the rules and of the settings, the verdict and every
   finding). A part counts as checked only while its file says `pass` and its body is still the one measured.
 - **The parts** come from the project's `fusion/parts.json` (the same file `tools/export.py` uses).
-- **Export does not wait for the gate:** `tools/export.py` sends what Fusion has to Bambu as it is. Run the gate before
-  you call a part ready to print, and tell the owner every open finding of a part you changed.
+- **Export goes through the gates:** `tools/export.py` runs the gates the project requires (`gate/settings.json`
+  `"export": {"require": [...]}`, default every gate) on the parts it exports and holds back each part that fails,
+  with exit 1. No switch skips a gate. To make a gate required in a project, first bring every part to 0 findings of
+  it (fix the model; a named exception with its reason where the gate takes them), then add it to `require` and run
+  the export of all parts once. Tell the owner every open finding of a part you changed.
+- **A run on some parts** writes `_last_run.json`; only a run on all parts writes `_summary.json`.
 
 ## Commands
 

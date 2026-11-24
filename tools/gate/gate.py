@@ -137,7 +137,7 @@ def check(root, names, as_json=False):
             json.dump(rec, fh, indent=1, ensure_ascii=False); fh.write('\n')
     summary = dict(stamp, counts=res['counts'], parts=len(facts['parts']), failed=failed, errors=facts['errors'],
                    inserts_outside_printed_parts=res['outside'], fusion_s=round(t_fusion, 2), judge_s=round(time.time() - t0 - t_fusion, 3))
-    with open(os.path.join(out_dir, '_summary.json'), 'w', encoding='utf-8') as fh:
+    with open(os.path.join(out_dir, '_last_run.json' if names else '_summary.json'), 'w', encoding='utf-8') as fh:   # a run on some parts is no project summary
         json.dump(summary, fh, indent=1, ensure_ascii=False); fh.write('\n')
     if as_json:
         print(json.dumps({'summary': summary, 'findings': res['findings']}, indent=1)); return 1 if res['findings'] else (4 if facts['errors'] else 0)

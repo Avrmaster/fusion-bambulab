@@ -2,6 +2,21 @@
 
 What each version of the plugin changes. Skills update with the plugin; the tools copied into a project do not. Read the section of a version before you refresh a project with `python3 <plugin>/tools/setup_project.py <dir> --update-tools`, and review `git diff` afterwards.
 
+## 0.8.0 - 2026-11-24
+
+- **Export goes through the gates.** `tools/export.py` runs the gates the project requires on the parts it exports
+  (one Fusion call per gate) and holds back every part that fails one: its STL and .3mf mesh stay as they were, the
+  gate's report is printed and the exit code is 1. A gate that cannot run stops the export. There is no switch to skip
+  a gate.
+- `gate/settings.json` `"export": {"require": ["heatset", ...]}` names the required gates; with no `export` key every
+  gate is required (heatset, overhang, thinwall). A project with open findings requires the gates one by one, each
+  after its model is at 0 findings of it.
+- A gate run on some parts writes `_last_run.json`; `_summary.json` is written only by a run on all parts (a run on one
+  part used to replace the project summary with that part's).
+- Tests: `tests/test_export_gates.py`.
+- Upgrading a project: add `"export": {"require": [...]}` with only the gates its parts pass today, or the export of a
+  failing part stops.
+
 ## 0.7.1 - 2026-11-24
 
 - **A bridge the slicer supports is a finding** (`slicer_bridge`). Bambu Studio puts support under some ceilings the
