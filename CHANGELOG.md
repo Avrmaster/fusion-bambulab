@@ -2,6 +2,13 @@
 
 What each version of the plugin changes. Skills update with the plugin; the tools copied into a project do not. Read the section of a version before you refresh a project with `python3 <plugin>/tools/setup_project.py <dir> --update-tools`, and review `git diff` afterwards.
 
+## 0.9.1 - 2026-11-24
+
+- `bed_mm` 0.3 -> 0.6: a downward face within the first two layers prints on the bed (a bottom rounding R1.5 is steeper
+  than 45 deg only in its lowest 0.44 mm; Bambu Studio puts no support there).
+- `ridge_kink_deg` (10): an edge between faces whose normals differ by less than this is no ridge (a teardrop roof
+  leaving its hole almost tangent).
+
 ## 0.9.0 - 2026-11-24
 
 - **`overhang-slice` slices the parts as Fusion has them now**: the STLs on disk (`export.py --stl-only` writes them even

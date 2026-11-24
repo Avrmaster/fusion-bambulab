@@ -202,8 +202,12 @@ class Redesign(unittest.TestCase):
         self.assertEqual(self.kinds([rect(0, 0, 20, 4, 10, [True, False, False, False])]), ['chamfer_45'])
         self.assertEqual(self.kinds([rect(0, 0, 20, 4, 1.2, [True, False, False, False])]), ['drop_to_bed'])
         self.assertEqual(self.kinds([rect(0, 0, 20, 10, 10, [True, False, True, False])]), ['split_bridge'])
-        fillet = {'i': 2, 'type': 'torus', 'concave': False, 'area': 5.0, 'tris': [[0, 0, 0.5, 0.5, 0, -0.866, 3.0]]}
+        fillet = {'i': 2, 'type': 'torus', 'concave': False, 'area': 5.0, 'tris': [[0, 0, 0.8, 0.5, 0, -0.866, 3.0]]}
         self.assertEqual(self.kinds([fillet]), ['bottom_chamfer'])
+
+    def test_a_bottom_rounding_within_two_layers_is_on_the_bed(self):
+        fillet = {'i': 2, 'type': 'torus', 'concave': False, 'area': 5.0, 'tris': [[0, 0, 0.44, 0.5, 0, -0.866, 3.0]]}
+        self.assertEqual(self.kinds([fillet]), [])
 
 
 class Rules(unittest.TestCase):
@@ -244,6 +248,10 @@ class Hip(unittest.TestCase):
     def test_hip_of_two_45_faces_passes(self):
         # owner 2026-11-24: "якщо воно досі друкуватиметься якісно без підтримок то да, треба тоді гейт міняти"
         a, b = [-0.7071, 0, -0.7071], [0, -0.7071, -0.7071]
+        self.assertEqual(codes(part([], [self.ridge(a, b)])), [])
+
+    def test_an_almost_tangent_edge_is_no_ridge(self):
+        a, b = [-0.7071, -0.7071, 0], [-0.80, -0.60, 0.0]           # 8 deg apart: a teardrop roof meeting its hole
         self.assertEqual(codes(part([], [self.ridge(a, b)])), [])
 
     def test_ridge_of_a_shallow_face_is_still_a_finding(self):
