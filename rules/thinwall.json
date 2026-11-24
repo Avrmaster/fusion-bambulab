@@ -1,0 +1,87 @@
+{
+ "gate": "thinwall",
+ "about": "Thin walls of printed parts. Read from the surface mesh of each printed body: from sample points spread over the surface a ray runs into the material along the inward normal, and the distance to the face it leaves through is the wall there. Thin samples close together are one region, one finding with its place, its thickness and the limit. All lengths in mm. A project changes a number only in its gate/settings.json (\"thinwall\": {...}, merged over this file); a thin spot the owner accepts goes into \"thinwall\": {\"accept\": [{\"part\", \"near\": [x, y, z], \"within_mm\", \"code\", \"why\"}]}.",
+ "limits": {
+  "min_wall_mm": {
+   "value": 1.5,
+   "source": "owner rule (robotarm fusion/DESIGN_RULES.md §4 Strength, Rules: '>= 1.5 mm wall around holes, inserts and countersinks'; checklist item 11: 'wall_thickness.py --min 1.5 on the re-exported STLs: no neck'). Applied to every wall, not only round holes: that is how checklist 11 used it"
+  },
+  "two_lines": {
+   "lines": 2,
+   "of": "outer_wall_line_width",
+   "unless": "the object is printed with wall_generator = arachne",
+   "source": "measured + owner rule (robotarm fusion/DESIGN_RULES.md §7 Tolerances: 'A wall thinner than two lines (under ~1.25 with the 0.6 nozzle) is printed with wall_generator = arachne on that object' [M, U 2026-11-18, the N23 rod sleeves: classic walls laid two full lines into a 1 mm wall and closed the bore]). The line width is read from the project .3mf the part is printed in (outer_wall_line_width, per object when set there)"
+  },
+  "one_line": {
+   "lines": 1,
+   "of": "outer_wall_line_width",
+   "source": "choice of the gate author (2026-11-24), not measured and not an owner decision: a wall narrower than one line of the project cannot be laid as a line by either wall generator (classic drops or over-fills it, arachne widens it to min_bead_width); no print of this project has measured where it fails"
+  }
+ },
+ "sampling": {
+  "spacing_mm": 0.5,
+  "link_spacings": 3,
+  "source": "choice of the gate author (2026-11-24): one sample per 0.5 x 0.5 mm of surface finds a thin spot 0.5 mm across from either side of it, and 3 spacings join the samples of one spot (its two sides included, up to 1.5 mm apart) into one finding. Runtime grows with 1/spacing^2. mesh_slack_mm: a ray is cast this much longer than the limit and its ends are moved onto the exact plane, cylinder, cone or sphere of their faces (the mesh lies on chords; a torus or a free-form face keeps the mesh value, within the mesh tolerance). refine: round the refine_best thinnest samples of each thin spot the surface is sampled again this many times finer (within one spacing), so the reported thickness is the region's thinnest within spacing/refine. small_face_mm2: on a face smaller than this (a sliver left by two cuts that nearly meet) every mesh triangle is sampled 4 times: the independent audit found 0.24 mm slivers on such faces that one sample per face had missed (Robot Arm V2, J1 base, 2026-11-24). neck_steps: from points every half spacing along each re-entrant edge (a pocket floor meeting its wall) rays are fanned into the material in this many steps between the two inward normals; the thinnest that leaves through a face looking back at it is a neck. Added after the independent audit found a 0.45 mm neck between two pocket rims at different depths in the J3 drive plate that no normal ray crosses (2026-11-24)",
+  "mesh_slack_mm": 0.3,
+  "refine": 8,
+  "refine_best": 6,
+  "small_face_mm2": 1.0,
+  "neck_steps": 16
+ },
+ "exempt": {
+  "corner": {
+   "deg": 55,
+   "about": "the ray leaves through a face whose normal is more than this from the reversed start normal: it ran along a corner (a side wall, the next flat of a curve), not across a wall. Not a measurement",
+   "source": "choice of the gate author, from the archived 0.3.x wall probe (55 degrees, decided there, not measured): two faces of one wall look at each other; a 45 degree chamfer exit still counts, a 90 degree side wall does not"
+  },
+  "wedge": {
+   "deg": 20,
+   "about": "the two faces of a thin spot meet at this angle or more: the tip of a wedge (a 45 degree flank or chamfer running out on a face, an overhang's knife edge at the bed, a chamfer tip). It is thin only near its edge and prints as a tip. Counted, not reported. Under this angle it is a thin wall or a knife edge, and reported",
+   "source": "choice of the gate author, from the archived 0.3.x wall probe ('a blade under 30 degrees ... is listed'), not measured"
+  },
+  "teeth": {
+   "min_copies": 20,
+   "area_rel": 0.02,
+   "radius_tol_mm": 0.05,
+   "about": "a thin spot between two faces that both belong to families of at least min_copies faces of one type and one area (within area_rel) spread at one radius round one centre, and that are not both holes: the flank of a gear or pulley tooth. Its width is the belt or gear standard's (robotarm DESIGN_RULES: standard tooth profiles, toothed parts on the 0.4 nozzle), not this gate's. A wall between two holes of a bolt circle is still judged",
+   "source": "choice of the gate author (2026-11-24), not measured"
+  },
+  "sacrificial_layer": {
+   "deg": 1.0,
+   "tol_mm": 0.03,
+   "max_layers": 2,
+   "about": "a flat wall whose two faces both lie in the print's layer plane (within deg) and which is one or two layer heights of the project thick (within tol_mm): a sacrificial bridge layer printed over a hole and opened after the print. The layer height is the project's (per object when the .3mf sets one); the print direction is the part's bed face in fusion/parts.json",
+   "source": "choice of the gate author (2026-11-24): Robot Arm V2 has such 0.3 mm (one layer of 0.3) membranes in the J2 encoder column and the J2 shoulder base; not an owner rule"
+  },
+  "faces_cross": {
+   "mm": 0.005,
+   "about": "not an exemption: a ray whose exit face, on its exact surface, lies more than this behind its start face has crossed two faces that overlap (plastic on both sides of each). It is reported as faces_cross, not as a wall of 0",
+   "source": "choice of the gate author (2026-11-24) after the audit and pointContainment probes in the J3 elbow tongue (a D6.54 boss and a D6.50 hole 0.02 apart with plastic on both sides of each face)"
+  },
+  "coaxial": {
+   "axis_deg": 0.5,
+   "offset_mm": 0.1,
+   "overlap_mm": 0.05,
+   "about": "not an exemption: a boss and a hole of the body on one axis (axes within axis_deg, lines within offset_mm), the hole narrower than the boss by less than one line, side by side along the axis for more than overlap_mm, leave a plastic tube that thin. Measured from the faces' exact radii: a mesh cannot resolve it",
+   "source": "choice of the gate author (2026-11-24) after the independent audit found 0.015 mm tubes between D6.54 bosses and D6.50 holes in the J3 elbow tongue that the rays missed (pointContainment confirmed plastic between and air on both sides)"
+  }
+ },
+ "codes": {
+  "under_one_line": {
+   "limit": "one line of the project's outer wall width",
+   "fix": "make the wall at least two lines thick (move the hole or the face), or remove the sliver; it cannot print as modelled"
+  },
+  "under_two_lines": {
+   "limit": "two lines of the project's outer wall width, classic wall generator",
+   "fix": "thicken the wall to the rulebook's minimum; if it must stay this thin, set wall_generator = arachne on this object in the .3mf and print a fit test (DESIGN_RULES §7)"
+  },
+  "thin_wall": {
+   "limit": "the rulebook's least wall",
+   "fix": "thicken the wall (grow the part into free space, move the hole or the pocket); if the owner accepts it as it is, add it to gate/settings.json thinwall.accept with his reason"
+  },
+  "faces_cross": {
+   "limit": "two faces of the body must not cross",
+   "fix": "the body has two overlapping faces (a leftover of two cuts or a taper on top of a bore): remove the leftover face or redo the cut so one surface remains; check the slicer preview there"
+  }
+ }
+}

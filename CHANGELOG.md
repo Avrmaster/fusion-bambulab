@@ -2,6 +2,31 @@
 
 What each version of the plugin changes. Skills update with the plugin; the tools copied into a project do not. Read the section of a version before you refresh a project with `python3 <plugin>/tools/setup_project.py <dir> --update-tools`, and review `git diff` afterwards.
 
+## 0.7.0 - 2026-11-24
+
+The thin-wall gate: `gate.py check --gate thinwall [PART ...]` (`check` alone still runs the heat-set gate).
+- One Fusion call reads the display mesh of every face of the printed bodies, with each face's exact plane, cylinder,
+  cone or sphere (`tools/gate/thinwall_fusion.py`); `thinwall_core.py` judges in pure Python, one process per part.
+  Robot Arm V2, 39 parts: about 6 s in Fusion, 30 s judging on all cores.
+- A wall is measured by rays into the material from sample points every 0.5 mm; ends on analytic faces are moved onto
+  the exact surface, thin spots are sampled again 8 times finer, faces under 1 mm2 (slivers) on every triangle.
+- Limits per part from the Bambu project it is printed in (`fusion/parts.json` "3mf"): the rulebook wall
+  (`min_wall_mm`, 1.5 for Robot Arm V2), two lines of `outer_wall_line_width` unless the object uses arachne, one line.
+- Named rules for what is not a wall: `corner`, `wedge` (taper 20 degrees or more), `teeth` (rings of 20+ equal faces
+  round one axis), `sacrificial_layer` (one or two layers flat in the layer plane). Rules that find what a mesh misses:
+  necks between two corners (fans of rays from every re-entrant edge), `coaxial` (a boss and a hole on one axis
+  whose radii differ by less than a line) and `faces_cross` (two faces cross, plastic on both sides). Every number has a `source` in
+  `rules/thinwall.json`; the ones that are the gate author's choice say so.
+- Results in `gate/results/thinwall/<part>.json` with the place, the thickness, the limit, the extent and the faces of
+  each finding; a thin spot the owner keeps goes into `gate/settings.json` `thinwall.accept`.
+- Tests: `tests/test_thinwall_core.py` (hand-made meshes), `tests/test_thinwall_fusion.py` (a Fusion fixture
+  document, built and closed by the test). Independent audit with no code of the gate: `tests/audit_thinwall/`
+  (B-rep minimum distances between faces and the dihedral of every edge).
+- Robot Arm V2 v201: PASS 14, FAIL 25 of 39 parts, 153 findings (under_one_line 36, under_two_lines 56, thin_wall 57,
+  faces_cross 4). The audit agrees on 34 of 39 parts; the 26 differences left (5 parts) are listed with the reason of
+  each in `tests/audit_thinwall/README.md`: chords where the gate is thinner (checked plastic with `pointContainment`),
+  one neck 0.03 thicker on the mesh, and microscopic faces (0.001 to 0.15 mm2) that one side places a few mm off.
+
 ## 0.6.3 - 2026-11-24
 
 - `overhang-slice` records the project's `max_bridge_length` and, when `bridge_no_support` is off and it differs from

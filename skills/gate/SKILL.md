@@ -1,6 +1,6 @@
 ---
 name: gate
-description: The print gate - deterministic checks of Fusion parts before they are printed. Heat-set insert pockets, and overhangs / supports (with a Bambu Studio slicer cross-check). Use before and after changing a printed part, when placing or fixing heat-set inserts or their pockets, when a part needs supports or its print side is in question, when gate.py reports findings, and when adding a new gate to the plugin.
+description: The print gate - deterministic checks of Fusion parts before they are printed. Heat-set insert pockets, overhangs / supports (with a Bambu Studio slicer cross-check) and thin walls. Use before and after changing a printed part, when placing or fixing heat-set inserts or their pockets, when a part needs supports or its print side is in question, when a wall, a rib, a hole near an edge or a sliver may be too thin, when gate.py reports findings, and when adding a new gate to the plugin.
 ---
 
 # The print gate
@@ -8,8 +8,9 @@ description: The print gate - deterministic checks of Fusion parts before they a
 The gate reads Fusion and judges in Python. It finds the problem; you only decide how to fix it. Never measure by eye
 or by your own script what the gate measures: run it.
 
-- **Rules live in the plugin only:** `rules/<gate>.json` (`rules/heatset.json`, `rules/overhang.json`), with the incident or the print
-  behind each number. A project never copies them.
+- **Rules live in the plugin only:** `rules/<gate>.json` (`rules/heatset.json`, `rules/overhang.json`,
+  `rules/thinwall.json`), with the incident, the print or the decision behind each number (`source`). A project never
+  copies them.
 - **A project keeps only its own:** `gate/settings.json` (optional overrides, merged key by key over the plugin's rules)
   and `gate/results/<gate>/<part>.json` (one file per part per run: project, Fusion document and version, the body's
   faces, volume and area, the plugin version, the hashes of the rules and of the settings, the verdict and every
@@ -29,11 +30,13 @@ python3 ~/.claude/plugins/marketplaces/print-engineering/tools/gate/gate.py rule
 python3 ~/.claude/plugins/marketplaces/print-engineering/tools/gate/gate.py overhang [PART ...]
 python3 ~/.claude/plugins/marketplaces/print-engineering/tools/gate/gate.py overhang-slice [PART ...]   # minutes: run in the background
 python3 ~/.claude/plugins/marketplaces/print-engineering/tools/gate/gate.py overhang-faces [PART ...]   # every bed face of the failing parts
+python3 ~/.claude/plugins/marketplaces/print-engineering/tools/gate/gate.py check --gate thinwall [PART ...]
+python3 ~/.claude/plugins/marketplaces/print-engineering/tools/gate/gate.py rules --gate thinwall
 ```
 
 Run them from the project folder (or pass `--project DIR`). Exit 0: every checked part passes; 1: findings; 4: the gate
 could not run (Fusion does not answer, a part was not found). On Robot Arm V2 (39 parts, 200 inserts) `check` takes
-about 3 s.
+about 3 s; `check --gate thinwall` about 15 s (6 s in Fusion, the rest judging on all cores).
 
 ## The heat-set gate
 
@@ -127,6 +130,45 @@ as reasons. The slicer leaves a bridge without support when `bridge_no_support` 
 `max_bridge_length`; set `max_bridge_length` to the gate's `bridge_max_mm` so the two judge bridges alike
 (`_slicer.json` names a project where they differ, `bridge_note`). Robot Arm V2: both projects `max_bridge_length` = 6,
 `bridge_no_support` = 0 since 2026-11-24; before that the slicer put support under hundreds of bridges the gate allows.
+
+## The thin-wall gate
+
+One Fusion call reads the display mesh of every face of each printed body (with the face's exact plane, cylinder, cone
+or sphere); `thinwall_core.py` judges. From sample points every 0.5 mm of surface a ray runs into the material along
+the inward normal; the face it leaves through, when it looks back at the start, ends the wall. Ends on analytic faces
+are moved onto the exact surface, so a hole near a face reads its true wall, not the mesh's chord. Thin samples close
+together (or on the same two faces) are one finding; each thin spot is sampled again 8 times finer round its thinnest
+samples. Necks between two corners (a hole near the edge of a pocket) are measured by fans of rays from every
+re-entrant edge; faces under 1 mm2 get samples of their own.
+
+Limits, per part, from the projects `fusion/parts.json` puts it in (`"3mf": [{"file", "object", "face"}]`), the widest
+line counting: the rulebook wall (`min_wall_mm`), two lines of the project's `outer_wall_line_width` unless the object
+is set to `wall_generator = arachne`, one line in any case. Not reported, by named rule (counted in `counts`):
+
+| Rule | What it is |
+|---|---|
+| `corner` | the ray left through a side face (more than 55 degrees off): it ran along a corner, not across a wall |
+| `wedge` | the two faces taper by 20 degrees or more: the tip of a chamfer, a 45 degree flank, a bed knife edge of an overhang |
+| `teeth` | both faces in rings of at least 20 equal faces round one axis of the part (not two holes): a gear or pulley profile |
+| `coaxial` | (a rule that finds, not exempts) a boss and a hole on one axis whose radii differ by less than one line, side by side along the axis: a tube the mesh cannot see |
+| `sacrificial_layer` | flat in the layer plane (bed face from parts.json), 1 or 2 layer heights thick: a bridge layer over a hole |
+
+| Code | Means | Fix |
+|---|---|---|
+| `faces_cross` | two faces of the body cross: plastic on both sides of each (a boss 0.02 over a hole on one axis) | a modelling error: make the two diameters one |
+| `under_one_line` | thinner than one line of the project: a sliver, a film between two holes, a knife edge under 20 degrees | thicken or remove; it cannot print as modelled |
+| `under_two_lines` | thinner than two lines, classic walls | thicken; or arachne on that object in the .3mf + a fit test |
+| `thin_wall` | thinner than the rulebook wall | thicken, move the hole, grow into free space; or the owner accepts it |
+
+Each finding has `at` (the middle of the thinnest measurement, world mm), `across` (its direction), `thickness_mm`,
+`limit_mm`, every limit, the project, `faces` (index, type, area, D for cylinders) and `exact` (both ends on analytic
+surfaces; a torus or free-form face is measured on its mesh). A thin spot the owner keeps goes into the project's
+`gate/settings.json`: `{"thinwall": {"accept": [{"part", "near": [x, y, z], "within_mm", "code", "why"}]}}`; it is then
+listed as accepted, not as a finding. Numbers can be overridden there too (`"thinwall": {"limits": ...}`).
+
+Not covered: gaps that are too narrow (slits), walls between two parts, anything in a body outside `fusion/parts.json`.
+The independent audit (`tests/audit_thinwall/`: B-rep minimum distances between faces, no code of the gate) is run after
+any change of the gate.
 
 ## Adding a gate
 

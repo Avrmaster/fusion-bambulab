@@ -4,6 +4,7 @@ and the results of runs on its parts (gate/results/). Every check is determinist
 The model only decides how to fix a finding, never how to find it.
 
     python3 <plugin>/tools/gate/gate.py check [--project DIR] [PART ...]      the heat-set gate on the printed parts
+    python3 <plugin>/tools/gate/gate.py check --gate thinwall [PART ...]      the thin-wall gate (thinwall_gate.py)
     python3 <plugin>/tools/gate/gate.py rules [--project DIR]                 the rules in force here (plugin + settings)
     python3 <plugin>/tools/gate/gate.py overhang [PART ...]                   overhangs / supports (overhang_gate.py)
     python3 <plugin>/tools/gate/gate.py overhang-slice [PART ...]             the same against Bambu Studio slices (minutes)
@@ -57,6 +58,11 @@ def merge(base, over):
 
 def sha(obj):
     return hashlib.sha256(json.dumps(obj, sort_keys=True).encode()).hexdigest()[:16]
+
+
+def load_rules(name):
+    with open(os.path.join(PLUGIN, 'rules', name + '.json'), encoding='utf-8') as f:
+        return json.load(f)
 
 
 def load(root):
@@ -274,8 +280,16 @@ def main():
     a = argparse.ArgumentParser(description='the print gate')
     a.add_argument('cmd', choices=['check', 'rules', 'fix-inserts', 'fix-pockets', 'overhang', 'overhang-slice', 'overhang-faces']); a.add_argument('parts', nargs='*'); a.add_argument('--project')
     a.add_argument('--json', action='store_true'); a.add_argument('--component'); a.add_argument('--dry-run', action='store_true')
+    a.add_argument('--gate', choices=['heatset', 'thinwall'], default='heatset')
     a = a.parse_args()
     root = os.path.abspath(a.project) if a.project else find_project(os.getcwd())
+    if a.gate == 'thinwall':
+        import thinwall_gate
+        if a.cmd == 'rules':
+            print(json.dumps(load_rules('thinwall'), indent=1, ensure_ascii=False)); return 0
+        if a.cmd != 'check':
+            print('the thin-wall gate has only check and rules'); return 4
+        return thinwall_gate.check(root, a.parts, sys.modules[__name__], a.json)
     if a.cmd == 'rules':
         rules, settings, merged, _ = load(root)
         print(json.dumps(merged, indent=1, ensure_ascii=False)); return 0
