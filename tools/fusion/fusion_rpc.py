@@ -52,6 +52,15 @@ _WRAPPER = r'''
 import json as _json
 
 def run(_context=''):
+    try:                                     # the add-in wraps sys.stdout once more on every call; past ~1000 every call
+        import sys as _sys                   # fails with RecursionError in __getattr__: point the top wrapper at the base
+        _b, _k = _sys.stdout, 0
+        while hasattr(_b, '_original') and _k < 100000:
+            _b, _k = _b._original, _k + 1
+        if _k > 4:
+            _sys.stdout._original = _b
+    except Exception:
+        pass
     g = globals()
     def _done(_context=''):
         return None
@@ -138,11 +147,16 @@ def run_job(source, job=None, write=False, timeout=300, name='job'):
     script = _WRAPPER % {'job': json.dumps(job), 'source': source, 'awake': _AWAKE, 'name': 'print_engineering_%s' % name}
     sid = _connect()
     t0 = time.time()
-    try:
-        res, _ = _post({'jsonrpc': '2.0', 'id': 2, 'method': 'tools/call', 'params': {'name': 'fusion_mcp_execute', 'arguments': {
-            'featureType': 'script', 'object': {'script': script, 'readOnly': not write}}}}, sid, timeout=timeout)
-    except (urllib.error.URLError, OSError) as e:
-        raise FusionError('no answer from Fusion within %d s (%s): it may still be working on the job; wait, then ping' % (timeout, e))
+    for attempt in range(3):
+        try:
+            res, _ = _post({'jsonrpc': '2.0', 'id': 2, 'method': 'tools/call', 'params': {'name': 'fusion_mcp_execute', 'arguments': {
+                'featureType': 'script', 'object': {'script': script, 'readOnly': not write}}}}, sid, timeout=timeout)
+        except (urllib.error.URLError, OSError) as e:
+            raise FusionError('no answer from Fusion within %d s (%s): it may still be working on the job; wait, then ping' % (timeout, e))
+        # the add-in's own stdout wrapper can fail before the job runs (RecursionError in __getattr__): the job did not
+        # run, so sending it again is safe (the wrapper above repairs the stdout chain on the first call that gets through)
+        if os.path.exists(out) or 'RecursionError' not in json.dumps(res or {}):
+            break
     if not os.path.exists(out):
         text = json.dumps(res)[:2000] if res else 'no answer'
         raise FusionError('the job left no result (the call answered: %s)' % text)

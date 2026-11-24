@@ -2,6 +2,17 @@
 
 What each version of the plugin changes. Skills update with the plugin; the tools copied into a project do not. Read the section of a version before you refresh a project with `python3 <plugin>/tools/setup_project.py <dir> --update-tools`, and review `git diff` afterwards.
 
+## 0.6.2 - 2026-11-24
+
+- **Questions about a part come with a picture** (owner: hundreds of parts, a name says nothing). New
+  `tools/fusion/show_part.py PART [--at X,Y,Z ...] [--gate overhang] [--view below|above|both]`: copies the part's body
+  into a temporary unsaved document (the project document is only read), turns it the way it prints, makes it
+  see-through, marks each place with a numbered red ball and saves PNGs into `.shots/`. The rule is in the
+  `fusion-modeling` skill ("Asking the engineer about a part"), pointed to from `print-design` and `gate`.
+- `fusion_rpc`: the Fusion MCP add-in wraps `sys.stdout` once more on every call and past ~1000 levels every call fails
+  with `RecursionError` in `__getattr__` before the job runs. Each job now points the top wrapper at the base, and a
+  call that fails that way is sent again (up to three times).
+
 ## 0.6.1 - 2026-11-24
 
 - **Overhangs only when really needed** (owner: "якщо це прям дуже треба"): an overhang passes only as a named exception of

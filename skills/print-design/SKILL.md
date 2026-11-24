@@ -148,6 +148,8 @@ Record both "now" and "next print" for each flaw, so the model fix is not forgot
 
 A result counts only if it comes from the current model. After any change, earlier checks prove nothing until they are run again. Report each check as passed, failed, or **not verified**, and never fold "not verified" into "passed".
 
+A question to the owner about a part or a place on it always comes with a picture of that place (`tools/fusion/show_part.py`, see the `fusion-modeling` skill): names and coordinates alone cannot be answered in a project of hundreds of parts.
+
 ## Check before calling a part done
 
 - [ ] The heat-set gate passes on the part (the `gate` skill)

@@ -111,7 +111,8 @@ exception the owner decides, in the project's `gate/settings.json`:
 
 (`face` = the face index instead of `at`; `code` narrows it.) It shows under `excepted` with its reason; no reason, or
 no finding left at the place, is a finding. Never add an exception yourself: list the finding, its redesign, and why a
-redesign is impossible if it is.
+redesign is impossible if it is. Every finding you put before the owner goes with a picture of its place:
+`tools/fusion/show_part.py PART --gate overhang` (see "Asking the engineer about a part" in the `fusion-modeling` skill).
 
 **The slicer's opinion** (`overhang-slice`): copies of the parts' `.3mf` projects are sliced with the Bambu Studio CLI in
 a temp folder (the originals are only read: safe while Bambu Studio is open), the tips of the support columns are read
