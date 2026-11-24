@@ -313,6 +313,8 @@ def judge_part(part, rules, pockets=()):
         rise = math.degrees(math.asin(min(1.0, abs(_dot(t, down)) / L)))
         if rise >= lim - tol:
             continue
+        if rg.get('n') and all(slope(n, down) >= lim - tol for n in rg['n']):
+            continue                     # the hip of two faces that each pass (two 45 deg chamfers meeting at a corner): prints clean
         if max(-_dot(rg['p0'], down), -_dot(rg['p1'], down)) - bed_h <= bed:
             continue
         out.append(_region(part, 'shallow_ridge', [rg['p0'], rg['p1']], 0.0, rise, rg['faces'], length_mm=round(L, 2)))

@@ -176,7 +176,8 @@ def _overhang_facts(body, spec, rules):
         dn = _norm(_sub(n1, n2))
         convex = not _in(body, [mid[k] + 0.05 * dn[k] for k in range(3)]) if math.sqrt(_dot(_sub(n1, n2), _sub(n1, n2))) > 1e-3 else False
         ridges.append({'p0': [round(x, 4) for x in p0], 'p1': [round(x, 4) for x in p1], 'convex': convex,
-                       'faces': [face_index.get(f1.tempId), face_index.get(f2.tempId)]})
+                       'faces': [face_index.get(f1.tempId), face_index.get(f2.tempId)],
+                       'n': [[round(x, 6) for x in n1], [round(x, 6) for x in n2]]})
     return {'down': down, 'bed_h': round(bed_h, 4), 'box': [lo, hi], 'faces': faces, 'ridges': ridges,
             'n_faces': body.faces.count, 'volume': round(body.volume * 1000, 2), 'area': round(body.area * 100, 2)}
 

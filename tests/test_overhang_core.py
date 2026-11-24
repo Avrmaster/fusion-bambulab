@@ -237,6 +237,20 @@ class ScrewSeat(unittest.TestCase):
         self.assertNotIn('screw_seat', codes(part([f])))
 
 
+class Hip(unittest.TestCase):
+    def ridge(self, n1, n2):
+        return {'p0': [0, 0, 10], 'p1': [3, 3, 10 + 3 * math.sqrt(2) * math.tan(math.radians(35.26))], 'convex': True, 'faces': [7, 8], 'n': [n1, n2]}
+
+    def test_hip_of_two_45_faces_passes(self):
+        # owner 2026-11-24: "якщо воно досі друкуватиметься якісно без підтримок то да, треба тоді гейт міняти"
+        a, b = [-0.7071, 0, -0.7071], [0, -0.7071, -0.7071]
+        self.assertEqual(codes(part([], [self.ridge(a, b)])), [])
+
+    def test_ridge_of_a_shallow_face_is_still_a_finding(self):
+        a, b = [-0.5, 0, -0.866], [0, -0.7071, -0.7071]          # one face only 30 deg from the horizontal
+        self.assertEqual(codes(part([], [self.ridge(a, b)])), ['shallow_ridge'])
+
+
 class WholePartException(unittest.TestCase):
     def test_whole_part_covers_every_finding_of_that_part(self):
         res = {'findings': [{'part': 'a', 'code': 'overhang', 'box': [[0, 0, 0], [1, 1, 1]]},

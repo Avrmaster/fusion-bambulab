@@ -2,6 +2,13 @@
 
 What each version of the plugin changes. Skills update with the plugin; the tools copied into a project do not. Read the section of a version before you refresh a project with `python3 <plugin>/tools/setup_project.py <dir> --update-tools`, and review `git diff` afterwards.
 
+## 0.8.7 - 2026-11-24
+
+- **A hip of two passing faces is no `shallow_ridge`**: the edge where two downward faces meet that each pass the 45 deg
+  limit (two 45 deg chamfers at a corner, a 45 deg teardrop roof leaving through a 45 deg underside) runs at 35 deg and
+  prints like its faces. A ridge is a finding only when one of its faces is itself under the limit. Ridges now carry
+  the normals of their two faces. Owner, 2026-11-24, if it still prints clean without support.
+
 ## 0.8.6 - 2026-11-24
 
 - `screw_seat` read right: a flat downward face round ONE round hole of at most `screw_hole_max_d_mm` (7), lying within
