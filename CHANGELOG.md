@@ -2,6 +2,15 @@
 
 What each version of the plugin changes. Skills update with the plugin; the tools copied into a project do not. Read the section of a version before you refresh a project with `python3 <plugin>/tools/setup_project.py <dir> --update-tools`, and review `git diff` afterwards.
 
+## 0.9.3 - 2026-11-25
+
+- **overhang-slice: a support tip counts only with the part's plastic right over it** (`overhang_slicer.py`): `read_gcode`
+  keeps the part's own cells per layer, and `contacts` drops a run top with no part plastic in its cell or a neighbour
+  within four layers plus the top gap. A tree trunk is printed as rings, so a cell beside a wall sees support in some
+  layers only, and every gap left a run top that held nothing: on robotarm's J3 forearm link A 20 such 'tips' up to
+  44 mm high, 13 mm outside the body, came out as one false `slicer_support` finding (202 of 346 tips on that plate;
+  the real tips under its ceilings stay). Test: `test_a_trunk_beside_a_wall_touches_nothing`.
+
 ## 0.9.2 - 2026-11-25
 
 - **Heat-set pockets opening on a face that is down in print take a 45 deg countersink relief** (`rules/heatset.json`

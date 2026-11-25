@@ -194,12 +194,13 @@ def labels(out_dir):
 # ---------------------------------------------------------------- the G-code
 def read_gcode(path, cell):
     """{label or None: {"support_mm", "box": [[x0,y0,z0],[x1,y1,z1]] of its printed part (no brim, no support),
-    "tops": {(ix, iy): {the z of every layer with support in that cell}}}}."""
+    "tops": {(ix, iy): {the z of every layer with support in that cell}},
+    "part": {(ix, iy): {the z of every layer with the part's own plastic in that cell}}}}."""
     objs = {}
     lab, feat, z = None, '', 0.0
     x = y = 0.0
     def o():
-        return objs.setdefault(lab, {'support_mm': 0.0, 'box': None, 'tops': {}})
+        return objs.setdefault(lab, {'support_mm': 0.0, 'box': None, 'tops': {}, 'part': {}})
     with open(path, errors='ignore') as fh:
         lines = fh.read().splitlines(True)
     for line in lines:
@@ -229,6 +230,10 @@ def read_gcode(path, cell):
                     c = (int(math.floor((x + (nx - x) * k / n) / cell)), int(math.floor((y + (ny - y) * k / n) / cell)))
                     r['tops'].setdefault(c, set()).add(round(z, 3))
             elif feat not in NOT_PART:
+                L = math.hypot(nx - x, ny - y); n = max(1, int(L / (cell / 2)))
+                for k in range(n + 1):
+                    c = (int(math.floor((x + (nx - x) * k / n) / cell)), int(math.floor((y + (ny - y) * k / n) / cell)))
+                    r['part'].setdefault(c, set()).add(round(z, 3))
                 b = r['box']
                 if b is None:
                     r['box'] = [[nx, ny, z], [nx, ny, z]]
@@ -239,11 +244,15 @@ def read_gcode(path, cell):
     return objs
 
 
-def contacts(levels, layer):
+def contacts(levels, layer, part=None, above=4):
     """The support tips under the part: {(i, j): z} for every cell and every top of a run of support layers in it (a
     column can hold several: a hole under a hole). A top is a tip when no neighbouring cell carries support a little
     higher (within three layers: then it is a slanted branch going on), and it is above the first two layers (the foot
-    of a tree holds nothing). A cell keeps its highest tip; the others are listed under (i, j, k)."""
+    of a tree holds nothing). A cell keeps its highest tip; the others are listed under (i, j, k).
+    With part (read_gcode's "part" cells) a tip also needs the part's plastic right over it: in its cell or a neighbour,
+    within `above` layers plus the top gap. A tree trunk is printed as rings, so a cell beside a wall sees support in
+    some layers only and every gap leaves a run top that holds nothing (robotarm forearm A 2026-11-25: 20 such 'tips'
+    13 mm outside the body)."""
     out = {}
     for (i, j), zs in levels.items():
         zs = sorted(zs)
@@ -255,6 +264,9 @@ def contacts(levels, layer):
             higher = any(z + 1e-6 < w <= z + 3 * layer + 1e-6 for a in (-1, 0, 1) for b in (-1, 0, 1) if (a or b)
                          for w in levels.get((i + a, j + b), ()))
             if higher:
+                continue
+            if part is not None and not any(z + 1e-6 < w <= z + (above + 1) * layer + 1e-6 for a in (-1, 0, 1) for b in (-1, 0, 1)
+                                            for w in part.get((i + a, j + b), ())):
                 continue
             out[(i, j) if k == 0 else (i, j, k)] = z
             k += 1
@@ -495,7 +507,7 @@ def run(root, names, keep=None):
                 if fr.problem():
                     rec['slicer'] = {'error': '%s: %s' % (f, fr.problem())}
                 else:
-                    tips = contacts(g['tops'], layer)
+                    tips = contacts(g['tops'], layer, part=g.get('part'))
                     bl = [[[b[0][i] + fr.t[i] for i in range(3)], [b[1][i] + fr.t[i] for i in range(3)]] for b in o3['blockers']]
                     rec['slicer'] = dict(compare([x for x in rec['findings'] if x['code'] not in ('slicer_bridge', 'slicer_support')] + rec['allowed'] + rec.get('excepted', []), rec.get('info') or [], tips, cell, near, fr, layer, thr,
                                                  o3['support'], sc['min_support_mm'], g['support_mm'], blockers=bl,

@@ -61,6 +61,8 @@ class Gcode(unittest.TestCase):
         self.assertTrue(all(abs(z - 5.0) < 1e-9 for z in tips.values()), tips)      # the column under (20..22, 15): 0.3, 0.6 and 5.0
         self.assertNotIn((50, 50), tips)                                             # a 0.6 high foot holds nothing
         self.assertEqual(len(sl.clusters(tips)), 1)
+        self.assertIn((10, 10), g['7']['part'])                                     # the part's own cells are kept per layer
+        self.assertNotIn((20, 15), g['7']['part'])
 
     def test_stacked_tips_in_one_column(self):
         lv = {(0, 0): {1.2, 1.5, 1.8, 9.0, 9.3}, (1, 0): {1.2, 1.5, 1.8, 9.0, 9.3}}
@@ -71,6 +73,29 @@ class Gcode(unittest.TestCase):
     def test_slanted_branch_is_not_a_tip(self):
         lv = {(0, 0): {0.9, 1.2}, (1, 0): {1.5, 1.8}, (2, 0): {2.1, 2.4}}
         self.assertEqual(sl.contacts(lv, 0.3), {(2, 0): 2.4})
+
+    def test_a_trunk_beside_a_wall_touches_nothing(self):
+        # robotarm j3_forearm_link_A 2026-11-25: a tree trunk climbs 3..13 mm beside the part's wall to a ceiling higher up. It is
+        # printed as rings, so a 1 mm cell sees support in some layers only, and every gap leaves a run top no neighbour covers:
+        # 20 'tips' up to 44 mm high, 13 mm outside the body. Only the top under the part is a contact.
+        trunk = set()
+        for a, b in ((1, 10), (16, 25), (31, 40), (46, 100)):          # runs of layers with gaps of 5
+            trunk |= {round(0.3 * n, 3) for n in range(a, b + 1)}
+        lv = {(10, 0): trunk}
+        part = {}
+        for n in range(1, 140):                                        # the wall, 6 cells away, at every layer
+            part.setdefault((4, 0), set()).add(round(0.3 * n, 3))
+        for n in range(101, 110):                                      # the ceiling over the trunk from z 30.3 up
+            for x in range(8, 13):
+                part.setdefault((x, 0), set()).add(round(0.3 * n, 3))
+        self.assertEqual(sorted(sl.contacts(lv, 0.3).values()), [3.0, 7.5, 12.0, 30.0])   # the old reading: 4 'tips'
+        self.assertEqual(sl.contacts(lv, 0.3, part=part), {(10, 0): 30.0})
+
+    def test_a_tip_under_the_part_one_cell_off_still_counts(self):
+        lv = {(5, 5): {0.3, 0.6, 0.9, 1.2}}
+        part = {(6, 5): {1.5, 1.8}}                            # the part's first layer lands in the next cell (cell edges)
+        self.assertEqual(sl.contacts(lv, 0.3, part=part), {(5, 5): 1.2})
+        self.assertEqual(sl.contacts(lv, 0.3, part={(9, 5): {1.5}}), {})
 
 
 class Frames(unittest.TestCase):
