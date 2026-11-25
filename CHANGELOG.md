@@ -2,6 +2,16 @@
 
 What each version of the plugin changes. Skills update with the plugin; the tools copied into a project do not. Read the section of a version before you refresh a project with `python3 <plugin>/tools/setup_project.py <dir> --update-tools`, and review `git diff` afterwards.
 
+## 0.10.0 - 2026-11-25
+
+- **export: the "slicer" gate** (`tools/export.py`): with `"slicer"` in `gate/settings.json` `export.require` (it needs
+  `"overhang"`), the export slices the plates of the parts it exports in Bambu Studio after writing their STLs
+  (`gate.py overhang-slice PART ...`, a copy of the project with the new meshes; about 15-20 s a plate) and holds back a
+  part with a `slicer_support` or `slicer_bridge` finding or no fresh slice: its STL is put back as it was and its .3mf
+  mesh stays. Geometry gates still run first, before Fusion meshes anything. Tests in `test_export_gates.py`.
+- **overhang-slice on some parts updates `_slicer.json`** instead of replacing the summary of every part (its rows,
+  plus `last_partial`).
+
 ## 0.9.3 - 2026-11-25
 
 - **overhang-slice: a support tip counts only with the part's plastic right over it** (`overhang_slicer.py`): `read_gcode`

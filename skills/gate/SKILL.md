@@ -21,6 +21,9 @@ or by your own script what the gate measures: run it.
   with exit 1. No switch skips a gate. To make a gate required in a project, first bring every part to 0 findings of
   it (fix the model; a named exception with its reason where the gate takes them), then add it to `require` and run
   the export of all parts once. Tell the owner every open finding of a part you changed.
+- **"slicer" in `require`** (needs "overhang"): after the STLs are written, Bambu Studio slices only the plates of the
+  exported parts with the new meshes (`overhang-slice`, about 15-20 s a plate; every part takes minutes) and a part the
+  slicer still supports (`slicer_support` / `slicer_bridge`) is held back, its old STL put back.
 - **A run on some parts** writes `_last_run.json`; only a run on all parts writes `_summary.json`.
 
 ## Commands

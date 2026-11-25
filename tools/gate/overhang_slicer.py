@@ -531,8 +531,21 @@ def run(root, names, keep=None):
             summary['parts'][n]['slicer_bridge'] = len(s.get('bridge_findings') or [])
             summary['parts'][n]['slicer_support'] = len(s.get('support_findings') or [])
     summary['total_s'] = round(time.time() - t0, 1)
-    with open(os.path.join(res_dir, '_slicer.json'), 'w', encoding='utf-8') as fh:
-        json.dump(summary, fh, indent=1, ensure_ascii=False); fh.write('\n')
+    sp = os.path.join(res_dir, '_slicer.json')
+    out = summary
+    if names and os.path.exists(sp):                  # a few parts (an export): update their rows, keep the others
+        try:
+            out = json.load(open(sp, encoding='utf-8'))
+            out['parts'].update(summary['parts'])
+            for f_, v in summary['projects'].items():
+                out['projects'].setdefault(f_, {}).update(v)
+            out['gate_version'] = summary['gate_version']
+            out['last_partial'] = {'parts': sorted(summary['parts']), 'total_s': summary['total_s'],
+                                   'at': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())}
+        except (ValueError, KeyError):
+            out = summary
+    with open(sp, 'w', encoding='utf-8') as fh:
+        json.dump(out, fh, indent=1, ensure_ascii=False); fh.write('\n')
     bad = 0
     for n, s in sorted(summary['parts'].items()):
         if s.get('error'):

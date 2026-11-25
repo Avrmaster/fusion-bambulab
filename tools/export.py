@@ -2,8 +2,9 @@
 """Fusion -> STL -> Bambu through the gates: a part goes out only when it passes every gate the project requires. Fast
 by design: one Fusion call per gate and one per document (all parts meshed in it), one load and one save per .3mf.
 
-The gates run first, on the parts being exported (tools/gate/gate.py: heatset, overhang, thinwall). A part that fails one
-of them is not exported: its STL and its .3mf mesh stay as they were, its findings are printed, and the exit code is 1.
+The gates run first, on the parts being exported (tools/gate/gate.py: heatset, overhang, thinwall); "slicer" runs after
+the STLs are written: Bambu Studio slices only the plates of those parts with the new meshes (about 15-20 s a plate, so
+minutes for every part) and fails a part it still supports. A part that fails one of them is not exported: its STL and its .3mf mesh stay as they were, its findings are printed, and the exit code is 1.
 There is no switch to skip a gate: a finding is fixed in the model, or written down as a named exception with its reason
 where that gate takes them (gate/settings.json). Which gates are required is the project's choice, while its model is
 brought to them one gate at a time:
@@ -39,7 +40,8 @@ sys.path.insert(0, os.path.join(HERE, 'fusion')); sys.path.insert(0, os.path.joi
 import fusion_rpc  # noqa: E402
 
 BUDGET_S = 50
-GATES = ('heatset', 'overhang', 'thinwall')
+GATES = ('heatset', 'overhang', 'thinwall', 'slicer')
+GEOMETRY = ('heatset', 'overhang', 'thinwall')                       # judged on the Fusion model, before the STLs
 GATE_ARGS = {'heatset': ['check'], 'overhang': ['overhang'], 'thinwall': ['check', '--gate', 'thinwall']}
 
 
@@ -51,6 +53,8 @@ def required_gates(root):
     bad = [g for g in req if g not in GATES]
     if bad:
         sys.exit('gate/settings.json export.require: unknown gate(s) %s (known: %s)' % (', '.join(bad), ', '.join(GATES)))
+    if 'slicer' in req and 'overhang' not in req:
+        sys.exit('gate/settings.json export.require: "slicer" checks the overhang result against Bambu, so it needs "overhang"')
     return req, settings
 
 
@@ -58,6 +62,7 @@ def run_gates(root, cfg, names, all_parts):
     """Run the required gates on `names`. Returns (passed names, {failed name: [gates]}, gates). Exits when a gate can
     not run (Fusion does not answer, a part is not found): then nothing is exported."""
     gates, settings = required_gates(root)
+    gates = [g for g in gates if g in GEOMETRY]
     failed = {}
     if not gates:
         print('gates: none required (gate/settings.json export.require = [])')
@@ -91,6 +96,43 @@ def run_gates(root, cfg, names, all_parts):
                     print('  | ' + l)
     passed = [n for n in names if n not in failed]
     return passed, failed, gates
+
+
+def run_slicer(root, cfg, names):
+    """The "slicer" gate, after the STLs are written: Bambu Studio slices a copy of each project with the new meshes, only
+    the plates of `names` (gate.py overhang-slice, about 15-20 s a plate), and a part fails when the slicer still puts a
+    support or a bridge the gate does not allow on it (slicer_support / slicer_bridge findings, or no fresh slice).
+    Parts in no .3mf have nothing to slice. Returns {failed name: report lines}."""
+    todo = [n for n in names if cfg['parts'][n].get('3mf')]
+    if not todo:
+        return {}
+    _, settings = required_gates(root)
+    skip = set((settings.get('overhang') or {}).get('skip') or [])
+    start = time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime(time.time() - 1))
+    t0 = time.time()
+    cmd = [sys.executable, os.path.join(HERE, 'gate', 'gate.py'), 'overhang-slice', '--project', root] + todo
+    p = subprocess.run(cmd, capture_output=True, text=True)
+    if p.returncode not in (0, 1):
+        sys.stdout.write(p.stdout); sys.stderr.write(p.stderr)
+        return {n: ['the slicer could not run (exit %d)' % p.returncode] for n in todo}
+    failed = {}
+    for n in todo:
+        if n in skip:
+            continue
+        rp = os.path.join(root, 'gate', 'results', 'overhang', n + '.json')
+        rec = json.load(open(rp, encoding='utf-8')) if os.path.exists(rp) else {}
+        sl = rec.get('slicer') or {}
+        if sl.get('error') or sl.get('sliced_at', '') < start:
+            failed[n] = ['not sliced: %s' % (sl.get('error') or 'no fresh slice')]
+            continue
+        bad = [f for f in rec.get('findings') or [] if f.get('code') in ('slicer_support', 'slicer_bridge')]
+        if bad:
+            failed[n] = ['%s %s' % (f['code'], f.get('message') or f.get('redesign') or '') for f in bad]
+    print('gate %-8s %d of %d part(s) pass  (%.1f s)' % ('slicer', len(todo) - len(failed), len(todo), time.time() - t0))
+    for n, lines in sorted(failed.items()):
+        for l in lines:
+            print('  | %s: %s' % (n, l))
+    return failed
 
 
 def find_project(start):
@@ -221,6 +263,14 @@ def main():
         if not names:
             sys.exit(1)
     swap = names
+    gated = not os.environ.get('PRINT_ENGINEERING_GATED')
+    slicer = gated and 'slicer' in required_gates(root)[0]
+    stl_dir = os.path.join(root, cfg.get('stl_dir', 'stl'))
+    backup = tempfile.mkdtemp(prefix='stl_before_') if slicer and not a.only3mf else None
+    if backup:                                                       # a part the slicer fails gets its old STL back
+        for n in names:
+            if os.path.exists(os.path.join(stl_dir, n + '.stl')):
+                shutil.copy2(os.path.join(stl_dir, n + '.stl'), os.path.join(backup, n + '.stl'))
     if not a.only3mf:
         try:
             changed, same, failed, info = export_stls(root, cfg, names)
@@ -233,9 +283,25 @@ def main():
             print('  changed  %s' % n)
         for n, e in failed:
             print('  FAILED   %s: %s' % (n, e))
-        if a.stl_only:
-            sys.exit(1 if failed or gate_failed else 0)
         swap = [n for n in names if n not in dict(failed)]
+    if slicer:
+        sl_failed = run_slicer(root, cfg, swap)
+        for n in sorted(sl_failed):
+            gate_failed.setdefault(n, []).append('slicer')
+            if backup:
+                old = os.path.join(backup, n + '.stl')
+                if os.path.exists(old):
+                    shutil.copy2(old, os.path.join(stl_dir, n + '.stl'))
+                elif os.path.exists(os.path.join(stl_dir, n + '.stl')):
+                    os.remove(os.path.join(stl_dir, n + '.stl'))
+            print('NOT EXPORTED %s: fails slicer (its STL is put back as it was)' % n)
+        swap = [n for n in swap if n not in sl_failed]
+    if backup:
+        shutil.rmtree(backup, ignore_errors=True)
+    if a.stl_only:
+        sys.exit(1 if gate_failed or (not a.only3mf and failed) else 0)
+    if not swap:
+        sys.exit(1)
     import bambu3mf
     projects = sorted({t['file'] for n in swap for t in cfg['parts'][n].get('3mf') or []})
     if projects and bambu3mf.studio_running() and not os.environ.get('PRINT_ENGINEERING_BAMBU_CLOSED'):

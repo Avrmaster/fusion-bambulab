@@ -27,6 +27,47 @@ class Gates(unittest.TestCase):
             return subprocess.CompletedProcess(cmd, rc, 'report of %s\n' % g, '')
         return run
 
+    def test_slicer_needs_overhang(self):
+        self.settings({'export': {'require': ['heatset', 'slicer']}})
+        with self.assertRaises(SystemExit):
+            export.required_gates(self.root)
+
+    def test_geometry_gates_run_before_the_stls(self):
+        self.settings({'export': {'require': ['heatset', 'overhang', 'slicer']}})
+        seen = []
+        def run(cmd, **kw):
+            seen.append(cmd); return self.fake_gate({'heatset': {'a': 'pass'}, 'overhang': {'a': 'pass'}})(cmd)
+        with mock.patch('subprocess.run', run):
+            passed, failed, _ = export.run_gates(self.root, {}, ['a'], False)
+        self.assertEqual(passed, ['a'])
+        self.assertFalse(any('overhang-slice' in c for c in seen))
+
+    def slicer_result(self, n, findings, at=None, error=None):
+        d = os.path.join(self.root, 'gate', 'results', 'overhang'); os.makedirs(d, exist_ok=True)
+        sl = {'sliced_at': at or time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime(time.time() + 1))}
+        if error:
+            sl['error'] = error
+        with open(os.path.join(d, n + '.json'), 'w') as f:
+            json.dump({'verdict': 'fail' if findings else 'pass', 'findings': findings, 'slicer': sl}, f)
+
+    def test_slicer_holds_back_a_supported_part(self):
+        cfg = {'parts': {'a': {'3mf': [{'file': 'x.3mf'}]}, 'b': {'3mf': [{'file': 'x.3mf'}]}, 'c': {}}}
+        def run(cmd, **kw):
+            self.slicer_result('a', [])
+            self.slicer_result('b', [{'code': 'slicer_support', 'message': 'support under the roof'}])
+            return subprocess.CompletedProcess(cmd, 1, '', '')
+        with mock.patch('subprocess.run', run):
+            failed = export.run_slicer(self.root, cfg, ['a', 'b', 'c'])
+        self.assertEqual(sorted(failed), ['b'])
+
+    def test_no_fresh_slice_is_no_pass(self):
+        cfg = {'parts': {'a': {'3mf': [{'file': 'x.3mf'}]}}}
+        def run(cmd, **kw):
+            self.slicer_result('a', [], at='2000-01-01T00:00:00Z')
+            return subprocess.CompletedProcess(cmd, 0, '', '')
+        with mock.patch('subprocess.run', run):
+            self.assertEqual(list(export.run_slicer(self.root, cfg, ['a'])), ['a'])
+
     def test_default_is_every_gate(self):
         self.assertEqual(export.required_gates(self.root)[0], list(export.GATES))
 
