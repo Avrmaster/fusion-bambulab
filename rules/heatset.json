@@ -22,7 +22,9 @@
     "source": "decided 2026-11-23 from the table numbers (length 4.0, knurl D5.0, pilot band D4.2); the pilot length and the bore are drawn, not measured. The pilot band is the end that goes in first, so it points to the bottom of the pocket"
    },
    "pocket": {
-    "relief": {"d": [7.5, 6.5, 5.9], "depth": 0.54},
+    "relief": {"d": [7.5, 6.5, 5.9], "depth": 0.54,
+     "cone": {"angle_deg": 45, "about": "For a mouth on a face that is DOWN in print (the bed face, or any face whose ceiling would hang over air): a 45 deg countersink from a relief diameter of the table at the face down to the lead-in diameter, instead of the cylinder, whose flat ring ceiling 0.54 over the bed no support can reach (Bambu: 'overhang regions that could not get support'). The insert top stays depth below the face (inside the cone), the relief floor is that plane, and the lead-in counts from it: the cone below the floor + the straight lead-in = lead_in.depth. Relief volume: D6.5 cone 15.1 mm3 against 17.9 for the cylinder, D5.9 12.2 against 14.8.",
+      "source": "robotarm J3 drive plate idler lock pockets, 2026-11-25 [U: 'Так, конусом']"}},
     "lead_in": {"d": 4.4, "depth": 1.5},
     "hole": {"d": 3.6, "min_depth_below_relief": 6.5}
    },

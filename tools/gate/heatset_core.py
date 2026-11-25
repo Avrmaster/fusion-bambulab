@@ -52,7 +52,8 @@ def _ld(a1, b1, a2, b2):
 # ---------------------------------------------------------------- holes of a printed body
 def group_holes(cylinders, tol):
     """Concave cylinders on one axis line -> one group {"a", "base", "segs": [{"d", "t0", "t1", "span"}]}: t along "a"
-    from "base". Faces that split one cylinder into halves are joined (their spans add)."""
+    from "base". Faces that split one cylinder into halves are joined (their spans add). A concave cone on the line
+    ({"cone": True, "d0", "d1": its diameters at t0 and t1, "d": the wider}) is a segment with "cone": (d at t0, d at t1)."""
     groups = []
     for c in cylinders:
         if not c.get('concave'):
@@ -63,8 +64,12 @@ def group_holes(cylinders, tol):
             g = {'a': a, 'base': base, 'raw': []}
             groups.append(g)
         p0 = _add(c['o'], _mul(_norm(c['a']), c['t0'])); p1 = _add(c['o'], _mul(_norm(c['a']), c['t1']))
-        t0, t1 = sorted((_dot(_sub(p0, g['base']), g['a']), _dot(_sub(p1, g['base']), g['a'])))
-        g['raw'].append({'d': c['d'], 't0': t0, 't1': t1, 'span': c.get('span', 360.0), 'intrudes': c.get('intrudes', False)})
+        ta, tb = _dot(_sub(p0, g['base']), g['a']), _dot(_sub(p1, g['base']), g['a'])
+        t0, t1 = sorted((ta, tb))
+        seg = {'d': c['d'], 't0': t0, 't1': t1, 'span': c.get('span', 360.0), 'intrudes': c.get('intrudes', False)}
+        if c.get('cone'):                       # a cone: "d" is its wide end, "cone" = (d at t0, d at t1) along the group
+            seg['cone'] = (c['d0'], c['d1']) if ta <= tb else (c['d1'], c['d0'])
+        g['raw'].append(seg)
     for g in groups:
         g['segs'] = merge_segments(g.pop('raw'), tol)
     return groups
@@ -75,14 +80,16 @@ def merge_segments(raw, tol):
     one segment (a face split across its length). Sorted along t."""
     out = []
     for s in sorted(raw, key=lambda s: (round(s['d'] / tol['d']), s['t0'])):
-        m = next((x for x in out if abs(x['d'] - s['d']) <= tol['d'] and abs(x['t0'] - s['t0']) < EPS_T and abs(x['t1'] - s['t1']) < EPS_T), None)
+        m = next((x for x in out if abs(x['d'] - s['d']) <= tol['d'] and abs(x['t0'] - s['t0']) < EPS_T and abs(x['t1'] - s['t1']) < EPS_T
+                  and x.get('cone') == s.get('cone')), None)
         if m:
             m['span'] = min(360.0, m['span'] + s['span'])
             continue
         out.append(dict(s))
     joined = []
     for s in sorted(out, key=lambda s: (s['t0'], s['d'])):
-        m = next((x for x in joined if abs(x['d'] - s['d']) <= tol['d'] and s['t0'] <= x['t1'] + EPS_T and s['t1'] >= x['t0'] - EPS_T), None)
+        m = next((x for x in joined if abs(x['d'] - s['d']) <= tol['d'] and s['t0'] <= x['t1'] + EPS_T and s['t1'] >= x['t0'] - EPS_T
+                  and not x.get('cone') and not s.get('cone')), None)
         if m:
             m['t0'], m['t1'] = min(m['t0'], s['t0']), max(m['t1'], s['t1']); m['span'] = min(m['span'], s['span'])
             m['intrudes'] = m.get('intrudes') or s.get('intrudes')
@@ -139,7 +146,10 @@ def walk(group, from_lo):
         start = max(x0, pos)
         if start - pos > EPS_T:
             prof.append({'d': None, 'len': start - pos, 'span': 360.0})
-        prof.append({'d': s['d'], 'len': x1 - start, 'span': s['span'], 'intrudes': s.get('intrudes', False)})
+        item = {'d': s['d'], 'len': x1 - start, 'span': s['span'], 'intrudes': s.get('intrudes', False)}
+        if s.get('cone'):                       # (d at the end met first, d at the far end)
+            item['cone'] = tuple(s['cone']) if from_lo else tuple(reversed(s['cone']))
+        prof.append(item)
         pos = x1
     return prof
 
@@ -147,7 +157,8 @@ def walk(group, from_lo):
 def fmt_profile(prof, limit=6):
     parts = []
     for p in prof[:limit]:
-        parts.append(('cone/step %.2f' % p['len']) if p['d'] is None else ('D%.2f x %.2f' % (p['d'], p['len'])))
+        parts.append(('cone/step %.2f' % p['len']) if p['d'] is None else
+                     ('cone D%.2f -> D%.2f x %.2f' % (p['cone'][0], p['cone'][1], p['len'])) if p.get('cone') else ('D%.2f x %.2f' % (p['d'], p['len'])))
     return ' -> '.join(parts) + (' -> ...' if len(prof) > limit else '')
 
 
@@ -210,6 +221,37 @@ def judge_pocket(kind, rest, through, tol, beyond=None):
     i = 0
     relief = rest[0] if rest and any(_is(rest[0]['d'], d, tol) for d in pk['relief']['d']) else None
     exp = fmt_expected(kind)
+    cone_rule = pk['relief'].get('cone')
+    extra = 0.0                                 # a cone relief: the part of the cone below the relief floor (lead-in)
+    if relief is not None and relief.get('cone'):
+        near, far = relief['cone']
+        if not cone_rule:
+            out.append(('relief_d', 'a cone D%.2f -> D%.2f x %.2f at the mouth' % (near, far, relief['len']), 'relief D%s x %.2f' % (
+                '/'.join('%.1f' % d for d in pk['relief']['d']), pk['relief']['depth']), 'cut the relief as a cylinder of the table'))
+        else:
+            want_len = (near - far) / 2 / math.tan(math.radians(cone_rule['angle_deg']))
+            if not _is(far, pk['lead_in']['d'], tol) or not _is(near, relief['d'], tol) or abs(relief['len'] - want_len) > tol['depth']:
+                out.append(('relief_cone', 'cone D%.2f -> D%.2f x %.2f at the mouth' % (near, far, relief['len']),
+                            'a %g deg cone from D%.2f to the lead-in D%.2f (%.2f long)' % (cone_rule['angle_deg'], near, pk['lead_in']['d'], want_len),
+                            'recut the relief as a %g deg countersink from the face down to the lead-in diameter' % cone_rule['angle_deg']))
+        if relief['len'] < pk['relief']['depth'] - tol['depth']:
+            out.append(('relief_depth', 'cone relief %.2f long' % relief['len'], 'at least %.2f (the insert top sits that deep)' % pk['relief']['depth'],
+                        'start the cone from a wider relief diameter of the table'))
+        extra = max(0.0, relief['len'] - pk['relief']['depth'])
+        i = 1
+        floor_depth = pk['relief']['depth']
+        lead = rest[i] if i < len(rest) else None
+        if lead is None or not _is(lead['d'], pk['lead_in']['d'], tol):
+            out.append(('lead_in_d', '%s below the cone' % ('D%.2f' % lead['d'] if lead and lead['d'] else 'nothing'),
+                        'lead-in D%.2f to %.2f below the relief floor' % (pk['lead_in']['d'], pk['lead_in']['depth']),
+                        'cut the D%.2f lead-in from the cone on' % pk['lead_in']['d']))
+            j = i
+        else:
+            j = i + 1
+            if abs(extra + lead['len'] - pk['lead_in']['depth']) > tol['depth']:
+                out.append(('lead_in_depth', 'lead-in D%.2f to %.2f below the relief floor (%.2f of it in the cone)' % (lead['d'], extra + lead['len'], extra),
+                            'depth %.2f' % pk['lead_in']['depth'], 'make the lead-in end %.2f below the relief floor' % pk['lead_in']['depth']))
+        return _judge_hole(pk, rest, i, j, through, tol, beyond, out, floor_depth, extra)
     if relief is None:
         if rest and rest[0]['d'] is not None and rest[0]['d'] > pk['lead_in']['d'] + tol['d']:
             out.append(('relief_d', 'D%.2f x %.2f at the mouth' % (rest[0]['d'], rest[0]['len']), 'relief D%s x %.2f' % (
@@ -243,6 +285,11 @@ def judge_pocket(kind, rest, through, tol, beyond=None):
         if abs(lead['len'] - pk['lead_in']['depth']) > tol['depth']:
             out.append(('lead_in_depth', 'lead-in D%.2f x %.2f' % (lead['d'], lead['len']), 'depth %.2f' % pk['lead_in']['depth'],
                         'make the lead-in %.2f deep' % pk['lead_in']['depth']))
+    return _judge_hole(pk, rest, i, j, through, tol, beyond, out, floor_depth, 0.0)
+
+
+def _judge_hole(pk, rest, i, j, through, tol, beyond, out, floor_depth, extra):
+    """The hole below the lead-in, and round walls down to the hole's depth. extra: the lead-in part inside a cone relief."""
     need = pk['hole']['min_depth_below_relief']
     hole = rest[j] if j < len(rest) else None
     if hole is None:
@@ -253,7 +300,7 @@ def judge_pocket(kind, rest, through, tol, beyond=None):
         out.append(('hole_d', 'D%.2f below the lead-in' % hole['d'] if hole['d'] else 'a cone below the lead-in', 'D%.2f' % pk['hole']['d'],
                     'recut the hole to D%.2f (a wider hole lets the insert spin, a narrower one bulges into its thread)' % pk['hole']['d']))
     else:
-        reach = sum(p['len'] for p in rest[i:j + 1])           # from the relief floor to the end of the hole segment
+        reach = extra + sum(p['len'] for p in rest[i:j + 1])           # from the relief floor to the end of the hole segment
         nxt = rest[j + 1] if j + 1 < len(rest) else None
         # short is fine only where the hole runs out of the part (through): the plastic and the screw tip leave that way
         free = nxt is None and through and not beyond

@@ -49,6 +49,10 @@ What it checks, from the B-rep of each printed body and every insert body in the
 1. **Every pocket has the profile of the table**, read from its mouth inwards: melt relief D7.5 (or D6.5, D5.9) x 0.54,
    lead-in D4.4 x 1.5, hole D3.6 to 6.5 below the relief floor (or through). A wider recess at the mouth is skipped:
    the relief belongs in its floor. A counterbore for a screw (D6.5 then D3.4) is not a pocket.
+   **A mouth on a face that is down in print** (the bed face) takes the relief as a 45 deg countersink from the relief
+   diameter at the face to D4.4: the flat ring ceiling of the cylinder hangs 0.54 over the bed where no support reaches
+   (Bambu: "overhang regions that could not get support"). The insert top stays 0.54 below the face, inside the cone;
+   the lead-in counts from there (`rules/heatset.json` relief.cone).
 2. **Every insert is the golden model:** `Heat-set insert M3x4x5 (golden)`, drawn from the table: pilot band D4.2 x 1.0
    at the end that goes in first, knurl D5.0 up to 4.0, bore D3.0. Any other shape is `not_golden`.
 3. **Every insert sits in its pocket:** on the pocket's axis, its top flush with the relief floor, the pilot band down.

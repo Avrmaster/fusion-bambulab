@@ -3,7 +3,7 @@ heatset_core.py pasted in front (gate.py does that). Read-only.
 
 JOB = {"doc", "parts": [{"name", "component" | "path", "body"}], "rules": the merged rules, "max_d": 12.0}
 
-Per printed body: every concave cylindrical face from D1.0 to max_d (30: a washer seat or a recess round a pocket is read, so a finding can name it;
+Per printed body: every concave cylindrical face (and concave cone: a countersink relief) from D1.0 to max_d (30: a washer seat or a recess round a pocket is read, so a finding can name it;
 the open-end test below sees a recess or a bearing bore as open space), grouped by axis line, and for each group
 whether a point 0.3 mm beyond each end is outside the body (an open end: a mouth). Per insert body (a body whose name
 matches rules["insert_name"], anywhere in the assembly, printed parts excluded): its cylinders, volume, occurrence path
@@ -96,11 +96,49 @@ def _cylinder(face, max_d, concave_only):
     return {'d': round(d, 4), 'o': o, 'a': a, 't0': min(ts), 't1': max(ts), 'concave': concave, 'span': round(span, 1)}
 
 
-def _cylinders(body, max_d, concave_only):
+def _cone(face, max_d):
+    """A concave cone face (a countersink relief, a chamfer): {"cone": True, "d0", "d1": diameters at t0 and t1, "d": the
+    wider, "o", "a", "t0", "t1", "concave", "span"}, or None. Read from the points of its edges (two circles)."""
+    g = face.geometry
+    o, a = _p(g.origin), [g.axis.x, g.axis.y, g.axis.z]
+    n_ = math.sqrt(sum(x * x for x in a)); a = [x / n_ for x in a]
+    pts = []
+    for e in face.edges:
+        if e.evaluator is None or e.isDegenerate:              # the apex of a pointed cone
+            continue
+        ok, qs = e.evaluator.getStrokes(e.evaluator.getParameterExtents()[1], e.evaluator.getParameterExtents()[2], 0.002)
+        for q in qs:
+            qq = _p(q); w = [qq[i] - o[i] for i in range(3)]; tt = sum(w[i] * a[i] for i in range(3))
+            rr = [w[i] - tt * a[i] for i in range(3)]
+            pts.append((tt, math.sqrt(sum(x * x for x in rr))))
+    if not pts:
+        return None
+    t0, t1 = min(p[0] for p in pts), max(p[0] for p in pts)
+    if t1 - t0 < 0.01:
+        return None
+    r0 = max(p[1] for p in pts if p[0] < t0 + 0.005); r1 = max(p[1] for p in pts if p[0] > t1 - 0.005)
+    d0, d1 = 2 * r0, 2 * r1
+    if min(d0, d1) < 1.0 or (max_d and max(d0, d1) > max_d):
+        return None
+    p = face.pointOnFace
+    ok, nrm = face.evaluator.getNormalAtPoint(p)
+    pp = _p(p); v = [pp[i] - o[i] for i in range(3)]; t = sum(v[i] * a[i] for i in range(3))
+    r = [v[i] - t * a[i] for i in range(3)]
+    if (nrm.x * r[0] + nrm.y * r[1] + nrm.z * r[2]) >= 0:
+        return None
+    return {'cone': True, 'd': round(max(d0, d1), 4), 'd0': round(d0, 4), 'd1': round(d1, 4), 'o': o, 'a': a, 't0': t0, 't1': t1,
+            'concave': True, 'span': 360.0}
+
+
+def _cylinders(body, max_d, concave_only, cones=False):
     out = []
     for f in body.faces:
         if f.geometry.objectType == adsk.core.Cylinder.classType():
             c = _cylinder(f, max_d, concave_only)
+            if c:
+                out.append(c)
+        elif cones and f.geometry.objectType == adsk.core.Cone.classType():
+            c = _cone(f, max_d)
             if c:
                 out.append(c)
     return out
@@ -152,7 +190,7 @@ def job(JOB):
         except Exception as e:
             errors.append({'part': spec['name'], 'error': '%s: %s' % (type(e).__name__, e)}); continue
         printed.add(b.entityToken); bodies[spec['name']] = b
-        cyl = _cylinders(b, max_d, True)
+        cyl = _cylinders(b, max_d, True, cones=True)
         groups = []
         for g in group_holes(cyl, tol):                                 # heatset_core, pasted in front
             groups.extend(split_group(g, lambda pt: _inside(b, pt)))    # two holes on one axis with plastic between

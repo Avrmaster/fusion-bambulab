@@ -29,6 +29,24 @@ def pocket(top=10.0, relief=(7.5, 0.54), lead=(4.4, 1.5), hole=(3.6, 6.5), x=10.
     return c
 
 
+def cone(d_top, d_bottom, z0, z1, x=10.0, y=5.0):
+    """A concave cone on the pocket axis: D d_bottom at z0, D d_top at z1 (z1 > z0)."""
+    return {'d': max(d_top, d_bottom), 'd0': d_bottom, 'd1': d_top, 'cone': True, 'o': [x, y, 0.0], 'a': Z, 't0': z0, 't1': z1,
+            'concave': True, 'span': 360.0}
+
+
+def cone_pocket(top=10.0, relief_d=6.5, angle=45.0, lead_end=1.5, hole=(3.6, 6.5), x=10.0, y=5.0):
+    """A pocket whose mouth is on a face down in print: a countersink relief from relief_d at the face to D4.4, then the
+    straight D4.4 to lead_end below the relief floor (0.54 below the face), then the hole."""
+    import math
+    L = (relief_d - 4.4) / 2 / math.tan(math.radians(angle))
+    floor = top - 0.54
+    c = [cone(relief_d, 4.4, top - L, top, x, y), cyl(4.4, floor - lead_end, top - L, x=x, y=y)]
+    if hole:
+        c.append(cyl(hole[0], floor - hole[1], floor - lead_end, x=x, y=y))
+    return c
+
+
 def golden_insert(floor, x=10.0, y=5.0, pilot_down=True, **over):
     g = dict(RULES['kinds']['M3x4x5']['golden'], **over)
     L, pl = g['length'], g['pilot_len']
@@ -114,6 +132,32 @@ class Pocket(unittest.TestCase):
         self.assertEqual(codes(res), ['relief_missing'])
         self.assertIn('washer seat, is not the relief', res['findings'][0]['measured'])
         self.assertIn('floor of the recess', res['findings'][0]['fix'])
+
+    def test_cone_relief_passes(self):
+        for d in (7.5, 6.5, 5.9):
+            res = run(cone_pocket(relief_d=d), [golden_insert(10 - 0.54)])
+            self.assertEqual(codes(res), [], d)
+
+    def test_cone_relief_wrong_angle(self):
+        self.assertIn('relief_cone', codes(run(cone_pocket(angle=30.0), [golden_insert(10 - 0.54)])))
+
+    def test_cone_relief_short_lead_in(self):
+        self.assertIn('lead_in_depth', codes(run(cone_pocket(lead_end=1.0), [golden_insert(10 - 0.54)])))
+
+    def test_cone_relief_insert_flush_with_the_floor_plane(self):
+        self.assertIn('not_flush', codes(run(cone_pocket(), [golden_insert(10 - 1.05)])))
+
+    def test_cone_relief_without_the_rule(self):
+        rules = copy.deepcopy(RULES); del rules['kinds']['M3x4x5']['pocket']['relief']['cone']
+        groups = H.group_holes(cone_pocket(), TOL)
+        for g in groups:
+            g['open_lo'], g['open_hi'] = False, True
+        res = H.check([{'name': 'demo', 'groups': groups}], [golden_insert(10 - 0.54)], rules)
+        self.assertIn('relief_d', codes(res))
+
+    def test_countersunk_screw_hole_is_no_pocket(self):
+        c = [cone(6.5, 3.4, 10 - 1.55, 10), cyl(3.4, 0.0, 10 - 1.55)]
+        self.assertEqual(run(c, [], open_lo=True)['pockets'], [])
 
     def test_open_wall(self):
         c = pocket()

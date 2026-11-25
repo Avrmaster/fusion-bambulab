@@ -2,6 +2,18 @@
 
 What each version of the plugin changes. Skills update with the plugin; the tools copied into a project do not. Read the section of a version before you refresh a project with `python3 <plugin>/tools/setup_project.py <dir> --update-tools`, and review `git diff` afterwards.
 
+## 0.9.2 - 2026-11-25
+
+- **Heat-set pockets opening on a face that is down in print take a 45 deg countersink relief** (`rules/heatset.json`
+  relief.cone): from a relief diameter of the table at the face down to the lead-in D4.4. The cylinder relief there has
+  a flat ring ceiling 0.54 over the bed that no support can reach; Bambu Studio reports "overhang regions that could not
+  get support". The insert top stays 0.54 below the face (inside the cone), the relief floor is that plane, and the
+  lead-in counts from it (cone below the floor + straight D4.4 = 1.5).
+- The heat-set gate reads concave cones on a pocket's axis (`heatset_fusion.py`); a cone relief is judged by its angle,
+  its two diameters and the lead-in depth (`relief_cone`, `lead_in_depth`). A countersunk screw hole is still no pocket.
+  On a project without cone reliefs the results do not change (robotarm: 42 parts, 142 pockets, 0 findings before and
+  after).
+
 ## 0.9.1 - 2026-11-24
 
 - `bed_mm` 0.3 -> 0.6: a downward face within the first two layers prints on the bed (a bottom rounding R1.5 is steeper
