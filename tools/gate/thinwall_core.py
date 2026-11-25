@@ -400,8 +400,15 @@ class Ruler:
         fb = self.tris[hj][4]
         if fb in (f1, f2) or fb in nbr.get(f1, ()) or fb in nbr.get(f2, ()):
             return None                                  # its own faces or their neighbours: the corner round the edge
-        q = (o[0] + d[0] * t, o[1] + d[1] * t, o[2] + d[2] * t)
         faces = self.faces
+        # onto the exact surfaces, as in measure(): the edge point lies on a chord of a curved edge (inside a boss, by
+        # the sag) and the exit on a chord of its face; a D8 boss round a D5 hole (1.5) read 1.467 from the mesh
+        s1 = exact_t(faces[fb], o, d, t, self.slack)
+        s0s = [x for x in (exact_t(faces[f], o, d, 0.0, self.slack) for f in (f1, f2)) if x is not None and x <= 1e-9]
+        s0 = min(s0s) if s0s else 0.0
+        exact = s1 is not None and bool(s0s)
+        t = max((s1 if s1 is not None else t) - s0, 0.0)
+        q = (o[0] + d[0] * (t + s0), o[1] + d[1] * (t + s0), o[2] + d[2] * (t + s0))
         up, sac = self.up, self.sac
         cs = math.cos(math.radians(sac['deg']))
         taper = min(math.degrees(math.acos(max(-1.0, min(1.0, -_dot(m, nh))))) for m in (n1, n2))
@@ -416,7 +423,7 @@ class Ruler:
         else:
             kind = 'wall'
         return {'p': p, 'q': q, 't': t, 'n': (-d[0], -d[1], -d[2]), 'face': f1, 'exit_face': fb, 'taper': taper,
-                'kind': kind, 'exact': False, 'tri': None, 'neck': True, 's': s}
+                'kind': kind, 'exact': exact, 'tri': None, 'neck': True, 's': s}
 
     def near_triangles(self, pts, r):
         """Indices of the triangles in the grid cells within r of any of the points."""
@@ -687,14 +694,15 @@ def judge(part, rules, projects=None, bed_face=None, accepted=()):
             g = g + refine(R, g, rules)
         best = min(g, key=lambda r: r['t'])
         t = best['t']
+        tol = rules['sampling'].get('tolerance_mm', 0.0)          # a wall modelled at the limit is no finding
         if any(r['kind'] == 'faces_cross' for r in g):
             best = next(r for r in g if r['kind'] == 'faces_cross')
             code, limit, t = 'faces_cross', 0.0, 0.0
-        elif L['one_line'] is not None and t < L['one_line']:
+        elif L['one_line'] is not None and t < L['one_line'] - tol:
             code, limit = 'under_one_line', L['one_line']
-        elif L['two_lines'] is not None and t < L['two_lines'] and not L['arachne']:
+        elif L['two_lines'] is not None and t < L['two_lines'] - tol and not L['arachne']:
             code, limit = 'under_two_lines', L['two_lines']
-        elif t < L['min_wall']:
+        elif t < L['min_wall'] - tol:
             code, limit = 'thin_wall', L['min_wall']
         else:
             continue

@@ -2,6 +2,15 @@
 
 What each version of the plugin changes. Skills update with the plugin; the tools copied into a project do not. Read the section of a version before you refresh a project with `python3 <plugin>/tools/setup_project.py <dir> --update-tools`, and review `git diff` afterwards.
 
+## 0.10.1 - 2026-11-25
+
+- **thinwall: a wall modelled at the limit passes** (`rules/thinwall.json` `sampling.tolerance_mm` 0.005, the
+  measurement's own precision): robotarm's J3 shaft S bush (D5 hole in a D8 boss, 1.5) read '1.500 < 1.500'.
+  Test: `test_wall_a_hair_under_the_limit_is_the_limit`.
+- **thinwall: necks are measured to the exact surfaces** (`Ruler._fan_ray`), as walls already were: the edge point
+  lies on a chord of a curved edge and the exit on a chord of its face; the J3 S pulley 608 boss (D8 round D5, 1.5)
+  read 1.467 from the mesh, the idler spigots 0.01-0.02 too thin.
+
 ## 0.10.0 - 2026-11-25
 
 - **export: the "slicer" gate** (`tools/export.py`): with `"slicer"` in `gate/settings.json` `export.require` (it needs

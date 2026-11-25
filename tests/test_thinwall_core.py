@@ -130,6 +130,11 @@ class Walls(unittest.TestCase):
     def test_wall_at_the_limit_passes(self):
         self.assertEqual(C.judge(part('s', box(0, 0, 0, 20, 10, 1.5)), RULES, P06, '+y')['findings'], [])
 
+    def test_wall_a_hair_under_the_limit_is_the_limit(self):
+        # modelled at the limit, read from the mesh a little under it (robotarm J3 shaft S bush: '1.500 < 1.500')
+        self.assertEqual(C.judge(part('s', box(0, 0, 0, 20, 10, 1.4996)), RULES, P06, '+y')['findings'], [])
+        self.assertEqual(codes(C.judge(part('s', box(0, 0, 0, 20, 10, 1.49)), RULES, P06, '+y')), ['thin_wall'])
+
     def test_hole_near_a_face_measured_to_the_exact_cylinder(self):
         # square 20 x 20 round a D6 hole at the origin, shifted so the hole is 1.2 from the +x face
         poly = [(-10, -10), (4.2, -10), (4.2, 10), (-10, 10)]
